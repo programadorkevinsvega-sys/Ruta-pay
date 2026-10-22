@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
-const credentialsPath = "/tmp/payvia-platform-e2e-operator.json";
+const credentialsPath = process.env.E2E_OPERATOR_CREDENTIALS;
 
 test("operador crea y administra tenants a través del BFF real", async ({ page, request }) => {
+  if (!credentialsPath) throw new Error("E2E_OPERATOR_CREDENTIALS is required");
   await page.addInitScript(() => {
     const state = window as Window & { payviaRealtimeEvents?: string[] };
     state.payviaRealtimeEvents = [];

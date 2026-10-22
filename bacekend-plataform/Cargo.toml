@@ -11,7 +11,12 @@ path = "src/bin/bootstrap_platform_operator.rs"
 name = "migrate-platform"
 path = "src/bin/migrate_platform.rs"
 
+[[bin]]
+name = "cleanup-platform-e2e-stream"
+path = "src/bin/cleanup_platform_e2e_stream.rs"
+
 [dependencies]
+async-nats.workspace = true
 axum.workspace = true
 metrics-exporter-prometheus.workspace = true
 platform-contracts = { path = "crates/platform_contracts" }
@@ -33,7 +38,6 @@ serde_json.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-async-nats.workspace = true
 base64.workspace = true
 reqwest = { version = "0.12", features = ["json"] }
 sha2.workspace = true

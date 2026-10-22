@@ -6,11 +6,15 @@ use crate::infrastructure::persistence::{
     PendingOutboxEvent, claim_outbox_events, mark_outbox_published, reschedule_outbox_event,
 };
 
-pub async fn relay_batch(pool: &PgPool, jetstream: &Context) -> Result<usize, sqlx::Error> {
+pub async fn relay_batch(
+    pool: &PgPool,
+    jetstream: &Context,
+    subject_prefix: &str,
+) -> Result<usize, sqlx::Error> {
     let events = claim_outbox_events(pool, 32).await?;
     let mut delivered = 0;
     for event in events {
-        match publish_event(jetstream, &event).await {
+        match publish_event(jetstream, &event, subject_prefix).await {
             Ok(()) => {
                 let marked = mark_outbox_published(pool, event.event_id, event.lease_token).await?;
                 if marked {
@@ -33,6 +37,7 @@ pub async fn relay_batch(pool: &PgPool, jetstream: &Context) -> Result<usize, sq
 async fn publish_event(
     jetstream: &Context,
     event: &PendingOutboxEvent,
+    subject_prefix: &str,
 ) -> Result<(), &'static str> {
     if event.event_type.is_empty()
         || !event.event_type.bytes().all(|character| {
@@ -44,7 +49,7 @@ async fn publish_event(
     {
         return Err("event_type_invalid");
     }
-    let subject = format!("payvia.platform.events.v1.{}", event.event_type);
+    let subject = format!("{subject_prefix}.{}", event.event_type);
     let envelope = json!({
         "event_id": event.event_id,
         "event_type": event.event_type,

@@ -1,4 +1,4 @@
-use async_nats::jetstream::{self, stream::RetentionPolicy};
+use async_nats::jetstream;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use opentelemetry::{global, trace::TracerProvider as _};
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerProvider};
@@ -11,6 +11,7 @@ use platform_contracts::{
     tenant_registry::tenant_registry_client::TenantRegistryClient as TenantRegistryGrpcClient,
 };
 use platform_identity_access::application::operator_bootstrap::OperatorBootstrapService;
+use platform_runtime::event_topology::{EventTopology, delete_e2e_stream};
 use reqwest::{Client, StatusCode, header};
 use sha2::{Digest, Sha256};
 use sqlx::postgres::PgPoolOptions;
@@ -51,6 +52,104 @@ where
 
 struct FieldCapture<'a>(&'a mut HashMap<String, String>);
 
+fn is_stream_not_found(error: async_nats::jetstream::context::GetStreamError) -> bool {
+    matches!(
+        error.kind(),
+        async_nats::jetstream::context::GetStreamErrorKind::JetStream(jetstream_error)
+            if jetstream_error.kind() == async_nats::jetstream::ErrorCode::STREAM_NOT_FOUND
+    )
+}
+
+struct EventStreamCleanup {
+    jetstream: jetstream::Context,
+    namespace: String,
+    armed: bool,
+}
+
+struct AcceptanceDatabaseCleanup {
+    admin_pool: sqlx::PgPool,
+    database_name: String,
+    runtime_role: String,
+    armed: bool,
+}
+
+impl AcceptanceDatabaseCleanup {
+    async fn cleanup(&mut self) {
+        Self::drop_owned_resources(&self.admin_pool, &self.database_name, &self.runtime_role)
+            .await
+            .expect("acceptance database and role are removed");
+        self.armed = false;
+    }
+
+    async fn drop_owned_resources(
+        admin_pool: &sqlx::PgPool,
+        database_name: &str,
+        runtime_role: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()",
+        )
+        .bind(database_name)
+        .execute(admin_pool)
+        .await?;
+        sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+            "DROP DATABASE IF EXISTS \"{database_name}\""
+        )))
+        .execute(admin_pool)
+        .await?;
+        sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+            "DROP ROLE IF EXISTS \"{runtime_role}\""
+        )))
+        .execute(admin_pool)
+        .await?;
+        Ok(())
+    }
+}
+
+impl Drop for AcceptanceDatabaseCleanup {
+    fn drop(&mut self) {
+        if self.armed {
+            let admin_pool = self.admin_pool.clone();
+            let database_name = self.database_name.clone();
+            let runtime_role = self.runtime_role.clone();
+            let runtime = tokio::runtime::Handle::current();
+            tokio::task::block_in_place(|| {
+                runtime.block_on(async move {
+                    Self::drop_owned_resources(&admin_pool, &database_name, &runtime_role)
+                        .await
+                        .expect("panic cleanup removes only this acceptance database and role");
+                })
+            });
+        }
+    }
+}
+
+impl EventStreamCleanup {
+    async fn cleanup(&mut self) {
+        delete_e2e_stream(&self.jetstream, &self.namespace)
+            .await
+            .expect("only the integration test stream is deleted");
+        self.armed = false;
+    }
+}
+
+impl Drop for EventStreamCleanup {
+    fn drop(&mut self) {
+        if self.armed {
+            let jetstream = self.jetstream.clone();
+            let namespace = self.namespace.clone();
+            let runtime = tokio::runtime::Handle::current();
+            tokio::task::block_in_place(|| {
+                runtime.block_on(async move {
+                    delete_e2e_stream(&jetstream, &namespace)
+                        .await
+                        .expect("panic cleanup deletes only this integration stream");
+                })
+            });
+        }
+    }
+}
+
 impl Visit for FieldCapture<'_> {
     fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
         self.0.insert(field.name().to_owned(), format!("{value:?}"));
@@ -61,7 +160,7 @@ impl Visit for FieldCapture<'_> {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() {
     let provider = SdkTracerProvider::builder().build();
     global::set_tracer_provider(provider.clone());
@@ -92,6 +191,12 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .execute(&admin_pool)
     .await
     .expect("isolated acceptance database is created");
+    let mut database_cleanup = AcceptanceDatabaseCleanup {
+        admin_pool: admin_pool.clone(),
+        database_name: database_name.clone(),
+        runtime_role: runtime_role.clone(),
+        armed: true,
+    };
 
     let mut parsed_url = url::Url::parse(&admin_url).expect("admin database URL parses");
     parsed_url.set_path(&format!("/{database_name}"));
@@ -622,19 +727,54 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .await
     .expect("real development NATS accepts authenticated connection");
     let jetstream = jetstream::new(nats_client);
-    let stream = jetstream
-        .get_or_create_stream(jetstream::stream::Config {
-            name: "PAYVIA_PLATFORM_EVENTS".to_owned(),
-            subjects: vec!["payvia.platform.events.v1.>".to_owned()],
-            retention: RetentionPolicy::Limits,
-            storage: jetstream::stream::StorageType::File,
-            duplicate_window: Duration::from_secs(120),
-            max_age: Duration::from_secs(90 * 24 * 60 * 60),
-            max_messages: 10_000_000,
-            ..Default::default()
-        })
+    let failed_namespace = format!("e2e_failure_{}", Uuid::new_v4().simple());
+    let failed_topology = EventTopology::from_namespace(Some(&failed_namespace))
+        .expect("failure-path namespace is valid");
+    failed_topology
+        .ensure_stream(&jetstream)
         .await
-        .expect("real JetStream stream is available");
+        .expect("failure-path stream is created in real JetStream");
+    let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _cleanup = EventStreamCleanup {
+            jetstream: jetstream.clone(),
+            namespace: failed_namespace,
+            armed: true,
+        };
+        panic!("exercise E2E stream cleanup during test unwinding");
+    }));
+    assert!(failure.is_err(), "the cleanup failure path was exercised");
+    assert!(
+        jetstream
+            .get_stream(&failed_topology.stream_name)
+            .await
+            .is_err_and(is_stream_not_found),
+        "panic cleanup removes only the stream created for that failed execution"
+    );
+    let event_namespace = format!("e2e_test_{}", Uuid::new_v4().simple());
+    let event_topology = EventTopology::from_namespace(Some(&event_namespace))
+        .expect("test event namespace is valid");
+    let stream = event_topology
+        .ensure_stream(&jetstream)
+        .await
+        .expect("isolated real JetStream stream is available");
+    let event_stream_cleanup = EventStreamCleanup {
+        jetstream: jetstream.clone(),
+        namespace: event_namespace,
+        armed: true,
+    };
+    let isolated_namespace = format!("e2e_isolation_{}", Uuid::new_v4().simple());
+    let isolated_topology = EventTopology::from_namespace(Some(&isolated_namespace))
+        .expect("second test namespace is valid");
+    isolated_topology
+        .ensure_stream(&jetstream)
+        .await
+        .expect("second isolated JetStream stream is available");
+    let isolated_stream_cleanup = EventStreamCleanup {
+        jetstream: jetstream.clone(),
+        namespace: isolated_namespace,
+        armed: true,
+    };
+    let registration_subject = format!("{}.tenant.registered", event_topology.subject_prefix);
     let registration_event_id: Uuid = sqlx::query_scalar(
         "SELECT event_id FROM tenant_registry.outbox_events WHERE aggregate_id=$1 AND event_type='tenant.registered'",
     )
@@ -645,12 +785,27 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let published_count = platform_tenant_registry::infrastructure::outbox_relay::relay_batch(
         &runtime_pool,
         &jetstream,
+        &event_topology.subject_prefix,
     )
     .await
     .expect("tenant outbox relay publishes through the real JetStream client");
     assert!(
         published_count > 0,
         "outbox events are acknowledged durably"
+    );
+    let isolated_stream = jetstream
+        .get_stream(&isolated_topology.stream_name)
+        .await
+        .expect("second isolated stream remains available");
+    let isolated_subject = format!("{}.tenant.registered", isolated_topology.subject_prefix);
+    let isolated_read = isolated_stream
+        .get_last_raw_message_by_subject(&isolated_subject)
+        .await;
+    assert!(
+        isolated_read.is_err_and(|error| {
+            error.kind() == async_nats::jetstream::stream::LastRawMessageErrorKind::NoMessageFound
+        }),
+        "an event published to one E2E namespace is absent from another"
     );
     let outbox_published: bool = sqlx::query_scalar(
         "SELECT published_at IS NOT NULL FROM tenant_registry.outbox_events WHERE event_id=$1",
@@ -664,7 +819,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         "Outbox is marked only after JetStream ack"
     );
     let event_message = stream
-        .get_last_raw_message_by_subject("payvia.platform.events.v1.tenant.registered")
+        .get_last_raw_message_by_subject(&registration_subject)
         .await
         .expect("JetStream durably stores tenant registration event");
     let event_envelope: serde_json::Value = serde_json::from_slice(&event_message.payload)
@@ -895,11 +1050,15 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             .expect("second tenant identifier is present"),
     )
     .expect("second tenant identifier is a UUID");
-    platform_tenant_registry::infrastructure::outbox_relay::relay_batch(&runtime_pool, &jetstream)
-        .await
-        .expect("second tenant registration publishes through the real JetStream relay");
+    platform_tenant_registry::infrastructure::outbox_relay::relay_batch(
+        &runtime_pool,
+        &jetstream,
+        &event_topology.subject_prefix,
+    )
+    .await
+    .expect("second tenant registration publishes through the real JetStream relay");
     let second_tenant_event = stream
-        .get_last_raw_message_by_subject("payvia.platform.events.v1.tenant.registered")
+        .get_last_raw_message_by_subject(&registration_subject)
         .await
         .expect("JetStream durably stores second tenant registration");
     let second_tenant_envelope: serde_json::Value =
@@ -1041,7 +1200,10 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .expect("tenant realtime audience cannot cross tenant boundary");
     assert_eq!(foreign_tenant_replay.status(), StatusCode::FORBIDDEN);
     let status_event_message = stream
-        .get_last_raw_message_by_subject("payvia.platform.events.v1.tenant.status.changed")
+        .get_last_raw_message_by_subject(&format!(
+            "{}.tenant.status.changed",
+            event_topology.subject_prefix
+        ))
         .await
         .expect("JetStream durably stores administrative status events");
     platform_realtime::infrastructure::grpc::realtime_gateway_api::persist_and_publish(
@@ -1326,6 +1488,17 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             .any(|value| value.contains(&operator_csrf_cookie))
     );
 
+    let mut isolated_stream_cleanup = isolated_stream_cleanup;
+    isolated_stream_cleanup.cleanup().await;
+    let mut event_stream_cleanup = event_stream_cleanup;
+    event_stream_cleanup.cleanup().await;
+    assert!(
+        jetstream
+            .get_stream(&event_topology.stream_name)
+            .await
+            .is_err_and(is_stream_not_found)
+    );
+
     let _ = http_stop.send(());
     http_task
         .await
@@ -1338,23 +1511,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .expect("runtime server stops cleanly");
     runtime_pool.close().await;
     migration_pool.close().await;
-    sqlx::query(
-        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()",
-    )
-        .bind(&database_name)
-        .execute(&admin_pool)
-        .await
-        .expect("temporary database sessions terminate");
-    sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
-        "DROP DATABASE \"{database_name}\""
-    )))
-    .execute(&admin_pool)
-    .await
-    .expect("temporary acceptance database is dropped");
-    sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP ROLE \"{runtime_role}\"")))
-        .execute(&admin_pool)
-        .await
-        .expect("temporary runtime role is dropped");
+    database_cleanup.cleanup().await;
     admin_pool.close().await;
     provider.shutdown().expect("trace provider shuts down");
 }

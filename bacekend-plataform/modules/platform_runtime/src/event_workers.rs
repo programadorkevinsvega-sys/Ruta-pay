@@ -1,6 +1,7 @@
+use crate::event_topology::EventTopology;
 use async_nats::{
     ConnectOptions,
-    jetstream::{self, consumer::AckPolicy, stream::RetentionPolicy},
+    jetstream::{self, consumer::AckPolicy},
 };
 use platform_identity_access::infrastructure::outbox_relay as identity_outbox;
 use platform_identity_access::infrastructure::tenant_membership_consumer::{
@@ -12,11 +13,6 @@ use std::{env, time::Duration};
 use tokio::{sync::watch, time};
 use tokio_stream::StreamExt;
 
-const STREAM_NAME: &str = "PAYVIA_PLATFORM_EVENTS";
-const TENANT_REGISTERED_SUBJECT: &str = "payvia.platform.events.v1.tenant.registered";
-const TENANT_MEMBERSHIP_CONSUMER: &str = "PLATFORM_TENANT_OWNER_PROVISIONER";
-const REALTIME_JOURNAL_CONSUMER: &str = "PLATFORM_REALTIME_JOURNAL";
-
 pub async fn run(
     pool: PgPool,
     redis_url: String,
@@ -26,9 +22,21 @@ pub async fn run(
     mut shutdown: watch::Receiver<bool>,
 ) {
     let mut backoff = Duration::from_secs(1);
-    let namespace = env::var("PLATFORM_EVENT_CONSUMER_NAMESPACE").unwrap_or_default();
-    let membership_consumer_name = consumer_name(TENANT_MEMBERSHIP_CONSUMER, &namespace);
-    let realtime_consumer_name = consumer_name(REALTIME_JOURNAL_CONSUMER, &namespace);
+    let namespace = env::var("PLATFORM_EVENT_NAMESPACE").ok();
+    let topology = match EventTopology::from_namespace(namespace.as_deref()) {
+        Ok(topology) => topology,
+        Err(error_code) => {
+            tracing::error!(
+                event.name = "service.configuration.invalid",
+                component = "platform_event_runtime",
+                operation = "configure_event_topology",
+                error_code,
+                error_category = "configuration",
+                retryable = false
+            );
+            return;
+        }
+    };
     loop {
         let client = match ConnectOptions::with_user_and_password(
             username.clone(),
@@ -57,15 +65,15 @@ pub async fn run(
             }
         };
         let jetstream = jetstream::new(client);
-        let stream = match ensure_stream(&jetstream).await {
+        let stream = match topology.ensure_stream(&jetstream).await {
             Ok(stream) => stream,
-            Err(()) => {
+            Err(error_code) => {
                 tracing::error!(
                     event.name = "service.startup.dependency.failed",
                     component = "platform_event_runtime",
                     operation = "ensure_event_stream",
                     dependency = "nats_jetstream",
-                    error_code = "jetstream_stream_unavailable",
+                    error_code,
                     error_category = "dependency",
                     retryable = true
                 );
@@ -77,7 +85,14 @@ pub async fn run(
                 continue;
             }
         };
-        let consumer = match ensure_membership_consumer(&stream, &membership_consumer_name).await {
+        let membership_subject = format!("{}.tenant.registered", topology.subject_prefix);
+        let consumer = match ensure_membership_consumer(
+            &stream,
+            &topology.membership_consumer,
+            &membership_subject,
+        )
+        .await
+        {
             Ok(consumer) => consumer,
             Err(()) => {
                 tracing::error!(
@@ -97,8 +112,13 @@ pub async fn run(
                 continue;
             }
         };
-        let realtime_consumer = match ensure_realtime_consumer(&stream, &realtime_consumer_name)
-            .await
+        let realtime_filter = format!("{}.>", topology.subject_prefix);
+        let realtime_consumer = match ensure_realtime_consumer(
+            &stream,
+            &topology.realtime_consumer,
+            &realtime_filter,
+        )
+        .await
         {
             Ok(consumer) => consumer,
             Err(()) => {
@@ -123,13 +143,13 @@ pub async fn run(
             event.name = "service.dependency.connected",
             component = "platform_event_runtime",
             dependency = "nats_jetstream",
-            stream = STREAM_NAME,
-            consumer = %membership_consumer_name
+            stream = %topology.stream_name,
+            consumer = %topology.membership_consumer
         );
         let mut workers_shutdown = shutdown.clone();
         tokio::select! {
             result = workers_shutdown.changed() => if result.is_err() || *workers_shutdown.borrow() { return; },
-            _ = run_relays(pool.clone(), jetstream, shutdown.clone()) => {},
+            _ = run_relays(pool.clone(), jetstream, topology.subject_prefix.clone(), shutdown.clone()) => {},
             _ = run_membership_consumer(pool.clone(), consumer, shutdown.clone()) => {},
             _ = run_realtime_consumer(pool.clone(), redis_url.clone(), realtime_consumer, shutdown.clone()) => {},
         }
@@ -146,13 +166,14 @@ pub async fn run(
 async fn ensure_realtime_consumer(
     stream: &jetstream::stream::Stream,
     name: &str,
+    filter_subject: &str,
 ) -> Result<jetstream::consumer::PullConsumer, ()> {
     stream
         .get_or_create_consumer(
             name,
             jetstream::consumer::pull::Config {
                 durable_name: Some(name.to_owned()),
-                filter_subject: "payvia.platform.events.v1.>".to_owned(),
+                filter_subject: filter_subject.to_owned(),
                 deliver_policy: jetstream::consumer::DeliverPolicy::New,
                 ack_policy: AckPolicy::Explicit,
                 ack_wait: Duration::from_secs(30),
@@ -165,32 +186,17 @@ async fn ensure_realtime_consumer(
         .map_err(|_| ())
 }
 
-async fn ensure_stream(jetstream: &jetstream::Context) -> Result<jetstream::stream::Stream, ()> {
-    jetstream
-        .get_or_create_stream(jetstream::stream::Config {
-            name: STREAM_NAME.to_owned(),
-            subjects: vec!["payvia.platform.events.v1.>".to_owned()],
-            retention: RetentionPolicy::Limits,
-            storage: jetstream::stream::StorageType::File,
-            duplicate_window: Duration::from_secs(120),
-            max_age: Duration::from_secs(90 * 24 * 60 * 60),
-            max_messages: 10_000_000,
-            ..Default::default()
-        })
-        .await
-        .map_err(|_| ())
-}
-
 async fn ensure_membership_consumer(
     stream: &jetstream::stream::Stream,
     name: &str,
+    filter_subject: &str,
 ) -> Result<jetstream::consumer::PullConsumer, ()> {
     stream
         .get_or_create_consumer(
             name,
             jetstream::consumer::pull::Config {
                 durable_name: Some(name.to_owned()),
-                filter_subject: TENANT_REGISTERED_SUBJECT.to_owned(),
+                filter_subject: filter_subject.to_owned(),
                 deliver_policy: jetstream::consumer::DeliverPolicy::New,
                 ack_policy: AckPolicy::Explicit,
                 ack_wait: Duration::from_secs(30),
@@ -203,27 +209,20 @@ async fn ensure_membership_consumer(
         .map_err(|_| ())
 }
 
-fn consumer_name(base: &str, namespace: &str) -> String {
-    if namespace.is_empty() {
-        base.to_owned()
-    } else {
-        format!("{base}_{namespace}")
-    }
-}
-
 async fn run_relays(
     pool: PgPool,
     jetstream: jetstream::Context,
+    subject_prefix: String,
     mut shutdown: watch::Receiver<bool>,
 ) {
     let mut interval = time::interval(Duration::from_millis(500));
     loop {
         tokio::select! {
             _ = interval.tick() => {
-                if let Err(error) = identity_outbox::relay_batch(&pool, &jetstream).await {
+                if let Err(error) = identity_outbox::relay_batch(&pool, &jetstream, &subject_prefix).await {
                     tracing::error!(event.name = "outbox.relay.failed", component = "identity_access", operation = "claim_or_mark_outbox", dependency = "postgresql", error_code = error.as_database_error().and_then(|cause| cause.code()).as_deref().unwrap_or("database_error"), error_category = "persistence", correlation_id = "unavailable", retryable = true);
                 }
-                if let Err(error) = tenant_outbox::relay_batch(&pool, &jetstream).await {
+                if let Err(error) = tenant_outbox::relay_batch(&pool, &jetstream, &subject_prefix).await {
                     tracing::error!(event.name = "outbox.relay.failed", component = "tenant_registry", operation = "claim_or_mark_outbox", dependency = "postgresql", error_code = error.as_database_error().and_then(|cause| cause.code()).as_deref().unwrap_or("database_error"), error_category = "persistence", correlation_id = "unavailable", retryable = true);
                 }
             }

@@ -31,7 +31,8 @@ migration_role="payvia_migrator_e2e_${suffix}"
 migration_password="$(python3 -c 'import secrets; print(secrets.token_urlsafe(36))')"
 operator_email="e2e_${suffix}@example.test"
 operator_password="$(python3 -c 'import secrets; print("Aa1!" + secrets.token_urlsafe(30))')"
-credentials_file="/tmp/payvia-platform-e2e-operator.json"
+event_namespace="e2e_${suffix}"
+credentials_file="/tmp/payvia-platform-e2e-operator-${suffix}.json"
 backend_log="$(mktemp)"
 frontend_log="$(mktemp)"
 second_backend_log="$(mktemp)"
@@ -85,24 +86,37 @@ PYURL
 )"
 migration_url="$(printf '%s\n' "${urls}" | sed -n '1p')"
 database_url="$(printf '%s\n' "${urls}" | sed -n '2p')"
+cargo build --locked --manifest-path "${workspace_root}/Cargo.toml" -p bacekend-plataform --bin cleanup-platform-e2e-stream
 stop_tree() {
     local parent="$1"
     local child
-    while read -r child; do
-        [[ -n "${child}" ]] && stop_tree "${child}"
-    done < <(pgrep -P "${parent}" || true)
+    local attempt
+    local children=()
+    mapfile -t children < <(pgrep -P "${parent}" || true)
+    for child in "${children[@]}"; do stop_tree "${child}"; done
     kill -TERM "${parent}" 2>/dev/null || true
+    for attempt in $(seq 1 50); do
+        if ! kill -0 "${parent}" 2>/dev/null; then return; fi
+        sleep 0.1
+    done
+    kill -KILL "${parent}" 2>/dev/null || true
 }
 cleanup() {
+    local test_status="$?"
+    local cleanup_status=0
+    set +e
     if [[ -n "${frontend_pid}" ]]; then stop_tree "${frontend_pid}"; wait "${frontend_pid}" 2>/dev/null || true; fi
     if [[ -n "${backend_pid}" ]]; then stop_tree "${backend_pid}"; wait "${backend_pid}" 2>/dev/null || true; fi
     if [[ -n "${second_frontend_pid}" ]]; then stop_tree "${second_frontend_pid}"; wait "${second_frontend_pid}" 2>/dev/null || true; fi
     if [[ -n "${second_backend_pid}" ]]; then stop_tree "${second_backend_pid}"; wait "${second_backend_pid}" 2>/dev/null || true; fi
-    rm -f "${credentials_file}" "${backend_log}" "${frontend_log}" "${second_backend_log}" "${second_frontend_log}"
-    psql "${admin_url}" -qAtc "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${database_name}'" >/dev/null || true
-    dropdb --if-exists --maintenance-db="${admin_url}" "${database_name}" || true
-    psql "${admin_url}" -qAtc "DROP ROLE IF EXISTS \"${runtime_role}\"" >/dev/null || true
-    psql "${admin_url}" -qAtc "DROP ROLE IF EXISTS \"${migration_role}\"" >/dev/null || true
+    PLATFORM_EVENT_NAMESPACE="${event_namespace}" cargo run --quiet --locked --manifest-path "${workspace_root}/Cargo.toml" -p bacekend-plataform --bin cleanup-platform-e2e-stream || cleanup_status="$?"
+    rm -f "${credentials_file}" "${backend_log}" "${frontend_log}" "${second_backend_log}" "${second_frontend_log}" || cleanup_status=1
+    psql "${admin_url}" -v ON_ERROR_STOP=1 -qAtc "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${database_name}'" >/dev/null || cleanup_status=1
+    dropdb --if-exists --maintenance-db="${admin_url}" "${database_name}" || cleanup_status=1
+    psql "${admin_url}" -v ON_ERROR_STOP=1 -qAtc "DROP ROLE IF EXISTS \"${runtime_role}\"" >/dev/null || cleanup_status=1
+    psql "${admin_url}" -v ON_ERROR_STOP=1 -qAtc "DROP ROLE IF EXISTS \"${migration_role}\"" >/dev/null || cleanup_status=1
+    if [[ "${test_status}" -eq 0 && "${cleanup_status}" -ne 0 ]]; then test_status="${cleanup_status}"; fi
+    return "${test_status}"
 }
 trap cleanup EXIT
 trap 'exit 130' INT
@@ -116,10 +130,11 @@ psql "${admin_url}" -v ON_ERROR_STOP=1 -c "GRANT CONNECT ON DATABASE \"${databas
 PLATFORM_MIGRATION_DATABASE_URL="${migration_url}" PLATFORM_DATABASE_URL="${database_url}" PLATFORM_RUNTIME_DB_ROLE="${runtime_role}" cargo run --locked --manifest-path "${workspace_root}/Cargo.toml" -p bacekend-plataform --bin migrate-platform
 psql "${migration_url}" -v ON_ERROR_STOP=1 -c "GRANT USAGE ON SCHEMA identity_access, tenant_registry, realtime TO \"${runtime_role}\"; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity_access, tenant_registry, realtime TO \"${runtime_role}\"; GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA identity_access, tenant_registry, realtime TO \"${runtime_role}\"; ALTER DEFAULT PRIVILEGES IN SCHEMA identity_access, tenant_registry, realtime GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO \"${runtime_role}\"; ALTER DEFAULT PRIVILEGES IN SCHEMA identity_access, tenant_registry, realtime GRANT USAGE, SELECT ON SEQUENCES TO \"${runtime_role}\"" >/dev/null
 export PLATFORM_DATABASE_URL="${database_url}"
-export PLATFORM_EVENT_CONSUMER_NAMESPACE="E2E_${suffix}"
+export PLATFORM_EVENT_NAMESPACE="${event_namespace}"
 export E2E_OPERATOR_EMAIL="${operator_email}"
 export E2E_OPERATOR_PASSWORD="${operator_password}"
 E2E_OPERATOR_CREDENTIALS="${credentials_file}" python3 -c 'import json, os; path=os.environ["E2E_OPERATOR_CREDENTIALS"]; os.umask(0o077); open(path,"w").write(json.dumps({"email":os.environ["E2E_OPERATOR_EMAIL"],"password":os.environ["E2E_OPERATOR_PASSWORD"]}))'
+export E2E_OPERATOR_CREDENTIALS="${credentials_file}"
 printf '%s\n%s\n' "${operator_password}" "${operator_password}" | cargo run --locked --manifest-path "${workspace_root}/Cargo.toml" -p bacekend-plataform --bin bootstrap-platform-operator -- "${operator_email}" --password-stdin
 export APP_ENV=test
 export APP_HTTP_ADDR="127.0.0.1:${app_http_port}"

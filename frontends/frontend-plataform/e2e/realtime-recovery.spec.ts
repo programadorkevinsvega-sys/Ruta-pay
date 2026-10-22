@@ -3,9 +3,10 @@ import { readFile } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { expect, test } from "@playwright/test";
 
-const credentialsPath = "/tmp/payvia-platform-e2e-operator.json";
+const credentialsPath = process.env.E2E_OPERATOR_CREDENTIALS;
 
 test("el BFF recupera realtime tras reiniciar Redis y JetStream", async ({ browser, page, request }) => {
+  if (!credentialsPath) throw new Error("E2E_OPERATOR_CREDENTIALS is required");
   console.info("recovery: register tenant through BFF");
   expect(process.env.PAYVIA_EVENT_RESTART_ACCEPTANCE).toBe("1");
   const responses: number[] = [];
