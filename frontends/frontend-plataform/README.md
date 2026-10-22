@@ -3,6 +3,8 @@
 # Ruta-pay
 
 **Orquestador de pagos multi-pasarela en Rust.**
+
+Ruta en el repositorio: `frontends/frontend-plataform/`.
 Aplicación de administración de la plataforma SaaS Payvia.
 
 ![Rust](https://img.shields.io/badge/Rust-2021-orange?logo=rust)
@@ -51,7 +53,7 @@ Las operaciones de impacto requieren mostrar objetivo y efecto antes de confirma
 
 La app escuchará señales de plataforma por un WebSocket autenticado con audiencia de administración. Puede presentar el estado operacional y entregas de webhooks a comercios que el operador esté autorizado a consultar; no recibe la credencial ni el secreto del comercio. Los detalles se recuperan por REST/cursor para reconciliar huecos. La ruta WebSocket y los recursos de soporte se definirán en el contrato backend; todavía no están disponibles.
 
-Los webhooks de negocio a los servidores de comercios los genera plataforma con firma `X-Payvia-Signature` y `User-Agent: Payvia-Worker/1.0.0`. Su payload y controles de verificación están descritos en el [README principal](../README.md#webhooks-hacia-tu-servidor). Esta consola solo ofrece supervisión autorizada, no despacho desde el navegador.
+Los webhooks de negocio a los servidores de comercios los genera plataforma con firma `X-Payvia-Signature` y `User-Agent: Payvia-Worker/1.0.0`. Su payload y controles de verificación están descritos en el [README principal](../../README.md#webhooks-hacia-tu-servidor). Esta consola solo ofrece supervisión autorizada, no despacho desde el navegador.
 
 ## Controles de comunicación inter-backend
 
@@ -75,8 +77,8 @@ Planificación. No se considera implementada una operación administrativa por e
 ## Documentación relacionada
 
 - [Roadmap de frontend-plataform](ROADMAP.md)
-- [Backend de plataforma](../bacekend-plataform/README.md)
-- [Backend de pasarelas](../bacekend-pasarela/README.md)
-- [Arquitectura del producto](../ARCHITECTURE_RULES.md)
-- [Reglas específicas del proyecto](../PROJECT_RULES.md)
-- [README principal](../README.md)
+- [Backend de plataforma](../../bacekend-plataform/README.md)
+- [Backend de pasarelas](../../bacekend-pasarela/README.md)
+- [Arquitectura del producto](../../ARCHITECTURE_RULES.md)
+- [Reglas específicas del proyecto](../../PROJECT_RULES.md)
+- [README principal](../../README.md)

@@ -1,6 +1,8 @@
 # Roadmap — Frontend de Comercios y Pasarelas Payvia
 
 > Esta aplicación es la experiencia del comercio para gestionar cobros e integraciones. Usa exclusivamente REST/OpenAPI y WebSocket autenticado del BFF de plataforma. No se conecta directamente al backend de pasarelas.
+
+Ruta en el repositorio: `frontends/frontend-pasarela/`.
 >
 > Estado inicial: planificación. No hay fases completadas por la existencia de documentación o scaffolds.
 
@@ -8,7 +10,7 @@
 
 El frontend es una aplicación independiente React + TypeScript para usuarios tenant. Plataforma mantiene la autoridad de identidad, autorización, aislamiento tenant, límites, estado de pagos y credenciales. La UI solo presenta esos datos y solicita operaciones al BFF. La configuración de un proveedor se enruta mediante plataforma hacia el módulo de proveedor autorizado; el browser nunca accede a gRPC o a la API del proveedor.
 
-Desde el primer día, cada fase/subfase cumple los requisitos aplicables de calidad, seguridad, observabilidad, arquitectura modular y aceptación definidos en [AGENTS.md](../AGENTS.md), [ARCHITECTURE_RULES.md](../ARCHITECTURE_RULES.md), [PROJECT_RULES.md](../PROJECT_RULES.md) y los documentos normativos de ambos backends. Todo requisito no aplicable debe tener justificación concreta y verificable registrada antes de implementar la fase/subfase.
+Desde el primer día, cada fase/subfase cumple los requisitos aplicables de calidad, seguridad, observabilidad, arquitectura modular y aceptación definidos en [AGENTS.md](../../AGENTS.md), [ARCHITECTURE_RULES.md](../../ARCHITECTURE_RULES.md), [PROJECT_RULES.md](../../PROJECT_RULES.md) y los documentos normativos de ambos backends. Todo requisito no aplicable debe tener justificación concreta y verificable registrada antes de implementar la fase/subfase.
 
 No se introducen accesos directos del navegador a PostgreSQL, Redis, NATS, gRPC, módulos internos, almacenamiento de secretos ni proveedores. Redis y NATS son N/A como dependencias directas del frontend: el cliente solo usa los contratos públicos del BFF. La distribución durable y la recuperación del estado son responsabilidad de backend; el frontend implementa WebSocket autenticado, cursores, reconexión, deduplicación y recuperación REST según el contrato. Cada subfase documenta y verifica esta matriz; no se asume N/A para la API o realtime.
 

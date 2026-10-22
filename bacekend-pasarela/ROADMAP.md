@@ -24,7 +24,7 @@ Toda aceptación de error prueba diagnóstico específico y respuesta final con 
 - [ ] Definir por ADR contrato gRPC, concesión firmada, identidad de servicio, migraciones compartidas coordinadas, subjects/eventos y aceptación cross-backend.
 - [ ] Definir contrato gRPC plataforma→pasarelas `ExecuteAuthorizedGatewayOperation`: concesión firmada ligada al comando, vigencia, identidad de servicio, errores y correlación.
 - [ ] Definir contratos de evento Outbox/JetStream para callback verificado y resultado proveedor.
-- [ ] Definir workspace, registro de módulos y reglas de independencia por proveedor.
+- [ ] Completar la estructura de crates/binarios de pasarelas dentro del workspace Cargo raíz, el registro de módulos y las reglas de independencia por proveedor.
 - [ ] Crear threat model: credenciales, llamadas financieras, callbacks falsos/replay, tenant incorrecto, SSRF/egress y caída del authz.
 
 **Salida:** contratos versionados, ownership, threat model, sandbox/credenciales y matrices de integración aprobados.

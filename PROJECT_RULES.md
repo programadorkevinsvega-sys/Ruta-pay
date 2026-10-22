@@ -2,6 +2,9 @@
 
 ## Autoridad y alcance
 
+El workspace Cargo es único y está configurado en el `Cargo.toml` de la raíz, que incluye ambos backends; cada backend tiene un manifiesto de paquete miembro que hereda la configuración común; ambos backends se compilan desde esa resolución compartida como aplicaciones y despliegues independientes. No se permiten workspaces anidados por backend ni dependencias de implementación cruzadas. Los frontends viven en `frontends/frontend-pasarela/` y `frontends/frontend-plataform/`, cada uno como aplicación web separada.
+
+
 - [ROADMAP.md](ROADMAP.md) define el alcance del producto, sus fases y criterios de salida.
 - [ARCHITECTURE_RULES.md](ARCHITECTURE_RULES.md) contiene el contrato arquitectónico universal para el monolito modular Rust. Es una copia de [las reglas canónicas](bacekend-pasarela/reglas-estrictas-de-arquitectura-monolito-modular-rust-universal.md); cualquier cambio a reglas universales debe conservar su sincronización.
 - Los prompts de [calidad](bacekend-pasarela/PROMPT_MAESTRO_ENTERPRISE_QUALITY_ENGINEERING_PARA_PROYECTOS_RUST.md) y [observabilidad](bacekend-pasarela/PROMPT_MAESTRO_IMPLEMENTACION_DE_OBSERVABILIDAD_TRAZABILIDAD_Y_MONITOREO_EMPRESARIAL_EN_RUST.md) fijan el método de verificación y diagnóstico.

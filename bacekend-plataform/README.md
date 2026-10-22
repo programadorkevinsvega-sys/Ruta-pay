@@ -58,7 +58,7 @@ Los módulos de plataforma son crates con ownership propio. El BFF no contiene n
 
 Stack objetivo: Rust/Tokio, Axum, `tonic`/`prost`, SQLx, PostgreSQL 15+, Redis con TTL, NATS JetStream/Outbox, OpenTelemetry, Sentry, React/TypeScript para los clientes. Para ejecutar una instalación local completa se necesitarán toolchains fijados, servicios de desarrollo, secretos de aplicación y, al probar pagos, credenciales oficiales sandbox.
 
-El crate actual es un scaffold y aún no existe configuración reproducible de workspace, base de datos, NATS, Redis o BFF. Por eso todavía no hay comandos de instalación/arranque que se puedan declarar verificados. No uses los siguientes contratos de ejemplo como endpoints disponibles hasta que OpenAPI esté publicado.
+El crate actual es un scaffold y aún no existe configuración reproducible del workspace Cargo raíz compartido, base de datos, NATS, Redis o BFF. Por eso todavía no hay comandos de instalación/arranque que se puedan declarar verificados. No uses los siguientes contratos de ejemplo como endpoints disponibles hasta que OpenAPI esté publicado.
 
 ## Uso de la API pública (contrato objetivo)
 

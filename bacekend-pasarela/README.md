@@ -51,7 +51,7 @@ En callbacks, el proveedor llama el endpoint público del adapter correspondient
 
 Stack objetivo: Rust/Tokio, `tonic`/`prost`, clientes HTTP async, PostgreSQL/SQLx, NATS JetStream/Outbox, Redis solo cuando se justifique con TTL, OpenTelemetry y Sentry. Cada integración real requiere cuenta elegible y credenciales del sandbox oficial del proveedor.
 
-El código presente es scaffold: no hay workspace, adapters, migraciones ni servicio HTTP/gRPC listos para operar. Por eso no existe aún una instalación o comando de ejecución verificable. Los ejemplos siguientes describen responsabilidades/contratos planeados, no rutas activas.
+El código presente es scaffold: el paquete binario es miembro del workspace Cargo raíz, pero todavía no hay adapters, migraciones ni servicio HTTP/gRPC listo para operar. Por eso no existe aún una instalación o comando de ejecución verificable. Los ejemplos siguientes describen responsabilidades/contratos planeados, no rutas activas.
 
 ## API de servicio y callbacks
 
@@ -73,7 +73,7 @@ La plataforma remite altas, rotaciones y revocaciones de credenciales al contrat
 
 ## Instalación
 
-Todavía no hay comandos ejecutables verificados. Para completar una prueba real se necesitan el workspace/servicios de desarrollo, migraciones y credenciales sandbox oficiales. No marques un adapter listo hasta ejecutar contrato y flujo con el entorno oficial; mocks o tipos por sí solos no verifican integración.
+Todavía no hay comandos ejecutables verificados. Para completar una prueba real se necesitan la configuración del workspace Cargo raíz/servicios de desarrollo, migraciones y credenciales sandbox oficiales. No marques un adapter listo hasta ejecutar contrato y flujo con el entorno oficial; mocks o tipos por sí solos no verifican integración.
 
 ## Límite de negocio
 

@@ -87,7 +87,7 @@ Una fase se considera terminada solo cuando cumple **todo** lo siguiente:
 ### Fase 0: Arquitectura y estructura del proyecto
 **Objetivo:** base técnica reproducible. **Duración:** 2 a 3 días.
 
-- [ ] **0.1 Workspaces modulares Rust:** backend plataforma para tenants, identidad, planes, precios, límites, suscripciones, facturación y dominio de pagos; backend pasarelas con `gateway_wompi`, `gateway_bold` y futuros `gateway_<provider>`. Cada aplicación tiene ownership modular propio; evitar crates genéricos `core`/`db` como dueños de dominio.
+- [ ] **0.1 Workspace Cargo único:** verificar los paquetes de backend ya registrados en el workspace Cargo de la raíz, completar la estructura de sus crates/binarios y mantener una sola resolución/`Cargo.lock`. Mantener aplicaciones y despliegues independientes, ownership modular propio y sin dependencias de implementación cruzadas. Plataforma contiene tenants, identidad, planes, precios, límites, suscripciones, facturación y dominio de pagos; pasarelas contiene `gateway_wompi`, `gateway_bold` y futuros `gateway_<provider>`. Evitar crates genéricos `core`/`db` como dueños de dominio.
 - [ ] **0.2 Infraestructura local:** `docker-compose.yml` con Postgres, Redis y NATS JetStream.
 - [ ] **0.3 Configuración tipada:** carga de `.env`, falla rápido si falta una variable.
 - [ ] **0.4 Convenciones:** errores tipados (`thiserror`), logging estructurado con `tracing`, `correlation_id` y `trace_id` por petición.
@@ -95,10 +95,10 @@ Una fase se considera terminada solo cuando cumple **todo** lo siguiente:
 - [ ] **0.6 Límites y amenazas:** diagrama de contexto, flujos de pago/webhook, trust boundaries, manejo de secretos y responsabilidades por módulo.
 - [ ] **0.7 Repositorio:** README, LICENSE, SECURITY.md, CONTRIBUTING.md, plantillas de issues y PR.
 - [ ] **0.8 Separación de backends:** ADR de topología, contratos gRPC plataforma→pasarelas, concesión de autorización y publicación de eventos pasarelas→plataforma, límites de datos, identidad de servicio, eventos y procedimiento de migración/despliegue.
-- [ ] **0.9 Aplicaciones frontend:** definir tenant y administración de plataforma como aplicaciones React + TypeScript independientes, ambas detrás del BFF REST/OpenAPI; establecer sesión, permisos, cliente API y coordinación TanStack Query.
+- [ ] **0.9 Aplicaciones frontend:** definir tenant y administración de plataforma como aplicaciones React + TypeScript independientes en `frontends/frontend-pasarela/` y `frontends/frontend-plataform/`, ambas detrás del BFF REST/OpenAPI; establecer sesión, permisos, cliente API y coordinación TanStack Query.
 - [ ] **0.10 Telemetría base:** fijar esquema de logs/eventos, propagación W3C, métricas, exportación OpenTelemetry, captura Sentry, redacción y salud del propio pipeline.
 
-**Criterio de salida:** ambos backends compilan como monolitos modulares independientes; servicios locales requeridos tienen configuración documentada; ownership, contratos/autorización entre backends, ambas aplicaciones frontend, flujo frontend→BFF→gRPC, telemetría y límites de confianza quedan definidos. Las ADRs de contratos, ownership y operación están aprobadas. No se considera producto ejecutable por compilar un workspace vacío.
+**Criterio de salida:** ambos backends compilan desde el workspace Cargo único de la raíz como binarios/aplicaciones monolíticas modulares y despliegues independientes; servicios locales requeridos tienen configuración documentada; ownership, contratos/autorización entre backends, ambas aplicaciones frontend, flujo frontend→BFF→gRPC, telemetría y límites de confianza quedan definidos. Las ADRs de contratos, ownership y operación están aprobadas. No se considera producto ejecutable por compilar un workspace vacío.
 
 ---
 

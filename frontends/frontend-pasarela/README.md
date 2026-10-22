@@ -3,6 +3,8 @@
 # Ruta-pay
 
 **Orquestador de pagos multi-pasarela en Rust.**
+
+Ruta en el repositorio: `frontends/frontend-pasarela/`.
 Aplicación web del comercio para operar pagos, links, credenciales e integraciones habilitadas.
 
 ![Rust](https://img.shields.io/badge/Rust-2021-orange?logo=rust)
@@ -45,9 +47,9 @@ La app aún no tiene `package.json`, lockfile ni servidor implementado; no exist
 
 ## Uso de la API
 
-El frontend llamará a la API pública a través del BFF. La forma objetivo de crear un pago es `POST /v1/payment_intents`; un ejemplo de integración de servidor está en el [README principal](../README.md#uso-de-la-api). La app no debe incrustar una API Key secreta de servidor ni hacer llamadas financieras privilegiadas desde el browser. El backend emite el link/QR final y la interfaz solo lo presenta.
+El frontend llamará a la API pública a través del BFF. La forma objetivo de crear un pago es `POST /v1/payment_intents`; un ejemplo de integración de servidor está en el [README principal](../../README.md#uso-de-la-api). La app no debe incrustar una API Key secreta de servidor ni hacer llamadas financieras privilegiadas desde el browser. El backend emite el link/QR final y la interfaz solo lo presenta.
 
-El resultado usa un `payment_method` normalizado discriminado: `card`, `pse` o `crypto`, con detalles seguros específicos de ese tipo. El selector de método/cuenta en una solicitud es un contrato de entrada separado y se limitará a las capacidades publicadas por la API; no enviar detalles de liquidación o IDs de transacción del proveedor como datos de entrada. Revisa los ejemplos card/PSE/cripto y el contrato de webhook en el [README principal](../README.md#webhooks-hacia-tu-servidor).
+El resultado usa un `payment_method` normalizado discriminado: `card`, `pse` o `crypto`, con detalles seguros específicos de ese tipo. El selector de método/cuenta en una solicitud es un contrato de entrada separado y se limitará a las capacidades publicadas por la API; no enviar detalles de liquidación o IDs de transacción del proveedor como datos de entrada. Revisa los ejemplos card/PSE/cripto y el contrato de webhook en el [README principal](../../README.md#webhooks-hacia-tu-servidor).
 
 ## Escuchar el estado en tiempo real
 
@@ -55,7 +57,7 @@ Un coordinador central mantendrá el WebSocket autenticado del BFF para la sesi�
 
 ## Webhooks hacia tu servidor
 
-El comercio configura su endpoint desde el dashboard. La entrega es responsabilidad del worker de plataforma, no del frontend ni del backend de adapters. Payvia hará un `POST` HTTPS con `X-Payvia-Signature: t=<timestamp>,v1=<hmac_sha256>` y `User-Agent: Payvia-Worker/1.0.0`; el [README principal](../README.md#webhooks-hacia-tu-servidor) describe el payload propuesto.
+El comercio configura su endpoint desde el dashboard. La entrega es responsabilidad del worker de plataforma, no del frontend ni del backend de adapters. Payvia hará un `POST` HTTPS con `X-Payvia-Signature: t=<timestamp>,v1=<hmac_sha256>` y `User-Agent: Payvia-Worker/1.0.0`; el [README principal](../../README.md#webhooks-hacia-tu-servidor) describe el payload propuesto.
 
 La interfaz objetivo permite generar/rotar el secreto de endpoint con visualización única, inspeccionar entregas e intentos y solicitar reenvío si el usuario tiene permiso. No almacena el secreto y no marca una entrega exitosa por una señal visual: presenta el resultado durable comunicado por el backend. El flujo todavía no está implementado.
 
@@ -88,8 +90,8 @@ Planificación. No se declara disponible una pantalla o flujo hasta que su contr
 ## Documentación relacionada
 
 - [Roadmap de frontend-pasarela](ROADMAP.md)
-- [Backend de plataforma y su API](../bacekend-plataform/README.md)
-- [Backend técnico de pasarelas](../bacekend-pasarela/README.md)
-- [Arquitectura del producto](../ARCHITECTURE_RULES.md)
-- [Reglas específicas del proyecto](../PROJECT_RULES.md)
-- [README principal](../README.md)
+- [Backend de plataforma y su API](../../bacekend-plataform/README.md)
+- [Backend técnico de pasarelas](../../bacekend-pasarela/README.md)
+- [Arquitectura del producto](../../ARCHITECTURE_RULES.md)
+- [Reglas específicas del proyecto](../../PROJECT_RULES.md)
+- [README principal](../../README.md)

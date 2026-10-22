@@ -77,7 +77,7 @@ gRPC es para consultas y comandos que requieren una respuesta inmediata; el mód
 
 ## Credenciales de pasarela por tenant
 
-El comercio configura su cuenta en `frontend-pasarela`; el browser envía el secreto una sola vez al BFF de plataforma, que autoriza la operación y lo remite cifrado por mTLS/gRPC al módulo `gateway_credentials` del backend de pasarelas. Este módulo liga cada credencial a tenant, proveedor, cuenta y entorno, persiste solo ciphertext con cifrado autenticado envelope y obtiene la clave maestra de KMS/secret manager externo. El adapter correspondiente recibe el secreto en memoria solo para una operación autorizada. La plataforma no lo almacena, los adapters no duplican el almacenamiento y las APIs de lectura nunca lo vuelven a entregar.
+El comercio configura su cuenta en `frontends/frontend-pasarela`; el browser envía el secreto una sola vez al BFF de plataforma, que autoriza la operación y lo remite cifrado por mTLS/gRPC al módulo `gateway_credentials` del backend de pasarelas. Este módulo liga cada credencial a tenant, proveedor, cuenta y entorno, persiste solo ciphertext con cifrado autenticado envelope y obtiene la clave maestra de KMS/secret manager externo. El adapter correspondiente recibe el secreto en memoria solo para una operación autorizada. La plataforma no lo almacena, los adapters no duplican el almacenamiento y las APIs de lectura nunca lo vuelven a entregar.
 
 Rotación, revocación y cambios producen auditoría/eventos con referencias opacas y estado, nunca el secreto ni ciphertext. Los tests deben cubrir cifrado/descifrado, rotación, aislamiento tenant/entorno, acceso de adapter permitido/denegado y ausencia de secretos en DB en claro, NATS, logs, trazas, errores y navegador. La implementación está pendiente.
 
@@ -107,7 +107,7 @@ Rotación, revocación y cambios producen auditoría/eventos con referencias opa
 
 El diseño requiere Rust/Cargo para los backends, Node.js y un gestor de paquetes para cada frontend, y PostgreSQL, Redis y NATS JetStream en los entornos que los necesiten. Las versiones mínimas, archivos de entorno y comandos de instalación aún no están fijados en manifests ejecutables.
 
-En esta revisión todavía no existe una instalación integral que pueda ejecutarse de forma reproducible: los workspaces Rust, las aplicaciones web, las migraciones y la configuración de servicios están en planificación. Por ello no se presenta `cargo run`, `npm install` ni comandos de infraestructura como si fueran pasos funcionales. Consulta los roadmaps para el orden de implementación.
+En esta revisión todavía no existe una instalación integral que pueda ejecutarse de forma reproducible: el `Cargo.toml` raíz ya configura el workspace compartido y los backends son paquetes miembros, aunque todavía faltan crates/apps, dependencias y configuración reproducible; las aplicaciones web, las migraciones y la configuración de servicios también están en planificación. Por ello no se presenta `cargo run`, `npm install` ni comandos de infraestructura como si fueran pasos funcionales. Consulta los roadmaps para el orden de implementación.
 
 ## Uso de la API
 
@@ -241,8 +241,8 @@ La firma de llamadas/notificaciones de Binance Pay no se debe confundir con la f
 - [Roadmap integrado](ROADMAP.md)
 - [Backend de plataforma](bacekend-plataform/README.md) · [roadmap](bacekend-plataform/ROADMAP.md)
 - [Backend de pasarelas](bacekend-pasarela/README.md) · [roadmap](bacekend-pasarela/ROADMAP.md)
-- [Frontend de comercios](frontend-pasarela/README.md) · [roadmap](frontend-pasarela/ROADMAP.md)
-- [Frontend de administración](frontend-plataform/README.md) · [roadmap](frontend-plataform/ROADMAP.md)
+- [Frontend de comercios](frontends/frontend-pasarela/README.md) · [roadmap](frontends/frontend-pasarela/ROADMAP.md)
+- [Frontend de administración](frontends/frontend-plataform/README.md) · [roadmap](frontends/frontend-plataform/ROADMAP.md)
 - [Arquitectura](ARCHITECTURE_RULES.md) · [reglas de proyecto](PROJECT_RULES.md)
 
 ## Licencia

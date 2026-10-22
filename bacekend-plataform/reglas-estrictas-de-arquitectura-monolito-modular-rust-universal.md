@@ -24,14 +24,14 @@ No son material de consulta opcional ni una fase posterior: gobiernan planificac
 
 Los documentos duplicados entre backends deben conservarse sincronizados. Si hay solapamiento, se aplican conjuntamente: estas reglas fijan la topología y los límites de Payvia; el prompt de calidad rige el método y la evidencia de verificación; el prompt de observabilidad rige instrumentación, diagnóstico y monitoreo. Ante una incompatibilidad real, se detiene únicamente el trabajo afectado, se documenta el conflicto y se resuelve mediante decisión explícita antes de continuar; no se omite ni debilita silenciosamente un requisito.
 
-Payvia contiene dos backends desplegables e independientes, cada uno implementado como un **monolito modular Rust en su propio Cargo workspace**:
+Payvia contiene dos backends desplegables e independientes, que se organizarán como miembros del **workspace Cargo único definido por el `Cargo.toml` de la raíz del repositorio**. Compartir workspace, resolución de dependencias y `Cargo.lock` no los convierte en una sola aplicación ni elimina sus límites de despliegue:
 
 1. **Backend de plataforma:** tenant registry, identidad y permisos, API Keys, planes/precios/límites/cuotas, suscripciones, facturación de Payvia, reglas de negocio de payment intents/transacciones, auditoría, BFF tenant/admin, realtime y webhook delivery.
 2. **Backend de pasarelas:** adapters y protocolos técnicos de Wompi, Bold y proveedores futuros. Cada proveedor es un módulo/crate independiente; `gateway_credentials` posee el ciclo de vida y almacenamiento cifrado de credenciales tenant. Este backend no posee las reglas comerciales de tenant, planes, cuotas, facturación de Payvia ni transiciones de negocio de pagos.
 
 Cada backend es un límite de despliegue. Dentro de cada uno:
 
-- Cada módulo/bounded context es un **crate independiente** dentro del workspace de su backend y se compila/despliega junto a los demás crates de ese backend.
+- Cada módulo/bounded context es un **crate independiente** dentro del workspace raíz. Los bins/crates de plataforma y pasarelas conservan composición, configuración, permisos, datos y despliegue separados; un backend no importa la implementación interna del otro.
 - **Ningún crate de módulo depende ni importa código interno de otro módulo directamente.** La única comunicación permitida entre módulos es a través de:
   - (a) el contrato público del módulo (`module_public_api`, expuesto técnicamente como servicio **gRPC** vía `tonic`), o
   - (b) eventos de integración publicados en **NATS JetStream** (`async-nats`).
@@ -84,7 +84,7 @@ La frontera de despliegue actual no es un único monolito para todo Payvia: es u
    - métricas;
    - componentes técnicos que realmente sean transversales.
 
-El detalle completo de BFF/REST/Frontend está en la sección 9. La estructura de cada backend vive en su propio Cargo workspace; nunca se crea una dependencia Cargo entre crates de plataforma y pasarelas.
+El detalle completo de BFF/REST/Frontend está en la sección 9. Los dos backends pertenecen al workspace raíz, pero no se crea una dependencia de implementación entre crates de plataforma y pasarelas. Solo pueden compartir crates neutrales de contratos/tipos aprobados explícitamente; la comunicación de runtime sigue siendo gRPC/eventos autenticados.
 
 ### Regla de nombres
 
@@ -441,26 +441,32 @@ Nunca al revés.
 
 ---
 
-# 3. Estructura de carpetas obligatoria (Cargo Workspace)
+# 3. Estructura de carpetas obligatoria (workspace Cargo raíz)
 
-La estructura interna que sigue se aplica módulo por módulo. Cada carpeta backend tiene su propio `Cargo.toml` raíz; nunca hay un workspace Cargo común que convierta plataforma y pasarelas en una única aplicación. Sus entrypoints son distintos:
+La estructura interna se aplica módulo por módulo. El único manifiesto raíz de workspace es `Cargo.toml`; los paquetes conservan manifiestos propios donde Cargo los requiere, pero no crean workspaces anidados. Los entrypoints, identidades y artefactos de despliegue siguen separados:
 
 ```text
-bacekend-plataform/Cargo.toml
-  apps/bff/                   # REST/OpenAPI/WebSocket tenant y administración
-  apps/worker/                # Outbox, JetStream y webhook delivery
-  modules/<platform-context>/ # tenants, identity, catalog, payments, realtime, etc.
-
-bacekend-pasarela/Cargo.toml
-  apps/gateway-runtime/       # gRPC interno y HTTP de callbacks de proveedores
-  modules/gateway_credentials/ # storage cifrado, rotación y acceso mínimo a secretos
-  modules/gateway_<provider>/ # un crate/schema técnico no secreto por proveedor
+Cargo.toml                         # único [workspace] del repositorio
+Cargo.lock                         # resolución reproducible compartida
+bacekend-plataform/
+  apps/bff/                        # REST/OpenAPI/WebSocket tenant y administración
+  apps/worker/                     # Outbox, JetStream y webhook delivery
+  modules/<platform-context>/      # tenants, identity, catalog, payments, realtime, etc.
+bacekend-pasarela/
+  apps/gateway-runtime/            # gRPC interno y HTTP de callbacks de proveedores
+  modules/gateway_credentials/     # storage cifrado, rotación y acceso mínimo a secretos
+  modules/gateway_<provider>/      # un crate/schema técnico no secreto por proveedor
+frontends/
+  frontend-pasarela/               # aplicación independiente para comercios
+  frontend-plataform/              # aplicación independiente de administración
 ```
+
+El `Cargo.toml` raíz es el único manifiesto `[workspace]` y registra ambos backends como miembros. Cada backend conserva un `Cargo.toml` de paquete que hereda `version` y `edition`, pero no declara un workspace propio; Cargo comparte resolución y `Cargo.lock` en la raíz. Ambos paquetes producen binarios y despliegues independientes. La Fase 0 debe completar crates/apps miembros de sus monolitos y sus límites de compilación sin introducir dependencias de implementación cruzadas.
 
 Plataforma contiene BFF, workers de negocio, `payments`, `realtime` y delivery. Pasarelas contiene runtime de gRPC/composición y módulos de proveedores; sus rutas HTTP se limitan a callbacks públicos. No duplica el BFF tenant/admin.
 
 ```text
-Cargo.toml                             # [workspace] propio del backend actual
+Cargo.toml                             # manifiesto [workspace] único, en la raíz del repo
 
 apps/
   bff/                                  # API Gateway REST — binario axum SIN lógica de negocio
@@ -3179,7 +3185,7 @@ Tenant/Admin Frontends
 Shared physical PostgreSQL; isolated schema and migrations per module
 ```
 
-Cada backend tiene su propio Cargo workspace, composition root, configuración, CI y despliegue. Los módulos internos se comunican mediante gRPC/NATS y no se extraen a procesos independientes sin decisión arquitectónica. Plataforma autoriza y posee las reglas de negocio; pasarelas valida concesiones y posee protocolos/adapters; realtime y las experiencias REST/tenant/admin pertenecen a plataforma. Ningún frontend accede a pasarelas, bases de datos o mensajería.
+El repositorio tiene un Cargo workspace único; cada backend conserva composition root, configuración, CI/deploy targets y despliegue independientes. Los módulos internos se comunican mediante gRPC/NATS y no se extraen a procesos independientes sin decisión arquitectónica. Plataforma autoriza y posee las reglas de negocio; pasarelas valida concesiones y posee protocolos/adapters; realtime y las experiencias REST/tenant/admin pertenecen a plataforma. Los frontends viven en `frontends/frontend-pasarela` y `frontends/frontend-plataform`, se mantienen como aplicaciones independientes y ninguno accede a pasarelas, bases de datos o mensajería.
 
 La arquitectura permite evolucionar contratos y despliegues sin compartir código interno ni propiedad de datos entre backends. La base PostgreSQL física puede compartirse conforme a esta decisión de Payvia, pero cada módulo conserva propiedad exclusiva de su schema, tablas y migraciones.
 

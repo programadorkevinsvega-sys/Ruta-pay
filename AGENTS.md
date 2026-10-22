@@ -15,6 +15,10 @@ Todo requisito aplicable de esos seis documentos rige **desde el día uno** para
 
 Los documentos de calidad, observabilidad y arquitectura deben mantenerse sincronizados entre ambos backends. `ARCHITECTURE_RULES.md` fija la topología específica de Payvia y estos documentos completan, respectivamente, las obligaciones de ingeniería de calidad, observabilidad/monitoreo y diseño modular. Si se detecta una incompatibilidad real, explica y documenta el conflicto y resuélvelo antes de ejecutar el trabajo afectado; no ignores ni debilites una regla silenciosamente.
 
+## Ubicación del workspace y frontends
+
+El workspace Cargo de ambos backends debe tener un único manifiesto en `Cargo.toml` en la raíz del repositorio; no se crean workspaces Cargo anidados en `bacekend-plataform/` ni `bacekend-pasarela/`. El manifiesto raíz ya declara ambos backends como miembros y sus `Cargo.toml` de paquete heredan la configuración compartida. La Fase 0 debe completar y verificar los crates/apps miembros sin crear workspaces anidados. Esta resolución compartida no mezcla sus bins, identidades, composición, ownership ni despliegues. Los frontends son aplicaciones independientes en `frontends/frontend-pasarela/` y `frontends/frontend-plataform/`.
+
 ## Documentos normativos
 
 Antes de planificar, crear o modificar código:

@@ -1,6 +1,8 @@
 # Roadmap — Frontend de Administración de Plataforma Payvia
 
 > Aplicación web independiente para operadores de Payvia. Usa exclusivamente REST/OpenAPI y WebSocket autenticado del BFF del backend de plataforma.
+
+Ruta en el repositorio: `frontends/frontend-plataform/`.
 >
 > Estado inicial: planificación. Ninguna fase está completada por scaffolds o documentación.
 
@@ -8,7 +10,7 @@
 
 El frontend administra la plataforma Payvia desde la perspectiva de operador. No es dueño de tenant, plan, precio, entitlement, billing o autorización y no contiene reglas de negocio. El backend valida identidad, permisos, separación de roles, estado y alcance de cada operación y mantiene su auditoría.
 
-Desde el diseño de cada fase/subfase se aplican todos los requisitos pertinentes establecidos por [AGENTS.md](../AGENTS.md), [ARCHITECTURE_RULES.md](../ARCHITECTURE_RULES.md), [PROJECT_RULES.md](../PROJECT_RULES.md) y los documentos normativos de ambos backends. Los requisitos no aplicables se justifican en la matriz antes de implementar; no se difieren calidad, seguridad, pruebas ni observabilidad.
+Desde el diseño de cada fase/subfase se aplican todos los requisitos pertinentes establecidos por [AGENTS.md](../../AGENTS.md), [ARCHITECTURE_RULES.md](../../ARCHITECTURE_RULES.md), [PROJECT_RULES.md](../../PROJECT_RULES.md) y los documentos normativos de ambos backends. Los requisitos no aplicables se justifican en la matriz antes de implementar; no se difieren calidad, seguridad, pruebas ni observabilidad.
 
 La administración es una app independiente de `frontend-pasarela`, con sesión, caché, rutas y audiencia propia. No se conecta a PostgreSQL, Redis, NATS, gRPC, módulos internos, backend de pasarelas ni proveedores. Redis/NATS no son dependencias directas del navegador; los cambios durables llegan por APIs autorizadas y WebSocket, y se reparan con REST/cursor.
 

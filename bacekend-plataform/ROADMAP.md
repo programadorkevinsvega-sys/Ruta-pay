@@ -26,8 +26,8 @@ Pruebas unitarias y de propiedades aplican a la lógica; integración/aceptació
 - [ ] Acordar con pasarelas `gateway_credentials`: plataforma autoriza y reenvía altas/rotaciones por gRPC/mTLS; pasarelas persiste ciphertext en su módulo dueño. Prohibir persistencia duplicada/eventos con secretos en plataforma.
 - [ ] Versionar `payment_method` como unión `card|pse|crypto`, incluyendo referencias bancarias PSE permitidas y settlement cripto decimal string separado del importe comercial entero.
 - [ ] Definir threat model cross-backend: mTLS/cert rotation, identidad/scopes, grants ligados al request, replay, tamaño/rate limits, deadlines, retries y eventos/observabilidad redactados.
-- [ ] Definir Cargo workspace/binarios, límites de crates, contratos gRPC/eventos, identidad de servicio, amenazas y entornos.
-- [ ] Definir las dos apps frontend separadas: tenant y administración de plataforma.
+- [ ] Completar los binarios/crates de plataforma dentro del workspace Cargo único de la raíz y definir límites de crates, contratos gRPC/eventos, identidad de servicio, amenazas y entornos.
+- [ ] Definir las dos apps frontend separadas: `frontends/frontend-pasarela/` para tenant y `frontends/frontend-plataform/` para administración de plataforma.
 - [ ] Matriz de integraciones y plan de pruebas inicial por subfase.
 
 **Salida:** ADRs aprobadas; arquitectura, ownership, autorización inter-backend, matrices, contratos, amenazas y fases quedan trazables. Scaffold vacío no cierra la fase.
