@@ -20,7 +20,7 @@ use crate::{
 };
 use payvia_observability::{current_span_id, current_trace_id};
 use platform_contracts::identity_access::{
-    CreateApiKeyRequest, ListApiKeysRequest, RevokeApiKeyRequest,
+    CreateApiKeyRequest, ListApiKeysRequest, ListTenantMembershipsRequest, RevokeApiKeyRequest,
 };
 
 const SESSION_COOKIE: &str = "payvia_tenant_session";
@@ -53,6 +53,18 @@ pub struct TenantSessionResponse {
 #[derive(Serialize, ToSchema)]
 pub struct OperatorSessionResponse {
     operator_id: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct TenantMembershipResponse {
+    tenant_id: String,
+    role: String,
+    status: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct TenantMembershipListResponse {
+    memberships: Vec<TenantMembershipResponse>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -237,6 +249,57 @@ pub async fn tenant_session(
         Err(status) => grpc_error(
             status,
             "validate_tenant_session",
+            &correlation,
+            started.elapsed().as_millis() as u64,
+        ),
+    }
+}
+
+#[utoipa::path(get, path = "/v1/identity/memberships", responses((status = 200, body = TenantMembershipListResponse), (status = 401, body = ErrorEnvelope)))]
+pub async fn tenant_memberships(
+    State(state): State<std::sync::Arc<AppState>>,
+    headers: HeaderMap,
+) -> Response {
+    let correlation = correlation_id(&headers);
+    let (Some(session_token), Some(csrf_token)) = (
+        cookie_value(&headers, SESSION_COOKIE),
+        cookie_value(&headers, CSRF_COOKIE),
+    ) else {
+        return error(
+            StatusCode::UNAUTHORIZED,
+            "authentication_failed",
+            "authentication",
+            false,
+            correlation,
+        );
+    };
+    let started = std::time::Instant::now();
+    match IdentityAccessClient::list_tenant_memberships(
+        &state.identity_client,
+        ListTenantMembershipsRequest {
+            session_token,
+            csrf_token,
+            correlation_id: correlation.clone(),
+        },
+        &correlation,
+    )
+    .await
+    {
+        Ok(result) => Json(TenantMembershipListResponse {
+            memberships: result
+                .memberships
+                .into_iter()
+                .map(|membership| TenantMembershipResponse {
+                    tenant_id: membership.tenant_id,
+                    role: membership.role,
+                    status: membership.membership_status,
+                })
+                .collect(),
+        })
+        .into_response(),
+        Err(status) => grpc_error(
+            status,
+            "list_tenant_memberships",
             &correlation,
             started.elapsed().as_millis() as u64,
         ),
@@ -553,7 +616,7 @@ pub async fn revoke_api_key(
     }
 }
 
-fn valid_origin(headers: &HeaderMap) -> bool {
+pub(crate) fn valid_origin(headers: &HeaderMap) -> bool {
     let Some(origin) = headers
         .get(header::ORIGIN)
         .and_then(|value| value.to_str().ok())
@@ -567,10 +630,20 @@ fn valid_origin(headers: &HeaderMap) -> bool {
         return false;
     };
     origin == format!("https://{host}")
-        || (host.starts_with("localhost") && origin == format!("http://{host}"))
+        || (is_loopback_authority(host) && origin == format!("http://{host}"))
 }
 
-fn valid_csrf(headers: &HeaderMap, csrf_cookie_name: &str) -> bool {
+fn is_loopback_authority(host: &str) -> bool {
+    let Ok(authority) = host.parse::<axum::http::uri::Authority>() else {
+        return false;
+    };
+    matches!(
+        authority.host(),
+        "localhost" | "127.0.0.1" | "[::1]" | "::1"
+    )
+}
+
+pub(crate) fn valid_csrf(headers: &HeaderMap, csrf_cookie_name: &str) -> bool {
     let Some(cookie) = cookie_value(headers, csrf_cookie_name) else {
         return false;
     };
@@ -634,7 +707,7 @@ async fn validate_mutation_session(
     }
 }
 
-fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
+pub(crate) fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
     headers
         .get(header::COOKIE)?
         .to_str()
@@ -677,7 +750,7 @@ fn clear_session(mut response: Response, session_cookie: &str, csrf_cookie: &str
     response
 }
 
-fn grpc_error(
+pub(crate) fn grpc_error(
     status: tonic::Status,
     operation: &'static str,
     correlation: &str,
@@ -740,7 +813,7 @@ fn grpc_error(
     error(http, code, category, retryable, correlation.to_owned())
 }
 
-fn error(
+pub(crate) fn error(
     status: StatusCode,
     code: &'static str,
     category: &'static str,
@@ -768,4 +841,53 @@ fn error(
         HeaderValue::from_static(category),
     );
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::valid_origin;
+    use axum::http::{HeaderMap, HeaderValue, header};
+
+    fn origin_headers(origin: &str, host: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::ORIGIN,
+            HeaderValue::from_str(origin).expect("valid origin header"),
+        );
+        headers.insert(
+            header::HOST,
+            HeaderValue::from_str(host).expect("valid host header"),
+        );
+        headers
+    }
+
+    #[test]
+    fn accepts_exact_loopback_http_and_exact_https_origins() {
+        for authority in ["localhost:4173", "127.0.0.1:4173", "[::1]:4173"] {
+            assert!(valid_origin(&origin_headers(
+                &format!("http://{authority}"),
+                authority,
+            )));
+        }
+        assert!(valid_origin(&origin_headers(
+            "https://dashboard.payvia.example",
+            "dashboard.payvia.example",
+        )));
+    }
+
+    #[test]
+    fn rejects_origin_mismatch_and_host_suffix_impostors() {
+        assert!(!valid_origin(&origin_headers(
+            "http://localhost.evil.example:4173",
+            "localhost.evil.example:4173",
+        )));
+        assert!(!valid_origin(&origin_headers(
+            "http://127.0.0.1:4173",
+            "localhost:4173",
+        )));
+        assert!(!valid_origin(&origin_headers(
+            "http://example.test",
+            "example.test",
+        )));
+    }
 }

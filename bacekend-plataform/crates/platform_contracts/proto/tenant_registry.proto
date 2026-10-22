@@ -5,6 +5,7 @@ service TenantRegistry {
   rpc RegisterTenant (RegisterTenantRequest) returns (TenantResponse);
   rpc ChangeTenantStatus (ChangeTenantStatusRequest) returns (TenantResponse);
   rpc GetTenant (GetTenantRequest) returns (TenantResponse);
+  rpc ListTenants (ListTenantsRequest) returns (ListTenantsResponse);
 }
 
 message RegisterTenantRequest {
@@ -12,6 +13,7 @@ message RegisterTenantRequest {
   string display_name = 2;
   string slug = 3;
   string correlation_id = 4;
+  string csrf_token = 5;
 }
 
 message ChangeTenantStatusRequest {
@@ -20,12 +22,29 @@ message ChangeTenantStatusRequest {
   string status = 3;
   string reason = 4;
   string correlation_id = 5;
+  string csrf_token = 6;
+  int64 expected_version = 7;
 }
 
 message GetTenantRequest {
   string session_token = 1;
   string tenant_id = 2;
   string correlation_id = 3;
+  string csrf_token = 4;
+}
+
+message ListTenantsRequest {
+  string session_token = 1;
+  string csrf_token = 2;
+  string query = 3;
+  int32 limit = 4;
+  int32 offset = 5;
+  string correlation_id = 6;
+}
+
+message ListTenantsResponse {
+  repeated TenantResponse tenants = 1;
+  int64 total = 2;
 }
 
 message TenantResponse {
@@ -33,7 +52,7 @@ message TenantResponse {
   string display_name = 2;
   string slug = 3;
   string status = 4;
-  uint64 status_version = 5;
+  int64 status_version = 5;
   string created_at = 6;
   string updated_at = 7;
 }

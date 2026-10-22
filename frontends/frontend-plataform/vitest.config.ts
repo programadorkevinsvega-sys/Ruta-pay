@@ -7,5 +7,6 @@ export default defineConfig({
     environment: "jsdom",
     clearMocks: true,
     restoreMocks: true,
+    include: ["src/**/*.test.{ts,tsx}"],
   },
 });

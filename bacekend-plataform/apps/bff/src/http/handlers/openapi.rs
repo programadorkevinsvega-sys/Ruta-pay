@@ -15,7 +15,11 @@ use utoipa::OpenApi;
         super::identity::operator_logout,
         super::identity::create_api_key,
         super::identity::list_api_keys,
-        super::identity::revoke_api_key
+        super::identity::revoke_api_key,
+        super::tenant::register,
+        super::tenant::get,
+        super::tenant::list_for_operator,
+        super::tenant::change_status
     ),
     components(schemas(
         crate::http::dto::health_response::HealthResponse,
@@ -27,7 +31,11 @@ use utoipa::OpenApi;
         super::identity::OperatorSessionResponse,
         super::identity::NewApiKey,
         super::identity::ApiKeyCreated,
-        super::identity::ApiKeyMetadataResponse
+        super::identity::ApiKeyMetadataResponse,
+        super::tenant::NewTenant,
+        super::tenant::ChangeTenantStatus,
+        super::tenant::TenantView,
+        super::tenant::TenantList
     ))
 )]
 pub struct ApiDocument;

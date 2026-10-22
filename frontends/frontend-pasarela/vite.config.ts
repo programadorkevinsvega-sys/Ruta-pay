@@ -3,7 +3,7 @@ import { defineConfig, loadEnv } from "vite";
 
 export default defineConfig(({ mode }) => {
   const environment = loadEnv(mode, process.cwd(), "");
-  const backendTarget = environment.VITE_PLATFORM_BFF_URL ?? "http://localhost:8080";
+  const backendTarget = process.env.VITE_PLATFORM_BFF_URL ?? environment.VITE_PLATFORM_BFF_URL ?? "http://localhost:8080";
 
   return {
     plugins: [react()],
@@ -12,9 +12,17 @@ export default defineConfig(({ mode }) => {
         "/v1": {
           target: backendTarget,
           changeOrigin: true,
+          ws: true,
           configure(proxy) {
             proxy.on("proxyReq", (proxyRequest) => {
-              proxyRequest.setHeader("origin", new URL(backendTarget).origin);
+              const target = new URL(backendTarget);
+              proxyRequest.setHeader("host", target.host);
+              proxyRequest.setHeader("origin", target.origin);
+            });
+            proxy.on("proxyReqWs", (proxyRequest) => {
+              const target = new URL(backendTarget);
+              proxyRequest.setHeader("host", target.host);
+              proxyRequest.setHeader("origin", target.origin);
             });
           },
         },

@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 async-trait.workspace = true
+async-nats.workspace = true
 chrono.workspace = true
 metrics.workspace = true
 payvia-observability = { path = "../../../crates/observability" }

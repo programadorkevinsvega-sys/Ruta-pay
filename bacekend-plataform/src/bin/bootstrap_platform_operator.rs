@@ -8,14 +8,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut arguments = env::args().skip(1);
     let email = arguments
         .next()
-        .ok_or("usage: bootstrap-platform-operator <operator-email>")?;
-    if arguments.next().is_some() {
-        return Err("usage: bootstrap-platform-operator <operator-email>".into());
-    }
+        .ok_or("usage: bootstrap-platform-operator <operator-email> [--password-stdin]")?;
+    let password_from_stdin = match arguments.next().as_deref() {
+        None => false,
+        Some("--password-stdin") if arguments.next().is_none() => true,
+        _ => {
+            return Err(
+                "usage: bootstrap-platform-operator <operator-email> [--password-stdin]".into(),
+            );
+        }
+    };
     let database_url = env::var("PLATFORM_DATABASE_URL")
         .map_err(|_| "PLATFORM_DATABASE_URL must be configured in bacekend-plataform/.env")?;
-    let password = rpassword::prompt_password("Initial operator password: ")?;
-    let confirmation = rpassword::prompt_password("Confirm password: ")?;
+    let (password, confirmation) = if password_from_stdin {
+        let mut password = String::new();
+        let mut confirmation = String::new();
+        io::stdin().read_line(&mut password)?;
+        io::stdin().read_line(&mut confirmation)?;
+        (
+            password.trim_end().to_owned(),
+            confirmation.trim_end().to_owned(),
+        )
+    } else {
+        (
+            rpassword::prompt_password("Initial operator password: ")?,
+            rpassword::prompt_password("Confirm password: ")?,
+        )
+    };
     if password != confirmation {
         return Err("password confirmation does not match".into());
     }

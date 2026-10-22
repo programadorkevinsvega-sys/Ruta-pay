@@ -2,7 +2,8 @@ use opentelemetry::propagation::Injector;
 use platform_contracts::identity_access::{
     CreateApiKeyRequest, CreateApiKeyResponse, CreateOperatorSessionRequest,
     CreateOperatorSessionResponse, CreateTenantSessionRequest, CreateTenantSessionResponse,
-    ListApiKeysRequest, ListApiKeysResponse, RegisterTenantUserRequest, RegisterTenantUserResponse,
+    ListApiKeysRequest, ListApiKeysResponse, ListTenantMembershipsRequest,
+    ListTenantMembershipsResponse, RegisterTenantUserRequest, RegisterTenantUserResponse,
     RevokeApiKeyRequest, RevokeApiKeyResponse, RevokeOperatorSessionRequest,
     RevokeOperatorSessionResponse, RevokeSessionRequest, RevokeSessionResponse,
     ValidateOperatorSessionRequest, ValidateOperatorSessionResponse, ValidateTenantSessionRequest,
@@ -160,6 +161,19 @@ impl IdentityAccessClient {
         let mut client = client.clone();
         client
             .validate_tenant_session(request)
+            .await
+            .map(tonic::Response::into_inner)
+    }
+
+    pub async fn list_tenant_memberships(
+        client: &GrpcClient<Channel>,
+        body: ListTenantMembershipsRequest,
+        correlation_id: &str,
+    ) -> Result<ListTenantMembershipsResponse, tonic::Status> {
+        let request = request_with_context(body, correlation_id)?;
+        let mut client = client.clone();
+        client
+            .list_tenant_memberships(request)
             .await
             .map(tonic::Response::into_inner)
     }

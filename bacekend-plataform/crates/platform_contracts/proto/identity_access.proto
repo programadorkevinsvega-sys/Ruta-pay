@@ -13,6 +13,8 @@ service IdentityAccess {
   rpc RevokeOperatorSession (RevokeOperatorSessionRequest) returns (RevokeOperatorSessionResponse);
   rpc ValidateOperatorSession (ValidateOperatorSessionRequest) returns (ValidateOperatorSessionResponse);
   rpc AuthorizeOperatorOperation (AuthorizeOperatorOperationRequest) returns (AuthorizeOperatorOperationResponse);
+  rpc AuthorizeTenantOperation (AuthorizeTenantOperationRequest) returns (AuthorizeTenantOperationResponse);
+  rpc ListTenantMemberships (ListTenantMembershipsRequest) returns (ListTenantMembershipsResponse);
 }
 
 message RegisterTenantUserRequest {
@@ -144,4 +146,32 @@ message AuthorizeOperatorOperationRequest {
 
 message AuthorizeOperatorOperationResponse {
   string operator_id = 1;
+}
+
+message AuthorizeTenantOperationRequest {
+  string session_token = 1;
+  string csrf_token = 2;
+  string tenant_id = 3;
+  string permission = 4;
+  string correlation_id = 5;
+}
+
+message AuthorizeTenantOperationResponse {
+  string user_id = 1;
+}
+
+message ListTenantMembershipsRequest {
+  string session_token = 1;
+  string csrf_token = 2;
+  string correlation_id = 3;
+}
+
+message TenantMembership {
+  string tenant_id = 1;
+  string role = 2;
+  string membership_status = 3;
+}
+
+message ListTenantMembershipsResponse {
+  repeated TenantMembership memberships = 1;
 }

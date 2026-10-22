@@ -4,6 +4,106 @@ use uuid::Uuid;
 
 use crate::domain::tenant::{Tenant, TenantError, TenantStatus};
 
+#[derive(Clone, Debug)]
+pub struct PendingOutboxEvent {
+    pub event_id: Uuid,
+    pub aggregate_id: Uuid,
+    pub aggregate_version: i64,
+    pub event_type: String,
+    pub schema_version: i16,
+    pub audience: String,
+    pub payload: serde_json::Value,
+    pub traceparent: Option<String>,
+    pub correlation_id: String,
+    pub lease_token: Uuid,
+}
+
+pub struct ChangeTenantStatusRecord<'a> {
+    pub tenant_id: Uuid,
+    pub actor_id: Uuid,
+    pub actor_is_operator: bool,
+    pub next: TenantStatus,
+    pub reason: &'a str,
+    pub correlation_id: &'a str,
+    pub expected_version: i64,
+}
+
+pub async fn claim_outbox_events(
+    pool: &PgPool,
+    limit: i64,
+) -> Result<Vec<PendingOutboxEvent>, sqlx::Error> {
+    let lease_token = Uuid::new_v4();
+    let rows = sqlx::query(
+        "WITH candidates AS (\
+            SELECT event_id FROM tenant_registry.outbox_events \
+            WHERE published_at IS NULL AND available_at <= now() \
+              AND (lease_until IS NULL OR lease_until < now()) \
+            ORDER BY occurred_at, event_id FOR UPDATE SKIP LOCKED LIMIT $1\
+         ) \
+         UPDATE tenant_registry.outbox_events event \
+         SET lease_token=$2, lease_until=now() + interval '30 seconds', attempts=attempts+1 \
+         FROM candidates WHERE event.event_id=candidates.event_id \
+         RETURNING event.event_id, event.aggregate_id, event.aggregate_version, event.event_type, \
+                   event.schema_version, event.audience, event.payload, event.traceparent, event.correlation_id, event.lease_token",
+    )
+    .bind(limit)
+    .bind(lease_token)
+    .fetch_all(pool)
+    .await?;
+    rows.iter()
+        .map(|row| {
+            Ok(PendingOutboxEvent {
+                event_id: row.try_get("event_id")?,
+                aggregate_id: row.try_get("aggregate_id")?,
+                aggregate_version: row.try_get("aggregate_version")?,
+                event_type: row.try_get("event_type")?,
+                schema_version: row.try_get("schema_version")?,
+                audience: row.try_get("audience")?,
+                payload: row.try_get("payload")?,
+                traceparent: row.try_get("traceparent")?,
+                correlation_id: row.try_get("correlation_id")?,
+                lease_token: row.try_get("lease_token")?,
+            })
+        })
+        .collect()
+}
+
+pub async fn mark_outbox_published(
+    pool: &PgPool,
+    event_id: Uuid,
+    lease_token: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE tenant_registry.outbox_events SET published_at=now(), lease_token=NULL, lease_until=NULL, last_error_code=NULL \
+         WHERE event_id=$1 AND lease_token=$2 AND published_at IS NULL",
+    )
+    .bind(event_id)
+    .bind(lease_token)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn reschedule_outbox_event(
+    pool: &PgPool,
+    event_id: Uuid,
+    lease_token: Uuid,
+    error_code: &str,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE tenant_registry.outbox_events \
+         SET available_at=now() + make_interval(secs => LEAST(300, power(2, LEAST(attempts, 8))::integer)), \
+             lease_token=NULL, lease_until=NULL, last_error_code=$3 \
+         WHERE event_id=$1 AND lease_token=$2 AND published_at IS NULL",
+    )
+    .bind(event_id)
+    .bind(lease_token)
+    .bind(error_code)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
 pub const MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate::Migrator {
     table_name: std::borrow::Cow::Borrowed("tenant_registry._sqlx_migrations"),
     create_schemas: std::borrow::Cow::Borrowed(&[std::borrow::Cow::Borrowed("tenant_registry")]),
@@ -16,6 +116,7 @@ pub async fn create_pending_tenant(
     actor_id: Uuid,
     display_name: &str,
     slug: &str,
+    correlation_id: &str,
 ) -> Result<Tenant, sqlx::Error> {
     let mut transaction = pool.begin().await?;
     sqlx::query("SELECT set_config('app.actor_id', $1, true)")
@@ -57,12 +158,13 @@ pub async fn create_pending_tenant(
     });
     sqlx::query(
         "INSERT INTO tenant_registry.outbox_events \
-         (event_id, aggregate_id, aggregate_version, event_type, schema_version, audience, payload) \
-         VALUES ($1, $2, 1, 'tenant.registered', 1, 'tenant_and_platform', $3)",
+         (event_id, aggregate_id, aggregate_version, event_type, schema_version, audience, payload, correlation_id) \
+         VALUES ($1, $2, 1, 'tenant.registered', 1, 'tenant_and_platform', $3, $4)",
     )
     .bind(event_id)
     .bind(tenant.id)
     .bind(payload)
+    .bind(correlation_id)
     .execute(&mut *transaction)
     .await?;
     transaction.commit().await?;
@@ -71,12 +173,17 @@ pub async fn create_pending_tenant(
 
 pub async fn change_tenant_status(
     pool: &PgPool,
-    tenant_id: Uuid,
-    actor_id: Uuid,
-    actor_is_operator: bool,
-    next: TenantStatus,
-    reason: &str,
+    record: ChangeTenantStatusRecord<'_>,
 ) -> Result<Tenant, TenantRepositoryError> {
+    let ChangeTenantStatusRecord {
+        tenant_id,
+        actor_id,
+        actor_is_operator,
+        next,
+        reason,
+        correlation_id,
+        expected_version,
+    } = record;
     let mut transaction = pool.begin().await?;
     sqlx::query(
         "SELECT set_config('app.operator_scope', $1, true), set_config('app.actor_id', $2, true)",
@@ -98,6 +205,9 @@ pub async fn change_tenant_status(
     .await?
     .ok_or(TenantRepositoryError::NotFound)?;
     let mut tenant = map_tenant(&row)?;
+    if tenant.status_version != expected_version {
+        return Err(TenantRepositoryError::VersionConflict);
+    }
     Tenant::validate_transition(tenant.status, next, reason, actor_is_operator)
         .map_err(TenantRepositoryError::Domain)?;
     let previous = tenant.status;
@@ -141,15 +251,86 @@ pub async fn change_tenant_status(
     });
     sqlx::query(
         "INSERT INTO tenant_registry.outbox_events \
-         (event_id, aggregate_id, aggregate_version, event_type, schema_version, audience, payload) \
-         VALUES ($1, $2, $3, 'tenant.status.changed', 1, 'tenant_and_platform', $4)",
+         (event_id, aggregate_id, aggregate_version, event_type, schema_version, audience, payload, correlation_id) \
+         VALUES ($1, $2, $3, 'tenant.status.changed', 1, 'tenant_and_platform', $4, $5)",
     )
     .bind(Uuid::new_v4())
     .bind(tenant.id)
     .bind(tenant.status_version)
     .bind(payload)
+    .bind(correlation_id)
     .execute(&mut *transaction)
     .await?;
+    transaction.commit().await?;
+    Ok(tenant)
+}
+
+pub async fn list_tenants(
+    pool: &PgPool,
+    actor_id: Uuid,
+    query: &str,
+    limit: i64,
+    offset: i64,
+) -> Result<(Vec<Tenant>, i64), sqlx::Error> {
+    let mut transaction = pool.begin().await?;
+    sqlx::query(
+        "SELECT set_config('app.operator_scope', 'true', true), set_config('app.actor_id', $1, true)",
+    )
+    .bind(actor_id.to_string())
+    .execute(&mut *transaction)
+    .await?;
+    let normalized_query = query.trim().to_lowercase();
+    let total: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM tenant_registry.tenants WHERE strpos(lower(display_name), $1) > 0 OR strpos(lower(slug), $1) > 0",
+    )
+    .bind(&normalized_query)
+    .fetch_one(&mut *transaction)
+    .await?;
+    let rows = sqlx::query(
+        "SELECT id, display_name, slug, status, created_by, status_version, created_at, updated_at, closed_at \
+         FROM tenant_registry.tenants WHERE strpos(lower(display_name), $1) > 0 OR strpos(lower(slug), $1) > 0 \
+         ORDER BY created_at DESC, id LIMIT $2 OFFSET $3",
+    )
+    .bind(normalized_query)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&mut *transaction)
+    .await?;
+    let tenants = rows
+        .iter()
+        .map(map_tenant)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| sqlx::Error::Protocol("invalid tenant record".to_owned()))?;
+    transaction.commit().await?;
+    Ok((tenants, total))
+}
+
+pub async fn get_tenant(
+    pool: &PgPool,
+    actor_id: Uuid,
+    tenant_id: Uuid,
+    operator_scope: bool,
+) -> Result<Option<Tenant>, sqlx::Error> {
+    let mut transaction = pool.begin().await?;
+    sqlx::query(
+        "SELECT set_config('app.operator_scope', $1, true), set_config('app.actor_id', $2, true), set_config('app.tenant_id', $3, true)",
+    )
+    .bind(operator_scope.to_string())
+    .bind(actor_id.to_string())
+    .bind(tenant_id.to_string())
+    .execute(&mut *transaction)
+    .await?;
+    let row = sqlx::query(
+        "SELECT id, display_name, slug, status, created_by, status_version, created_at, updated_at, closed_at FROM tenant_registry.tenants WHERE id=$1",
+    )
+    .bind(tenant_id)
+    .fetch_optional(&mut *transaction)
+    .await?;
+    let tenant = row
+        .as_ref()
+        .map(map_tenant)
+        .transpose()
+        .map_err(|_| sqlx::Error::Protocol("invalid tenant record".to_owned()))?;
     transaction.commit().await?;
     Ok(tenant)
 }
@@ -158,6 +339,8 @@ pub async fn change_tenant_status(
 pub enum TenantRepositoryError {
     #[error("tenant not found")]
     NotFound,
+    #[error("tenant status version changed")]
+    VersionConflict,
     #[error(transparent)]
     Domain(#[from] TenantError),
     #[error(transparent)]

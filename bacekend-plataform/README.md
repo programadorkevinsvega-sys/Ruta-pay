@@ -166,7 +166,7 @@ El importe `transaction.amount` permanece como el importe comercial en unidades 
 
 ## Instalación y estado actual
 
-La fase actual se ejecuta localmente con `cargo run -p bacekend-plataform` desde la raíz del workspace. Para empaquetar únicamente este backend, construye la imagen con el [Dockerfile de plataforma](deploy/Dockerfile) desde la raíz del repositorio. No se incluye ni se inicia el backend de pasarelas en esa imagen. Cada VM/VPS recibe su propia configuración de entorno, secretos y reglas de red. El backend de pasarelas y los frontends se construyen y despliegan mediante sus propios artefactos.
+La aplicación de plataforma se ejecuta localmente con `cargo run -p bacekend-plataform` desde la raíz del workspace. Cada frontend conserva su configuración en su propio `.env` dentro de `frontends/`; los `.env` de backend contienen solo configuración del backend y no variables `VITE_*`. Para empaquetar únicamente este backend, construye la imagen con el [Dockerfile de plataforma](deploy/Dockerfile) desde la raíz del repositorio. No se incluye ni se inicia el backend de pasarelas en esa imagen. Cada VM/VPS recibe su propia configuración de entorno, secretos y reglas de red. El backend de pasarelas y los frontends se construyen y despliegan mediante sus propios artefactos.
 
 ## Fuera de responsabilidad
 
@@ -202,7 +202,7 @@ Toda operación administrativa y decisión de autorización es auditable. Se apl
 
 ## Estado del proyecto
 
-El estado vigente y los contratos realmente disponibles se mantienen en [`ROADMAP.md`](ROADMAP.md). La Fase 1 está cerrada para el alcance de fundaciones y observabilidad; la Fase 2 (identidad, tenant registry y aislamiento) está en implementación con matriz y criterios en [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md). La evidencia de Fase 1 está en [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md). La auditoría y decisiones están en [`docs/phase-0/`](docs/phase-0/) y [`docs/adr/`](docs/adr/). No se deben tratar contratos futuros como endpoints publicados.
+El estado vigente y los contratos realmente disponibles se mantienen en [`ROADMAP.md`](ROADMAP.md). Las Fases 1 y 2 están cerradas en la rama `feat/platform-phase-2-identity-tenants`; la Fase 2 cubre identidad, onboarding/membresías, aislamiento tenant, operaciones administrativas, API Keys y realtime recuperable. El acta de aceptación está en [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md). La integración a `main` sigue pendiente de revisión mediante PR. La evidencia de Fase 1 está en [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md); la auditoría y decisiones están en [`docs/phase-0/`](docs/phase-0/) y [`docs/adr/`](docs/adr/). Las fases posteriores y sus contratos no se deben presentar como implementados.
 
 ## Roadmap y reglas
 

@@ -1,4 +1,6 @@
 export type TenantSession = { user_id: string };
+export type Tenant = { tenant_id: string; display_name: string; slug: string; status: string; status_version: number; created_at: string; updated_at: string };
+export type TenantMembership = { tenant_id: string; role: string; status: string };
 type ApiProblem = { code: string; message: string; correlation_id: string };
 
 export class ApiError extends Error {
@@ -46,6 +48,31 @@ export async function login(email: string, password: string): Promise<void> {
     body: JSON.stringify({ email, password }),
   });
   if (!response.ok) throw await apiError(response);
+}
+
+export async function register(email: string, password: string): Promise<void> {
+  const response = await fetch("/v1/identity/register", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-Correlation-ID": correlationId() }, body: JSON.stringify({ email, password }) });
+  if (!response.ok) throw await apiError(response);
+}
+
+export async function createTenant(displayName: string, slug: string): Promise<Tenant> {
+  const csrf = csrfToken();
+  if (csrf === null) throw new ApiError(403, "csrf_validation_failed", correlationId(), "No se pudo validar la sesión.");
+  const response = await fetch("/v1/tenants", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-Correlation-ID": correlationId(), "X-CSRF-Token": csrf }, body: JSON.stringify({ display_name: displayName, slug }) });
+  if (!response.ok) throw await apiError(response);
+  return await response.json() as Tenant;
+}
+
+export async function tenantMemberships(): Promise<TenantMembership[]> {
+  const response = await fetch("/v1/identity/memberships", { credentials: "include", headers: { "X-Correlation-ID": correlationId() } });
+  if (!response.ok) throw await apiError(response);
+  return (await response.json() as { memberships: TenantMembership[] }).memberships;
+}
+
+export async function tenantDetails(tenantId: string): Promise<Tenant> {
+  const response = await fetch(`/v1/tenants/${encodeURIComponent(tenantId)}`, { credentials: "include", headers: { "X-Correlation-ID": correlationId() } });
+  if (!response.ok) throw await apiError(response);
+  return await response.json() as Tenant;
 }
 
 export async function logout(): Promise<void> {

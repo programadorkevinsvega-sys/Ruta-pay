@@ -8,6 +8,8 @@ export type OperatorSession = {
   operator_id: string;
 };
 
+export type Tenant = { tenant_id: string; display_name: string; slug: string; status: string; status_version: number; created_at: string; updated_at: string };
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -70,6 +72,20 @@ export async function logout(): Promise<void> {
     },
   });
   if (!response.ok) throw await apiError(response);
+}
+
+export async function listTenants(query: string): Promise<{ tenants: Tenant[]; total: number }> {
+  const response = await fetch(`/v1/platform/tenants?query=${encodeURIComponent(query)}&limit=50&offset=0`, { credentials: "include", headers: { "X-Correlation-ID": correlationId() } });
+  if (!response.ok) throw await apiError(response);
+  return await response.json() as { tenants: Tenant[]; total: number };
+}
+
+export async function changeTenantStatus(tenant: Tenant, status: string, reason: string): Promise<Tenant> {
+  const csrf = csrfToken();
+  if (csrf === null) throw new ApiError(403, "csrf_validation_failed", correlationId(), "No se pudo validar la sesión.");
+  const response = await fetch(`/v1/platform/tenants/${encodeURIComponent(tenant.tenant_id)}/status`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-Correlation-ID": correlationId(), "X-CSRF-Token": csrf }, body: JSON.stringify({ status, reason, expected_version: tenant.status_version }) });
+  if (!response.ok) throw await apiError(response);
+  return await response.json() as Tenant;
 }
 
 async function apiError(response: Response): Promise<ApiError> {

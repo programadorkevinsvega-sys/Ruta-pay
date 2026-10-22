@@ -4,7 +4,9 @@
 
 Ruta en el repositorio: `frontends/frontend-pasarela/`.
 >
-> Estado inicial: planificación. No hay fases completadas por la existencia de documentación o scaffolds.
+> Estado actualizado: la coordinación realtime de Fase 2 está implementada y aceptada contra el BFF real; las fases de operación de pagos siguen pendientes.
+
+La configuración local del cliente vive en `frontends/frontend-pasarela/.env` y se documenta en su `.env.example`; no se almacena en los `.env` de los backends.
 
 ## Alcance y reglas de ejecución
 
@@ -37,11 +39,11 @@ No se introducen accesos directos del navegador a PostgreSQL, Redis, NATS, gRPC,
 
 ## Fase 2 — Realtime y sincronización recuperable
 
-- [ ] Implementar coordinador WebSocket central autenticado, con audiencias tenant, `event_id`, cursor, versión de agregado, deduplicación y orden.
-- [ ] Manejar desconexión con backoff+jitter, reconexión, eventos desconocidos, huecos, revocación de sesión y cambio de tenant.
-- [ ] Coordinar invalidación/refetch de TanStack Query; no duplicar sockets, polling ni lógica de eventos dentro de cada vista.
-- [ ] Recuperar estado autorizado por REST con cursor/snapshot; mostrar indicador de sincronización y permitir reintento manual.
-- [ ] Verificar que caché, query keys, cursor y socket se limpien al cerrar sesión o cambiar de tenant.
+- [x] Implementar coordinador WebSocket central autenticado, con audiencias tenant, `event_id`, cursor, versión de agregado, deduplicación y orden.
+- [x] Manejar desconexión con backoff+jitter, reconexión, eventos desconocidos, huecos, revocación de sesión y cambio de tenant.
+- [x] Coordinar invalidación/refetch de TanStack Query; no duplicar sockets, polling ni lógica de eventos dentro de cada vista.
+- [x] Recuperar estado autorizado por REST con cursor/snapshot; mostrar indicador de sincronización y permitir reintento manual.
+- [x] Verificar que caché, query keys, cursor y socket se limpien al cerrar sesión o cambiar de tenant.
 
 **Criterio de salida:** pruebas automatizadas de cliente y contratos validan deduplicación, eventos fuera de orden, gaps, reconexión y convergencia con REST; aceptación de backend verifica el transporte real y sus permisos.
 
@@ -99,4 +101,4 @@ No se introducen accesos directos del navegador a PostgreSQL, Redis, NATS, gRPC,
 
 ## Estado de fases
 
-Fase 0 tiene auditoría en `docs/phase-0/audit.md`. Fase 1 está en implementación: login/logout y recuperación de sesión compilan y tienen pruebas unitarias. Onboarding/membresías, aceptación integrada de browser y realtime con recuperación REST/cursor siguen pendientes.
+Fase 2 de realtime y sincronización recuperable está verificada como parte de la integración vertical del backend de plataforma: Playwright recorrió onboarding, membership propietaria, sesión y WebSocket autenticado contra el BFF real; los detalles están en [`bacekend-plataform/docs/phase-2/acceptance.md`](../../bacekend-plataform/docs/phase-2/acceptance.md). Pagos e integraciones del tenant siguen en fases posteriores.

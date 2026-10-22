@@ -51,11 +51,12 @@ impl OperatorBootstrapService {
         .execute(&mut *transaction)
         .await?;
         sqlx::query(
-            "INSERT INTO identity_access.outbox_events (event_id, aggregate_id, aggregate_version, event_type, schema_version, audience, payload) VALUES ($1, $2, 1, 'identity.operator.bootstrap.completed', 1, 'platform_operator', $3)",
+            "INSERT INTO identity_access.outbox_events (event_id, aggregate_id, aggregate_version, event_type, schema_version, audience, payload, correlation_id) VALUES ($1, $2, 1, 'identity.operator.bootstrap.completed', 1, 'platform_operator', $3, $4)",
         )
         .bind(Uuid::new_v4())
         .bind(operator_id)
         .bind(serde_json::json!({ "operator_id": operator_id, "role": "platform_owner" }))
+        .bind(correlation_id)
         .execute(&mut *transaction)
         .await?;
         sqlx::query(

@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+async-nats.workspace = true
 argon2.workspace = true
 base64.workspace = true
 chrono.workspace = true
@@ -11,6 +12,7 @@ getrandom.workspace = true
 metrics.workspace = true
 opentelemetry.workspace = true
 redis.workspace = true
+serde.workspace = true
 payvia-observability = { path = "../../../crates/observability" }
 platform-contracts = { path = "../../crates/platform_contracts" }
 sha2.workspace = true

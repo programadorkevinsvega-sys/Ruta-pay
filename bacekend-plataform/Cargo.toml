@@ -7,6 +7,10 @@ edition.workspace = true
 name = "bootstrap-platform-operator"
 path = "src/bin/bootstrap_platform_operator.rs"
 
+[[bin]]
+name = "migrate-platform"
+path = "src/bin/migrate_platform.rs"
+
 [dependencies]
 axum.workspace = true
 metrics-exporter-prometheus.workspace = true
@@ -16,6 +20,7 @@ payvia-platform-bff = { path = "apps/bff" }
 payvia-platform-core = { path = "platform" }
 platform-identity-access = { path = "modules/identity_access" }
 platform-tenant-registry = { path = "modules/tenant_registry" }
+platform-realtime = { path = "modules/realtime" }
 redis.workspace = true
 rpassword.workspace = true
 sqlx.workspace = true
@@ -23,14 +28,15 @@ url.workspace = true
 tokio.workspace = true
 tonic.workspace = true
 tracing.workspace = true
+tracing-subscriber.workspace = true
 serde_json.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+async-nats.workspace = true
 base64.workspace = true
 reqwest = { version = "0.12", features = ["json"] }
 sha2.workspace = true
-tracing-subscriber.workspace = true
 opentelemetry.workspace = true
 opentelemetry_sdk.workspace = true
 tracing-opentelemetry.workspace = true

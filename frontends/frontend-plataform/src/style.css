@@ -25,3 +25,11 @@ button.secondary { color: #e9eff8; background: #30445e; }
 .error p { margin: 0 0 4px; }
 .error small { color: #f4aeb8; }
 code { overflow-wrap: anywhere; }
+.page { place-items: start center; }
+.panel { width: min(100%, 920px); margin: 4vh 0; }
+.tenant-admin { margin: 32px 0; }
+.tenant-list { display: grid; gap: 10px; }
+.tenant-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px; border: 1px solid #293959; border-radius: 10px; background: #101a32; }
+.tenant-row p { margin: 6px 0 0; color: #b8c4db; }
+.tenant-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.tenant-actions button { margin: 0; }

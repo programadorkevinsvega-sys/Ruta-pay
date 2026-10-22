@@ -4,6 +4,9 @@ use thiserror::Error;
 pub struct AppConfig {
     pub database_url: String,
     pub redis_url: String,
+    pub nats_url: String,
+    pub nats_username: String,
+    pub nats_password: String,
     pub http_addr: SocketAddr,
     pub grpc_addr: SocketAddr,
     pub metrics_addr: SocketAddr,
@@ -42,6 +45,9 @@ impl AppConfig {
         let config = Self {
             database_url: database_url()?,
             redis_url: redis_url()?,
+            nats_url: nats_url()?,
+            nats_username: required("NATS_USER")?,
+            nats_password: required("NATS_PASSWORD")?,
             http_addr: address("APP_HTTP_ADDR", "0.0.0.0:8080")?,
             grpc_addr: address("APP_MODULE_GRPC_ADDR", "127.0.0.1:50051")?,
             metrics_addr: address("APP_METRICS_ADDR", "127.0.0.1:9090")?,
@@ -65,6 +71,14 @@ fn validate_config(config: &AppConfig) -> Result<(), ConfigError> {
     if !validate_redis_url(&config.redis_url) {
         return Err(ConfigError::InvalidValue {
             variable: "PLATFORM_REDIS_URL",
+        });
+    }
+    if !validate_nats_url(&config.nats_url)
+        || config.nats_username.trim().is_empty()
+        || config.nats_password.len() < 32
+    {
+        return Err(ConfigError::InvalidValue {
+            variable: "PLATFORM_NATS_URL",
         });
     }
     if !["development", "test", "staging", "production"].contains(&config.environment.as_str()) {
@@ -136,6 +150,35 @@ fn validate_redis_url(value: &str) -> bool {
     })
 }
 
+fn nats_url() -> Result<String, ConfigError> {
+    let value =
+        env::var("PLATFORM_NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".to_owned());
+    if !validate_nats_url(&value) {
+        return Err(ConfigError::InvalidValue {
+            variable: "PLATFORM_NATS_URL",
+        });
+    }
+    Ok(value)
+}
+
+fn validate_nats_url(value: &str) -> bool {
+    url::Url::parse(value).is_ok_and(|url| {
+        ["nats", "tls"].contains(&url.scheme())
+            && url.host_str().is_some()
+            && url.username().is_empty()
+            && url.password().is_none()
+            && url.query().is_none()
+            && url.fragment().is_none()
+    })
+}
+
+fn required(variable: &'static str) -> Result<String, ConfigError> {
+    env::var(variable)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or(ConfigError::InvalidValue { variable })
+}
+
 fn address(variable: &'static str, default: &str) -> Result<SocketAddr, ConfigError> {
     let value = env::var(variable).unwrap_or_else(|_| default.to_owned());
     parse_address(variable, &value)
@@ -196,12 +239,40 @@ fn optional(variable: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    fn test_config(
+        grpc_addr: &str,
+        metrics_addr: &str,
+        metrics_token: Option<String>,
+    ) -> AppConfig {
+        AppConfig {
+            database_url: env::var("PLATFORM_TEST_DATABASE_ADMIN_URL")
+                .expect("isolated PostgreSQL test administrator URL is configured"),
+            redis_url: env::var("PLATFORM_REDIS_URL")
+                .expect("real development Redis URL is configured"),
+            nats_url: env::var("PLATFORM_NATS_URL")
+                .expect("real development JetStream URL is configured"),
+            nats_username: env::var("NATS_USER").expect("development NATS user is configured"),
+            nats_password: env::var("NATS_PASSWORD")
+                .expect("development NATS password is configured"),
+            http_addr: "0.0.0.0:8080".parse().expect("address"),
+            grpc_addr: grpc_addr.parse().expect("address"),
+            metrics_addr: metrics_addr.parse().expect("address"),
+            environment: "test".to_owned(),
+            version: "test-version".to_owned(),
+            otlp_endpoint: None,
+            sentry_dsn: None,
+            metrics_token,
+        }
+    }
+
     #[test]
     fn defaults_are_valid_and_bind_metrics_locally() {
-        assert!(validate_database_url(
-            "postgres://platform:secret@localhost/payvia"
-        ));
-        assert!(validate_redis_url("redis://:secret@localhost/0"));
+        let database_url = env::var("PLATFORM_TEST_DATABASE_ADMIN_URL")
+            .expect("isolated PostgreSQL test administrator URL is configured");
+        let redis_url =
+            env::var("PLATFORM_REDIS_URL").expect("real development Redis URL is configured");
+        assert!(validate_database_url(&database_url));
+        assert!(validate_redis_url(&redis_url));
     }
 
     #[test]
@@ -217,36 +288,25 @@ mod tests {
 
     #[test]
     fn database_url_requires_postgres_credentials_and_rejects_non_postgres_schemes() {
-        assert!(validate_database_url(
-            "postgres://platform:secret@db.internal/payvia"
-        ));
-        assert!(!validate_database_url(
-            "redis://platform:secret@db.internal/payvia"
-        ));
+        let database_url = env::var("PLATFORM_TEST_DATABASE_ADMIN_URL")
+            .expect("isolated PostgreSQL test administrator URL is configured");
+        assert!(validate_database_url(&database_url));
+        assert!(!validate_database_url("redis://database.invalid/payvia"));
         assert!(!validate_database_url("postgres://db.internal/payvia"));
     }
 
     #[test]
     fn redis_url_requires_password_and_supported_scheme() {
-        assert!(validate_redis_url("rediss://:secret@redis.internal/0"));
+        let redis_url =
+            env::var("PLATFORM_REDIS_URL").expect("real development Redis URL is configured");
+        assert!(validate_redis_url(&redis_url));
         assert!(!validate_redis_url("redis://redis.internal/0"));
-        assert!(!validate_redis_url("https://:secret@redis.internal/0"));
+        assert!(!validate_redis_url("https://redis.internal/0"));
     }
 
     #[test]
     fn non_loopback_grpc_listener_is_rejected_without_mtls() {
-        let config = AppConfig {
-            database_url: "postgres://app:secret@localhost/payvia".to_owned(),
-            redis_url: "redis://:secret@localhost/0".to_owned(),
-            http_addr: "0.0.0.0:8080".parse().expect("address"),
-            grpc_addr: "0.0.0.0:50051".parse().expect("address"),
-            metrics_addr: "127.0.0.1:9090".parse().expect("address"),
-            environment: "test".to_owned(),
-            version: "test-version".to_owned(),
-            otlp_endpoint: None,
-            sentry_dsn: None,
-            metrics_token: None,
-        };
+        let config = test_config("0.0.0.0:50051", "127.0.0.1:9090", None);
         assert_eq!(
             validate_config(&config),
             Err(ConfigError::InvalidValue {
@@ -257,18 +317,7 @@ mod tests {
 
     #[test]
     fn non_loopback_metrics_requires_a_long_bearer_token() {
-        let config = AppConfig {
-            database_url: "postgres://app:secret@localhost/payvia".to_owned(),
-            redis_url: "redis://:secret@localhost/0".to_owned(),
-            http_addr: "0.0.0.0:8080".parse().expect("address"),
-            grpc_addr: "127.0.0.1:50051".parse().expect("address"),
-            metrics_addr: "0.0.0.0:9090".parse().expect("address"),
-            environment: "test".to_owned(),
-            version: "test-version".to_owned(),
-            otlp_endpoint: None,
-            sentry_dsn: None,
-            metrics_token: Some("short".to_owned()),
-        };
+        let config = test_config("127.0.0.1:50051", "0.0.0.0:9090", Some("short".to_owned()));
         assert_eq!(
             validate_config(&config),
             Err(ConfigError::InvalidValue {

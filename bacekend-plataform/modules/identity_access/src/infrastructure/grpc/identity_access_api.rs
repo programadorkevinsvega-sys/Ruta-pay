@@ -3,13 +3,15 @@ use opentelemetry::{global, propagation::Extractor, trace::TraceContextExt};
 use payvia_observability::{current_span_id, current_trace_id};
 use platform_contracts::identity_access::{
     ApiKeyMetadata, AuthorizeOperatorOperationRequest, AuthorizeOperatorOperationResponse,
-    CreateApiKeyRequest, CreateApiKeyResponse, CreateOperatorSessionRequest,
-    CreateOperatorSessionResponse, CreateTenantSessionRequest, CreateTenantSessionResponse,
-    ListApiKeysRequest, ListApiKeysResponse, RegisterTenantUserRequest, RegisterTenantUserResponse,
-    RevokeApiKeyRequest, RevokeApiKeyResponse, RevokeOperatorSessionRequest,
-    RevokeOperatorSessionResponse, RevokeSessionRequest, RevokeSessionResponse,
-    ValidateOperatorSessionRequest, ValidateOperatorSessionResponse, ValidateTenantSessionRequest,
-    ValidateTenantSessionResponse, identity_access_server::IdentityAccess,
+    AuthorizeTenantOperationRequest, AuthorizeTenantOperationResponse, CreateApiKeyRequest,
+    CreateApiKeyResponse, CreateOperatorSessionRequest, CreateOperatorSessionResponse,
+    CreateTenantSessionRequest, CreateTenantSessionResponse, ListApiKeysRequest,
+    ListApiKeysResponse, ListTenantMembershipsRequest, ListTenantMembershipsResponse,
+    RegisterTenantUserRequest, RegisterTenantUserResponse, RevokeApiKeyRequest,
+    RevokeApiKeyResponse, RevokeOperatorSessionRequest, RevokeOperatorSessionResponse,
+    RevokeSessionRequest, RevokeSessionResponse, TenantMembership, ValidateOperatorSessionRequest,
+    ValidateOperatorSessionResponse, ValidateTenantSessionRequest, ValidateTenantSessionResponse,
+    identity_access_server::IdentityAccess,
 };
 use tonic::{Request, Response, Status};
 use tracing::Instrument;
@@ -343,6 +345,78 @@ impl IdentityAccess for IdentityAccessApi {
                 Err(error) => Err(log_and_map(
                     error,
                     "authorize_operator_operation",
+                    &correlation_id,
+                    started.elapsed().as_millis() as u64,
+                )),
+            }
+        }
+        .instrument(span)
+        .await
+    }
+
+    async fn authorize_tenant_operation(
+        &self,
+        request: Request<AuthorizeTenantOperationRequest>,
+    ) -> Result<Response<AuthorizeTenantOperationResponse>, Status> {
+        let correlation_id = request.get_ref().correlation_id.clone();
+        let span = grpc_span(&request, "authorize_tenant_operation", &correlation_id);
+        let body = request.into_inner();
+        let tenant_id = parse_uuid(&body.tenant_id, "tenant identifier")?;
+        async move {
+            let started = std::time::Instant::now();
+            match self
+                .service
+                .authorize_tenant_operation(
+                    &body.session_token,
+                    &body.csrf_token,
+                    tenant_id,
+                    &body.permission,
+                    &correlation_id,
+                )
+                .await
+            {
+                Ok(user_id) => Ok(Response::new(AuthorizeTenantOperationResponse {
+                    user_id: user_id.to_string(),
+                })),
+                Err(error) => Err(log_and_map(
+                    error,
+                    "authorize_tenant_operation",
+                    &correlation_id,
+                    started.elapsed().as_millis() as u64,
+                )),
+            }
+        }
+        .instrument(span)
+        .await
+    }
+
+    async fn list_tenant_memberships(
+        &self,
+        request: Request<ListTenantMembershipsRequest>,
+    ) -> Result<Response<ListTenantMembershipsResponse>, Status> {
+        let correlation_id = request.get_ref().correlation_id.clone();
+        let span = grpc_span(&request, "list_tenant_memberships", &correlation_id);
+        let body = request.into_inner();
+        async move {
+            let started = std::time::Instant::now();
+            match self
+                .service
+                .list_tenant_memberships(&body.session_token, &body.csrf_token)
+                .await
+            {
+                Ok((_, memberships)) => Ok(Response::new(ListTenantMembershipsResponse {
+                    memberships: memberships
+                        .into_iter()
+                        .map(|membership| TenantMembership {
+                            tenant_id: membership.tenant_id.to_string(),
+                            role: membership.role,
+                            membership_status: membership.membership_status,
+                        })
+                        .collect(),
+                })),
+                Err(error) => Err(log_and_map(
+                    error,
+                    "list_tenant_memberships",
                     &correlation_id,
                     started.elapsed().as_millis() as u64,
                 )),

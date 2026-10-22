@@ -1,7 +1,9 @@
 use opentelemetry::{global, trace::TracerProvider as _};
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerProvider};
 use platform_contracts::identity_access::identity_access_client::IdentityAccessClient as IdentityAccessGrpcClient;
+use platform_contracts::realtime::realtime_gateway_client::RealtimeGatewayClient as RealtimeGatewayGrpcClient;
 use platform_contracts::runtime::runtime_probe_client::RuntimeProbeClient;
+use platform_contracts::tenant_registry::tenant_registry_client::TenantRegistryClient as TenantRegistryGrpcClient;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -62,19 +64,29 @@ async fn real_http_bff_and_grpc_module_cover_success_unavailable_and_timeout() {
         .await
         .expect("runtime bind");
     let runtime_addr = runtime_listener.local_addr().expect("runtime address");
+    let module_identity_client = IdentityAccessGrpcClient::new(
+        tonic::transport::Endpoint::from_shared(format!("http://{runtime_addr}"))
+            .expect("identity module endpoint parses")
+            .connect_lazy(),
+    );
     let (runtime_shutdown, runtime_signal) = oneshot::channel();
     let database_pool = sqlx::postgres::PgPoolOptions::new()
-        .connect_lazy("postgres://platform:secret@127.0.0.1/platform")
-        .expect("lazy PostgreSQL pool parses");
+        .connect_lazy(
+            &std::env::var("PLATFORM_TEST_DATABASE_ADMIN_URL")
+                .expect("isolated PostgreSQL test administrator URL is configured"),
+        )
+        .expect("isolated PostgreSQL pool parses");
     let redis_url = std::env::var("PLATFORM_REDIS_URL").expect("real Redis test URL is configured");
     let redis_client = redis::Client::open(redis_url).expect("Redis test URL parses");
-    let redis_manager = redis::aio::ConnectionManager::new(redis_client)
+    let redis_manager = redis::aio::ConnectionManager::new(redis_client.clone())
         .await
         .expect("real Redis connection is available");
     let runtime_task = tokio::spawn(platform_runtime::module_config::serve(
         runtime_listener,
         database_pool,
         redis_manager,
+        redis_client,
+        module_identity_client,
         async move {
             let _ = runtime_signal.await;
         },
@@ -90,6 +102,12 @@ async fn real_http_bff_and_grpc_module_cover_success_unavailable_and_timeout() {
     let identity_client = IdentityAccessGrpcClient::connect(identity_endpoint)
         .await
         .expect("identity gRPC connection");
+    let tenant_client = TenantRegistryGrpcClient::connect(format!("http://{runtime_addr}"))
+        .await
+        .expect("tenant registry gRPC connection");
+    let realtime_client = RealtimeGatewayGrpcClient::connect(format!("http://{runtime_addr}"))
+        .await
+        .expect("realtime gRPC connection");
 
     let http_listener = TcpListener::bind("127.0.0.1:0").await.expect("BFF bind");
     let http_addr = http_listener.local_addr().expect("BFF address");
@@ -98,8 +116,13 @@ async fn real_http_bff_and_grpc_module_cover_success_unavailable_and_timeout() {
     let http_task = tokio::spawn(async move {
         axum::serve(
             http_listener,
-            payvia_platform_bff::http::routes::router(grpc_client, identity_client.clone())
-                .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            payvia_platform_bff::http::routes::router(
+                grpc_client,
+                identity_client.clone(),
+                tenant_client,
+                realtime_client,
+            )
+            .into_make_service_with_connect_info::<std::net::SocketAddr>(),
         )
         .with_graceful_shutdown(async move {
             let _ = http_signal.await;
@@ -244,6 +267,13 @@ async fn real_http_bff_and_grpc_module_cover_success_unavailable_and_timeout() {
         tonic::transport::Endpoint::from_shared(format!("http://{blackhole_addr}"))
             .expect("valid blackhole gRPC endpoint");
     let blackhole_grpc_client = RuntimeProbeClient::new(blackhole_endpoint.connect_lazy());
+    let blackhole_realtime_client =
+        RealtimeGatewayGrpcClient::new(blackhole_endpoint.connect_lazy());
+    let blackhole_tenant_client = TenantRegistryGrpcClient::new(
+        tonic::transport::Endpoint::from_shared(format!("http://{blackhole_addr}"))
+            .expect("blackhole tenant endpoint parses")
+            .connect_lazy(),
+    );
     let timeout_http_listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("timeout BFF bind");
@@ -257,6 +287,8 @@ async fn real_http_bff_and_grpc_module_cover_success_unavailable_and_timeout() {
             payvia_platform_bff::http::routes::router(
                 blackhole_grpc_client,
                 timeout_identity_client,
+                blackhole_tenant_client,
+                blackhole_realtime_client,
             )
             .into_make_service_with_connect_info::<std::net::SocketAddr>(),
         )

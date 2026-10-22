@@ -1,3 +1,4 @@
+use async_nats::jetstream::{self, stream::RetentionPolicy};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use opentelemetry::{global, trace::TracerProvider as _};
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerProvider};
@@ -5,7 +6,9 @@ use platform_contracts::{
     identity_access::{
         AuthorizeOperatorOperationRequest, identity_access_client::IdentityAccessClient,
     },
+    realtime::realtime_gateway_client::RealtimeGatewayClient as RealtimeGatewayGrpcClient,
     runtime::runtime_probe_client::RuntimeProbeClient,
+    tenant_registry::tenant_registry_client::TenantRegistryClient as TenantRegistryGrpcClient,
 };
 use platform_identity_access::application::operator_bootstrap::OperatorBootstrapService;
 use reqwest::{Client, StatusCode, header};
@@ -105,6 +108,10 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .run(&migration_pool)
         .await
         .expect("tenant registry migrations apply to real PostgreSQL");
+    platform_realtime::infrastructure::persistence::MIGRATOR
+        .run(&migration_pool)
+        .await
+        .expect("realtime journal migration applies to real PostgreSQL");
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
         "CREATE ROLE \"{runtime_role}\" LOGIN PASSWORD '{runtime_password}'"
     )))
@@ -118,12 +125,12 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .await
     .expect("runtime role receives database connect only");
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
-        "GRANT USAGE ON SCHEMA identity_access, tenant_registry TO \"{runtime_role}\""
+        "GRANT USAGE ON SCHEMA identity_access, tenant_registry, realtime TO \"{runtime_role}\""
     )))
     .execute(&migration_pool)
     .await
     .expect("runtime role receives schema usage");
-    sqlx::raw_sql(sqlx::AssertSqlSafe(format!("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity_access, tenant_registry TO \"{runtime_role}\"")))
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity_access, tenant_registry, realtime TO \"{runtime_role}\"")))
         .execute(&migration_pool)
         .await
         .expect("runtime role receives owned-module table privileges");
@@ -186,17 +193,24 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     );
 
     let redis_client = redis::Client::open(redis_url).expect("Redis URL parses");
-    let redis_manager = redis::aio::ConnectionManager::new(redis_client)
+    let redis_manager = redis::aio::ConnectionManager::new(redis_client.clone())
         .await
         .expect("real development Redis accepts a connection");
     let grpc_listener = TcpListener::bind("127.0.0.1:0").await.expect("gRPC bind");
     let grpc_addr = grpc_listener.local_addr().expect("gRPC address");
+    let module_identity_client = IdentityAccessClient::new(
+        tonic::transport::Endpoint::from_shared(format!("http://{grpc_addr}"))
+            .expect("identity module endpoint parses")
+            .connect_lazy(),
+    );
     let (grpc_stop, grpc_signal) = oneshot::channel();
     let grpc_pool = runtime_pool.clone();
     let grpc_task = tokio::spawn(platform_runtime::module_config::serve(
         grpc_listener,
         grpc_pool,
         redis_manager.clone(),
+        redis_client,
+        module_identity_client,
         async move {
             let _ = grpc_signal.await;
         },
@@ -209,6 +223,12 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let identity_client = IdentityAccessClient::connect(grpc_endpoint)
         .await
         .expect("identity gRPC channel connects");
+    let tenant_client = TenantRegistryGrpcClient::connect(format!("http://{grpc_addr}"))
+        .await
+        .expect("tenant registry gRPC channel connects");
+    let realtime_client = RealtimeGatewayGrpcClient::connect(format!("http://{grpc_addr}"))
+        .await
+        .expect("realtime gRPC channel connects");
     let mut authorization_client = identity_client.clone();
     let http_listener = TcpListener::bind("127.0.0.1:0").await.expect("BFF bind");
     let http_addr = http_listener.local_addr().expect("BFF address");
@@ -217,8 +237,13 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let http_task = tokio::spawn(async move {
         axum::serve(
             http_listener,
-            payvia_platform_bff::http::routes::router(runtime_client, identity_client)
-                .into_make_service_with_connect_info::<SocketAddr>(),
+            payvia_platform_bff::http::routes::router(
+                runtime_client,
+                identity_client,
+                tenant_client,
+                realtime_client,
+            )
+            .into_make_service_with_connect_info::<SocketAddr>(),
         )
         .with_graceful_shutdown(async move {
             let _ = http_signal.await;
@@ -506,6 +531,549 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     assert_eq!(
         operator_session_used_for_tenant.status(),
         StatusCode::UNAUTHORIZED
+    );
+    let tenant_create = client
+        .post(format!("http://{http_addr}/v1/tenants"))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .header("x-csrf-token", &csrf_cookie)
+        .header("x-correlation-id", "corr_tenant_onboarding")
+        .json(&serde_json::json!({
+            "display_name": "Acceptance tenant",
+            "slug": format!("acceptance-{}", Uuid::new_v4().simple())
+        }))
+        .send()
+        .await
+        .expect("tenant onboarding reaches tenant registry through BFF and gRPC");
+    assert_eq!(tenant_create.status(), StatusCode::CREATED);
+    let tenant_body: serde_json::Value = tenant_create
+        .json()
+        .await
+        .expect("tenant onboarding returns a safe tenant representation");
+    let created_tenant_id = Uuid::parse_str(
+        tenant_body["tenant_id"]
+            .as_str()
+            .expect("created tenant identifier is present"),
+    )
+    .expect("created tenant identifier is a UUID");
+    assert_eq!(tenant_body["status"], "pending_verification");
+    let owner_membership_event: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM tenant_registry.outbox_events WHERE aggregate_id=$1 AND event_type='tenant.registered' AND correlation_id='corr_tenant_onboarding')",
+    )
+    .bind(created_tenant_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("tenant onboarding is durably queued for owner membership provisioning");
+    assert!(owner_membership_event);
+    let tenant_list = client
+        .get(format!("http://{http_addr}/v1/platform/tenants?query=Acceptance&limit=10&offset=0"))
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+        )
+        .header("x-correlation-id", "corr_tenant_admin_list")
+        .send()
+        .await
+        .expect("operator can list tenants through BFF and gRPC");
+    assert_eq!(tenant_list.status(), StatusCode::OK);
+    let tenant_list_body: serde_json::Value =
+        tenant_list.json().await.expect("tenant list is JSON");
+    assert_eq!(tenant_list_body["total"], 1);
+    let tenant_admin_status = client
+        .post(format!("http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &operator_csrf_cookie)
+        .header("x-correlation-id", "corr_tenant_admin_activate")
+        .json(&serde_json::json!({
+            "status": "active",
+            "reason": "Acceptance verification",
+            "expected_version": tenant_body["status_version"]
+        }))
+        .send()
+        .await
+        .expect("authorized operator can activate tenant");
+    assert_eq!(tenant_admin_status.status(), StatusCode::OK);
+    let tenant_admin_status_body: serde_json::Value = tenant_admin_status
+        .json()
+        .await
+        .expect("status change returns the tenant state");
+    assert_eq!(tenant_admin_status_body["status"], "active");
+    assert_eq!(tenant_admin_status_body["status_version"], 2);
+    let tenant_status_outbox: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM tenant_registry.outbox_events WHERE aggregate_id=$1 AND event_type='tenant.status.changed' AND correlation_id='corr_tenant_admin_activate')",
+    )
+    .bind(created_tenant_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("tenant status mutation has a durable outbox event");
+    assert!(tenant_status_outbox);
+    let nats_client = async_nats::ConnectOptions::with_user_and_password(
+        std::env::var("NATS_USER").expect("development NATS user is configured"),
+        std::env::var("NATS_PASSWORD").expect("development NATS password is configured"),
+    )
+    .connect(std::env::var("PLATFORM_NATS_URL").expect("development JetStream URL is configured"))
+    .await
+    .expect("real development NATS accepts authenticated connection");
+    let jetstream = jetstream::new(nats_client);
+    let stream = jetstream
+        .get_or_create_stream(jetstream::stream::Config {
+            name: "PAYVIA_PLATFORM_EVENTS".to_owned(),
+            subjects: vec!["payvia.platform.events.v1.>".to_owned()],
+            retention: RetentionPolicy::Limits,
+            storage: jetstream::stream::StorageType::File,
+            duplicate_window: Duration::from_secs(120),
+            max_age: Duration::from_secs(90 * 24 * 60 * 60),
+            max_messages: 10_000_000,
+            ..Default::default()
+        })
+        .await
+        .expect("real JetStream stream is available");
+    let registration_event_id: Uuid = sqlx::query_scalar(
+        "SELECT event_id FROM tenant_registry.outbox_events WHERE aggregate_id=$1 AND event_type='tenant.registered'",
+    )
+    .bind(created_tenant_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("onboarding event identifier is durable");
+    let published_count = platform_tenant_registry::infrastructure::outbox_relay::relay_batch(
+        &runtime_pool,
+        &jetstream,
+    )
+    .await
+    .expect("tenant outbox relay publishes through the real JetStream client");
+    assert!(
+        published_count > 0,
+        "outbox events are acknowledged durably"
+    );
+    let outbox_published: bool = sqlx::query_scalar(
+        "SELECT published_at IS NOT NULL FROM tenant_registry.outbox_events WHERE event_id=$1",
+    )
+    .bind(registration_event_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("outbox publication state can be verified");
+    assert!(
+        outbox_published,
+        "Outbox is marked only after JetStream ack"
+    );
+    let event_message = stream
+        .get_last_raw_message_by_subject("payvia.platform.events.v1.tenant.registered")
+        .await
+        .expect("JetStream durably stores tenant registration event");
+    let event_envelope: serde_json::Value = serde_json::from_slice(&event_message.payload)
+        .expect("published event uses the versioned JSON envelope");
+    assert_eq!(
+        event_envelope["event_id"],
+        registration_event_id.to_string()
+    );
+    let membership_created = platform_identity_access::infrastructure::tenant_membership_consumer::consume_tenant_registered(
+        &runtime_pool,
+        &event_message.payload,
+    )
+    .await
+    .expect("real consumer provisions owner membership from the durable event");
+    assert!(membership_created);
+    let owner_membership: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM identity_access.tenant_memberships WHERE tenant_id=$1 AND user_id=$2 AND role='tenant_owner' AND status='active')",
+    )
+    .bind(created_tenant_id)
+    .bind(registered_user_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("owner membership is persisted in its owning module");
+    assert!(owner_membership);
+    let duplicate_membership = platform_identity_access::infrastructure::tenant_membership_consumer::consume_tenant_registered(
+        &runtime_pool,
+        &event_message.payload,
+    )
+    .await
+    .expect("redelivery is handled idempotently");
+    assert!(
+        !duplicate_membership,
+        "redelivered event does not duplicate membership"
+    );
+    let memberships_response = client
+        .get(format!("http://{http_addr}/v1/identity/memberships"))
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .header("x-correlation-id", "corr_memberships_read")
+        .send()
+        .await
+        .expect("tenant membership query reaches identity module through BFF");
+    assert_eq!(memberships_response.status(), StatusCode::OK);
+    let memberships_body: serde_json::Value = memberships_response
+        .json()
+        .await
+        .expect("membership response is safe JSON");
+    assert_eq!(
+        memberships_body["memberships"][0]["tenant_id"],
+        created_tenant_id.to_string()
+    );
+    assert_eq!(memberships_body["memberships"][0]["role"], "tenant_owner");
+
+    let api_key_creation = client
+        .post(format!(
+            "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .header("x-csrf-token", &csrf_cookie)
+        .header("x-correlation-id", "corr_api_key_create")
+        .json(&serde_json::json!({
+            "name": "Acceptance live key",
+            "environment": "live",
+            "scopes": ["payment_intents.create"]
+        }))
+        .send()
+        .await
+        .expect("tenant owner can create an API key through BFF and gRPC");
+    assert_eq!(api_key_creation.status(), StatusCode::CREATED);
+    let api_key_created: serde_json::Value = api_key_creation
+        .json()
+        .await
+        .expect("API key creation returns the one-time secret");
+    let api_key_id = Uuid::parse_str(
+        api_key_created["key_id"]
+            .as_str()
+            .expect("API key id is present"),
+    )
+    .expect("API key id is a UUID");
+    let api_key_secret = api_key_created["secret_once"]
+        .as_str()
+        .expect("one-time API key secret is present");
+    assert!(api_key_secret.starts_with("live_"));
+    assert_eq!(
+        api_key_created["prefix"].as_str(),
+        Some(&api_key_secret[..13])
+    );
+    assert_eq!(api_key_created["environment"], "live");
+    let stored_key_digest: Vec<u8> = sqlx::query_scalar(
+        "SELECT secret_digest FROM identity_access.api_keys WHERE tenant_id=$1 AND id=$2",
+    )
+    .bind(created_tenant_id)
+    .bind(api_key_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("API key digest is persisted");
+    assert_eq!(
+        stored_key_digest.as_slice(),
+        Sha256::digest(api_key_secret.as_bytes()).as_slice()
+    );
+
+    let foreign_api_key_list = client
+        .get(format!(
+            "http://{http_addr}/v1/tenants/{}/api-keys",
+            Uuid::new_v4()
+        ))
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("tenant key access to an unassociated tenant is rejected");
+    assert_eq!(foreign_api_key_list.status(), StatusCode::FORBIDDEN);
+
+    let api_key_list = client
+        .get(format!(
+            "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
+        ))
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("API key metadata is available to the authorized tenant");
+    assert_eq!(api_key_list.status(), StatusCode::OK);
+    let api_key_metadata: serde_json::Value = api_key_list
+        .json()
+        .await
+        .expect("API key metadata is safe JSON");
+    assert_eq!(api_key_metadata[0]["status"], "active");
+    assert_eq!(api_key_metadata[0]["prefix"], api_key_created["prefix"]);
+    assert!(api_key_metadata[0].get("secret_once").is_none());
+    assert!(api_key_metadata[0].get("secret_digest").is_none());
+
+    let api_key_revoke = client
+        .delete(format!(
+            "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys/{api_key_id}"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .header("x-csrf-token", &csrf_cookie)
+        .header("x-correlation-id", "corr_api_key_revoke")
+        .send()
+        .await
+        .expect("tenant owner can revoke its key through BFF and gRPC");
+    assert_eq!(api_key_revoke.status(), StatusCode::NO_CONTENT);
+    let revoked_key_status: String = sqlx::query_scalar(
+        "SELECT status FROM identity_access.api_keys WHERE tenant_id=$1 AND id=$2",
+    )
+    .bind(created_tenant_id)
+    .bind(api_key_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("revocation persists in PostgreSQL");
+    assert_eq!(revoked_key_status, "revoked");
+    let api_key_audit: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM identity_access.audit_events WHERE resource_id=$1 AND action='api_key.created' AND outcome='completed') AND EXISTS (SELECT 1 FROM identity_access.audit_events WHERE resource_id=$1 AND action='api_key.revoked' AND outcome='completed')",
+    )
+    .bind(api_key_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("API key creation and revocation are audited");
+    assert!(api_key_audit);
+
+    let second_email = format!("second_tenant_{}@example.test", Uuid::new_v4().simple());
+    let second_password = format!("Second-tenant-password-{}!", Uuid::new_v4().simple());
+    let second_user_registration = client
+        .post(format!("http://{http_addr}/v1/identity/register"))
+        .header(header::ORIGIN, &origin)
+        .header("x-correlation-id", "corr_second_tenant_register")
+        .json(&serde_json::json!({"email": second_email, "password": second_password}))
+        .send()
+        .await
+        .expect("second tenant user registers through the BFF");
+    assert_eq!(second_user_registration.status(), StatusCode::CREATED);
+    let second_login = client
+        .post(format!("http://{http_addr}/v1/identity/session"))
+        .header(header::ORIGIN, &origin)
+        .header("x-correlation-id", "corr_second_tenant_login")
+        .json(&serde_json::json!({"email": second_email, "password": second_password}))
+        .send()
+        .await
+        .expect("second tenant user logs in through the BFF");
+    assert_eq!(second_login.status(), StatusCode::OK);
+    let second_cookies: Vec<String> = second_login
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok().map(str::to_owned))
+        .collect();
+    let second_session_cookie = cookie_value(&second_cookies, "payvia_tenant_session");
+    let second_csrf_cookie = cookie_value(&second_cookies, "payvia_tenant_csrf");
+    let second_tenant_create = client
+        .post(format!("http://{http_addr}/v1/tenants"))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &second_csrf_cookie)
+        .header("x-correlation-id", "corr_second_tenant_onboarding")
+        .json(&serde_json::json!({
+            "display_name": "Second acceptance tenant",
+            "slug": format!("second-acceptance-{}", Uuid::new_v4().simple())
+        }))
+        .send()
+        .await
+        .expect("second tenant onboarding reaches its owning module");
+    assert_eq!(second_tenant_create.status(), StatusCode::CREATED);
+    let second_tenant_body: serde_json::Value = second_tenant_create
+        .json()
+        .await
+        .expect("second tenant response is safe JSON");
+    let second_tenant_id = Uuid::parse_str(
+        second_tenant_body["tenant_id"]
+            .as_str()
+            .expect("second tenant identifier is present"),
+    )
+    .expect("second tenant identifier is a UUID");
+    platform_tenant_registry::infrastructure::outbox_relay::relay_batch(&runtime_pool, &jetstream)
+        .await
+        .expect("second tenant registration publishes through the real JetStream relay");
+    let second_tenant_event = stream
+        .get_last_raw_message_by_subject("payvia.platform.events.v1.tenant.registered")
+        .await
+        .expect("JetStream durably stores second tenant registration");
+    let second_tenant_envelope: serde_json::Value =
+        serde_json::from_slice(&second_tenant_event.payload)
+            .expect("second tenant event is a versioned envelope");
+    assert_eq!(
+        second_tenant_envelope["payload"]["tenant_id"],
+        second_tenant_id.to_string()
+    );
+    assert!(platform_identity_access::infrastructure::tenant_membership_consumer::consume_tenant_registered(
+        &runtime_pool,
+        &second_tenant_event.payload,
+    )
+    .await
+    .expect("second membership is provisioned from JetStream event"));
+
+    let cross_tenant_details = client
+        .get(format!("http://{http_addr}/v1/tenants/{created_tenant_id}"))
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
+        )
+        .header("x-correlation-id", "corr_cross_tenant_details")
+        .send()
+        .await
+        .expect("second tenant user cannot read the first tenant");
+    assert_eq!(cross_tenant_details.status(), StatusCode::FORBIDDEN);
+    let cross_tenant_api_keys = client
+        .get(format!("http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"))
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("second tenant user cannot enumerate first tenant API keys");
+    assert_eq!(cross_tenant_api_keys.status(), StatusCode::FORBIDDEN);
+    let mut isolation_transaction = runtime_pool
+        .begin()
+        .await
+        .expect("runtime tenant-isolation transaction begins");
+    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+        .bind(second_tenant_id.to_string())
+        .execute(&mut *isolation_transaction)
+        .await
+        .expect("runtime tenant context is set");
+    let foreign_key_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM identity_access.api_keys WHERE tenant_id=$1")
+            .bind(created_tenant_id)
+            .fetch_one(&mut *isolation_transaction)
+            .await
+            .expect("RLS filters API keys belonging to another tenant");
+    assert_eq!(foreign_key_count, 0);
+    isolation_transaction
+        .commit()
+        .await
+        .expect("tenant-isolation transaction completes");
+
+    let mut realtime_redis = redis_manager.clone();
+    let first_journal_insert =
+        platform_realtime::infrastructure::grpc::realtime_gateway_api::persist_and_publish(
+            &runtime_pool,
+            &mut realtime_redis,
+            &event_message.payload,
+        )
+        .await
+        .expect("realtime consumer persists the event journal and publishes its Redis signal");
+    assert!(first_journal_insert);
+    let duplicate_journal_insert =
+        platform_realtime::infrastructure::grpc::realtime_gateway_api::persist_and_publish(
+            &runtime_pool,
+            &mut realtime_redis,
+            &event_message.payload,
+        )
+        .await
+        .expect("redelivered JetStream event is safely deduplicated");
+    assert!(!duplicate_journal_insert);
+    let journal_event_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM realtime.event_journal WHERE event_id=$1")
+            .bind(registration_event_id)
+            .fetch_one(&migration_pool)
+            .await
+            .expect("journal stores the event id only once");
+    assert_eq!(journal_event_count, 1);
+    let replay_url = format!(
+        "http://{http_addr}/v1/realtime/events?audience=tenant&tenant_id={created_tenant_id}"
+    );
+    let tenant_replay = client
+        .get(format!("{replay_url}&cursor=0"))
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .header("x-correlation-id", "corr_realtime_tenant_replay")
+        .send()
+        .await
+        .expect("tenant can recover realtime journal by authorized cursor");
+    assert_eq!(tenant_replay.status(), StatusCode::OK);
+    let replay_body: serde_json::Value = tenant_replay
+        .json()
+        .await
+        .expect("authorized event replay is safe JSON");
+    assert!(replay_body["events"].as_array().is_some_and(|events| {
+        events
+            .iter()
+            .any(|event| event["event_type"] == "tenant.registered")
+    }));
+    let replay_cursor = replay_body["next_cursor"]
+        .as_u64()
+        .expect("cursor is unsigned");
+    let cursor_replay = client
+        .get(format!("{replay_url}&cursor={replay_cursor}"))
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("replay resumes at the acknowledged cursor");
+    let cursor_replay_body: serde_json::Value = cursor_replay
+        .json()
+        .await
+        .expect("cursor replay is safe JSON");
+    assert_eq!(
+        cursor_replay_body["events"].as_array().map(Vec::len),
+        Some(0)
+    );
+    let foreign_tenant_replay = client
+        .get(format!(
+            "http://{http_addr}/v1/realtime/events?audience=tenant&tenant_id={}&cursor=0",
+            Uuid::new_v4()
+        ))
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("tenant realtime audience cannot cross tenant boundary");
+    assert_eq!(foreign_tenant_replay.status(), StatusCode::FORBIDDEN);
+    let status_event_message = stream
+        .get_last_raw_message_by_subject("payvia.platform.events.v1.tenant.status.changed")
+        .await
+        .expect("JetStream durably stores administrative status events");
+    platform_realtime::infrastructure::grpc::realtime_gateway_api::persist_and_publish(
+        &runtime_pool,
+        &mut realtime_redis,
+        &status_event_message.payload,
+    )
+    .await
+    .expect("status transition is journaled for realtime replay");
+    let platform_replay = client
+        .get(format!("http://{http_addr}/v1/realtime/events?audience=platform&cursor=0"))
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+        )
+        .header("x-correlation-id", "corr_realtime_platform_replay")
+        .send()
+        .await
+        .expect("platform operator recovers administrative events through authorized BFF");
+    assert_eq!(platform_replay.status(), StatusCode::OK);
+    let platform_replay_body: serde_json::Value = platform_replay
+        .json()
+        .await
+        .expect("platform event replay is safe JSON");
+    assert!(
+        platform_replay_body["events"]
+            .as_array()
+            .is_some_and(|events| {
+                events
+                    .iter()
+                    .any(|event| event["event_type"] == "tenant.status.changed")
+            })
     );
     let operator_logout = client
         .delete(format!("http://{http_addr}/v1/platform/identity/session"))

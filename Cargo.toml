@@ -8,6 +8,7 @@ members = [
     "bacekend-plataform/platform",
     "bacekend-plataform/modules/identity_access",
     "bacekend-plataform/modules/tenant_registry",
+    "bacekend-plataform/modules/realtime",
     "crates/observability",
     "bacekend-pasarela",
 ]
@@ -17,7 +18,7 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace.dependencies]
-axum = { version = "0.8.9", features = ["json", "macros"] }
+axum = { version = "0.8.9", features = ["json", "macros", "ws"] }
 argon2 = { version = "0.6.0", features = ["rand_core"] }
 async-nats = { version = "0.50.0", default-features = false, features = ["jetstream"] }
 async-trait = "0.1.89"

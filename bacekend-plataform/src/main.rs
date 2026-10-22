@@ -3,7 +3,9 @@ use payvia_platform_bff::{
 };
 use payvia_platform_core::{config::AppConfig, metrics, shutdown_signal, telemetry};
 use platform_contracts::identity_access::identity_access_client::IdentityAccessClient as IdentityAccessGrpcClient;
+use platform_contracts::realtime::realtime_gateway_client::RealtimeGatewayClient as RealtimeGatewayGrpcClient;
 use platform_contracts::runtime::runtime_probe_client::RuntimeProbeClient as RuntimeProbeGrpcClient;
+use platform_contracts::tenant_registry::tenant_registry_client::TenantRegistryClient as TenantRegistryGrpcClient;
 use std::time::Duration;
 use tokio::{net::TcpListener, sync::watch};
 use tonic::transport::Endpoint;
@@ -70,26 +72,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .set_number_of_retries(10)
         .set_connection_timeout(Some(Duration::from_secs(2)))
         .set_response_timeout(Some(Duration::from_secs(2)));
-    let redis_manager = redis::aio::ConnectionManager::new_with_config(redis_client, redis_config)
-        .await
-        .inspect_err(|_| {
-            tracing::error!(
-                event.name = "service.startup.dependency.failed",
-                component = "platform_runtime",
-                operation = "connect_redis",
-                dependency = "redis",
-                error_code = "redis_connect_failed",
-                error_category = "connectivity",
-                retryable = true
-            );
-        })?;
+    let redis_manager =
+        redis::aio::ConnectionManager::new_with_config(redis_client.clone(), redis_config)
+            .await
+            .inspect_err(|_| {
+                tracing::error!(
+                    event.name = "service.startup.dependency.failed",
+                    component = "platform_runtime",
+                    operation = "connect_redis",
+                    dependency = "redis",
+                    error_code = "redis_connect_failed",
+                    error_category = "connectivity",
+                    retryable = true
+                );
+            })?;
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let event_task = tokio::spawn(platform_runtime::event_workers::run(
+        database_pool.clone(),
+        config.redis_url.clone(),
+        config.nats_url.clone(),
+        config.nats_username.clone(),
+        config.nats_password.clone(),
+        shutdown_rx.clone(),
+    ));
     let runtime_listener = bind_listener(config.grpc_addr, "platform_runtime", "bind_grpc").await?;
     let runtime_addr = runtime_listener.local_addr()?;
+    let identity_module_client = IdentityAccessGrpcClient::new(
+        Endpoint::from_shared(format!("http://{runtime_addr}"))?.connect_lazy(),
+    );
     let runtime_task = tokio::spawn(serve_runtime(
         runtime_listener,
         database_pool,
         redis_manager,
+        redis_client,
+        identity_module_client,
         shutdown_rx.clone(),
     ));
     let endpoint = Endpoint::from_shared(format!("http://{runtime_addr}"))?
@@ -118,6 +134,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 retryable = true
             );
         })?;
+    let tenant_endpoint = Endpoint::from_shared(format!("http://{runtime_addr}"))?
+        .connect_timeout(Duration::from_secs(2))
+        .timeout(Duration::from_secs(5));
+    let tenant_client = TenantRegistryGrpcClient::connect(tenant_endpoint)
+        .await
+        .inspect_err(|_| {
+            tracing::error!(
+                event.name = "service.startup.dependency.failed",
+                component = "platform_bff",
+                operation = "connect_tenant_registry",
+                dependency = "tenant_registry",
+                error_code = "grpc_connect_failed",
+                error_category = "connectivity",
+                retryable = true
+            )
+        })?;
+    let realtime_endpoint = Endpoint::from_shared(format!("http://{runtime_addr}"))?
+        .connect_timeout(Duration::from_secs(2))
+        .timeout(Duration::from_secs(5));
+    let realtime_client = RealtimeGatewayGrpcClient::connect(realtime_endpoint)
+        .await
+        .inspect_err(|_| {
+            tracing::error!(
+                event.name = "service.startup.dependency.failed",
+                component = "platform_bff",
+                operation = "connect_realtime_gateway",
+                dependency = "realtime",
+                error_code = "grpc_connect_failed",
+                error_category = "connectivity",
+                retryable = true
+            )
+        })?;
     let metrics_listener =
         bind_listener(config.metrics_addr, "platform_metrics", "bind_metrics").await?;
     let metrics_task = tokio::spawn(metrics::serve(
@@ -130,7 +178,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(event.name = "service.started", service = "payvia-platform", http_addr = %http_listener.local_addr()?, grpc_addr = %runtime_addr, metrics_addr = %config.metrics_addr);
     axum::serve(
         http_listener,
-        router(grpc_client, identity_client)
+        router(grpc_client, identity_client, tenant_client, realtime_client)
             .into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
     .with_graceful_shutdown(async move {
@@ -140,6 +188,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     runtime_task.await??;
     metrics_task.await??;
+    event_task.await?;
     telemetry.tracer_provider.shutdown()?;
     telemetry.logger_provider.shutdown()?;
     drop(telemetry.sentry_guard);
@@ -167,13 +216,22 @@ async fn serve_runtime(
     listener: TcpListener,
     database_pool: sqlx::PgPool,
     redis_manager: redis::aio::ConnectionManager,
+    redis_client: redis::Client,
+    identity_client: IdentityAccessGrpcClient<tonic::transport::Channel>,
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<(), tonic::transport::Error> {
     let span = tracing::info_span!("grpc.server", component = "platform_runtime");
     async move {
-        platform_runtime::module_config::serve(listener, database_pool, redis_manager, async move {
-            let _ = shutdown.changed().await;
-        })
+        platform_runtime::module_config::serve(
+            listener,
+            database_pool,
+            redis_manager,
+            redis_client,
+            identity_client,
+            async move {
+                let _ = shutdown.changed().await;
+            },
+        )
         .await
     }
     .instrument(span)

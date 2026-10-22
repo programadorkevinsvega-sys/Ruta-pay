@@ -4,7 +4,9 @@
 
 Ruta en el repositorio: `frontends/frontend-plataform/`.
 >
-> Estado inicial: planificación. Ninguna fase está completada por scaffolds o documentación.
+> Estado actualizado: la coordinación realtime de Fase 2 está implementada y aceptada contra el BFF real; los demás dominios administrativos siguen pendientes según sus fases.
+
+La configuración local del cliente vive en `frontends/frontend-plataform/.env` y se documenta en su `.env.example`; no se almacena en los `.env` de los backends.
 
 ## Alcance y reglas de ejecución
 
@@ -37,11 +39,11 @@ La administración es una app independiente de `frontend-pasarela`, con sesión,
 
 ## Fase 2 — Coordinación realtime y estado recuperable
 
-- [ ] Implementar coordinador WebSocket central con audiencia de plataforma, cursor, `event_id`, versión y deduplicación.
-- [ ] Detectar huecos y eventos fuera de orden; reconectar con backoff+jitter y recuperar snapshot/cambios por REST autorizado.
-- [ ] Invalidar/refrescar TanStack Query desde un punto central; vistas no mantienen sockets particulares.
-- [ ] Limpiar socket, caché y cursor al salir, expirar sesión o cambiar la identidad operativa.
-- [ ] Mostrar estado de conexión y frescura de datos en áreas administrativas críticas.
+- [x] Implementar coordinador WebSocket central con audiencia de plataforma, cursor, `event_id`, versión y deduplicación.
+- [x] Detectar huecos y eventos fuera de orden; reconectar con backoff+jitter y recuperar snapshot/cambios por REST autorizado.
+- [x] Invalidar/refrescar TanStack Query desde un punto central; vistas no mantienen sockets particulares.
+- [x] Limpiar socket, caché y cursor al salir, expirar sesión o cambiar la identidad operativa.
+- [x] Mostrar estado de conexión y frescura de datos en áreas administrativas críticas.
 
 **Criterio de salida:** pruebas automáticas verifican recuperación, autorización de audiencia, deduplicación, gaps y convergencia con REST; transporte real se valida junto con el backend.
 
@@ -101,4 +103,4 @@ La administración es una app independiente de `frontend-pasarela`, con sesión,
 
 ## Estado de fases
 
-Fase 0 tiene auditoría en `docs/phase-0/audit.md`. Fase 1 está en implementación: login/logout de operador y recuperación de sesión compilan y tienen pruebas unitarias. La aceptación integrada de browser, las operaciones administrativas, auditoría UI y realtime con recuperación REST/cursor siguen pendientes.
+La Fase 2 de realtime recuperable está verificada junto con la integración vertical del backend de plataforma. Playwright cubre sesión de operador, búsqueda y transiciones administrativas con cambios realtime; una prueba de dos réplicas cubre reinicios de Redis y JetStream. Evidencia: [`bacekend-plataform/docs/phase-2/acceptance.md`](../../bacekend-plataform/docs/phase-2/acceptance.md). El resto de los dominios administrativos permanece en sus fases posteriores.
