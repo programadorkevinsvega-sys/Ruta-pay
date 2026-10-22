@@ -2,7 +2,7 @@
 
 ## Estado
 
-Cierre técnico completado en `feat/platform-phase-2-identity-tenants`. La evidencia de esta ejecución está registrada al final de este documento; la integración a `main` sigue el proceso de revisión de rama y Pull Request.
+Cierre funcional implementado en `feat/platform-phase-2-identity-tenants`, pero el cierre de aceptación queda pendiente por el hallazgo de aislamiento de JetStream descrito al final de este documento. La integración a `main` sigue el proceso de revisión de rama y Pull Request.
 
 ## Alcance vertical
 
@@ -91,7 +91,7 @@ Validación de campos/email/password/scope; autenticación inválida, expirada o
 
 ## Acta de cierre y evidencia ejecutada — 2026-10-22
 
-Fase 2 está completa en esta rama. Los recorridos implementados son identidad diferenciada, onboarding y membership propietaria mediante Outbox/JetStream, aislamiento tenant/RLS, API Keys test/live y operaciones administrativas de tenant; los cambios visibles se entregan por realtime y se recuperan por cursor/REST.
+Los recorridos implementados son identidad diferenciada, onboarding y membership propietaria mediante Outbox/JetStream, aislamiento tenant/RLS, API Keys test/live y operaciones administrativas de tenant; los cambios visibles se entregan por realtime y se recuperan por cursor/REST. La fase no se declara cerrada hasta resolver el hallazgo de aislamiento de JetStream documentado abajo y repetir la aceptación sin contaminar la base persistente.
 
 - `cargo fmt --all -- --check`: aprobado.
 - `cargo clippy -p bacekend-plataform --all-targets -- -D warnings`: aprobado.
@@ -106,6 +106,12 @@ La aceptación de esta fase no valida integraciones de Wompi, Factus o Resend ni
 
 ### Verificación local sobre `payvia_dev` — 2026-10-22
 
-La migración versionada se aplicó directamente a la base local `payvia_dev` usando `platform_migrator`; el proceso de aplicación se inició con el binario release y no ejecutó DDL al arrancar el backend. Los ledgers quedaron en estado exitoso: `identity_access` (202610220001, 202610220002, 202610220004), `tenant_registry` (202610220002, 202610220003) y `realtime` (202610220001). `platform_migrator` y `platform_runtime` son roles separados, ambos sin `SUPERUSER`, `CREATEDB`, `CREATEROLE` ni `BYPASSRLS`. El servicio se comprobó con `PLATFORM_DATABASE_URL` usando `platform_runtime`, ambos usuarios conectados al mismo destino. `GET /health/ready` respondió `200` (`ready`) con `correlation_id` y `trace_id`; `GET /openapi.json` respondió `200`. Un login con un email válido pero inexistente recorrió HTTP→gRPC→PostgreSQL y respondió `401 authentication_failed`, preservando el `correlation_id`; no creó usuario ni sesión. Después de la comprobación, PostgreSQL confirmó `0` filas en `identity_access.tenant_users`, `identity_access.sessions`, `tenant_registry.tenants` y `realtime.event_journal`.
+La migración versionada se aplicó directamente a la base local `payvia_dev` usando `platform_migrator`; el proceso de aplicación se inició con el binario release y no ejecutó DDL al arrancar el backend. Los ledgers quedaron en estado exitoso: `identity_access` (202610220001, 202610220002, 202610220004), `tenant_registry` (202610220002, 202610220003) y `realtime` (202610220001). `platform_migrator` y `platform_runtime` son roles separados, ambos sin `SUPERUSER`, `CREATEDB`, `CREATEROLE` ni `BYPASSRLS`. El servicio se comprobó con `PLATFORM_DATABASE_URL` usando `platform_runtime`, ambos usuarios conectados al mismo destino. `GET /health/ready` respondió `200` (`ready`) con `correlation_id` y `trace_id`; `GET /openapi.json` respondió `200`. Un login con un email válido pero inexistente recorrió HTTP→gRPC→PostgreSQL y respondió `401 authentication_failed`, preservando el `correlation_id`; no creó usuario ni sesión. La consulta administrativa posterior confirmó `0` filas de usuarios, sesiones y tenants, pero encontró `180` filas en `realtime.event_journal` provenientes de pruebas anteriores.
 
-Las bases efímeras siguen siendo el entorno para E2E automatizados y comparación reproducible de migraciones: se crean y eliminan para que los flujos de navegador no dejen usuarios/tenants de prueba en `payvia_dev`. Esta verificación complementaria sí usa la base local persistente y no la sustituye.
+Las bases efímeras siguen siendo el entorno para E2E automatizados y comparación reproducible de migraciones. Esta verificación complementaria sí usa la base local persistente y no la sustituye.
+
+### Hallazgo bloqueante — aislamiento de JetStream de E2E
+
+Las pruebas de navegador crean una base PostgreSQL efímera y asignan nombres durables únicos mediante `PLATFORM_EVENT_CONSUMER_NAMESPACE`, pero siguen publicando en el stream y los subjects compartidos `PAYVIA_PLATFORM_EVENTS` / `payvia.platform.events.v1.>`. El namespace solo cambia el nombre del durable; no aísla los mensajes. El consumidor normal de plataforma recibió eventos de pruebas cuyo `created_by` no existe en `payvia_dev`; se verificó que el usuario referenciado no estaba en `identity_access.tenant_users`, lo que causa PostgreSQL `23503` al crear la membresía propietaria. La inspección del JetStream local mostró 243 mensajes y 64 consumers, incluidos consumers E2E durables acumulados. El worker procesó eventos realtime de prueba; por eso quedaron 180 filas de journal. El proceso local se detuvo con SIGINT y no se borraron filas ni mensajes.
+
+Para cerrar Fase 2 se debe aislar también el stream/subjects de cada ejecución E2E (no solo la base SQL y el nombre del consumer), asegurar limpieza de los recursos JetStream que la prueba creó y volver a correr ambas aplicaciones y la prueba de recuperación. No se debe purgar el stream compartido ni borrar el journal sin una decisión explícita de limpieza de datos.
