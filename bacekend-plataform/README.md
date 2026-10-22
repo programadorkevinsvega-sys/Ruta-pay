@@ -202,7 +202,7 @@ Toda operación administrativa y decisión de autorización es auditable. Se apl
 
 ## Estado del proyecto
 
-El estado vigente, los contratos realmente disponibles y el roadmap se mantienen en [`ROADMAP.md`](ROADMAP.md). La auditoría, matriz y criterios de aceptación por fase están en [`docs/phase-0/`](docs/phase-0/), [`docs/phase-1/`](docs/phase-1/) y [`docs/adr/`](docs/adr/). La Fase 1 sigue abierta hasta completar la aceptación registrada en su documento; no se deben tratar contratos futuros como endpoints publicados.
+El estado vigente y los contratos realmente disponibles se mantienen en [`ROADMAP.md`](ROADMAP.md). La Fase 1 está cerrada para el alcance de fundaciones y observabilidad; el recorrido automatizado HTTP→BFF→gRPC cubre éxito, desconexión y timeout, con evidencia en [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md). La auditoría, las matrices y las decisiones están en [`docs/phase-0/`](docs/phase-0/), [`docs/phase-1/`](docs/phase-1/) y [`docs/adr/`](docs/adr/). No se deben tratar contratos futuros como endpoints publicados.
 
 ## Roadmap y reglas
 

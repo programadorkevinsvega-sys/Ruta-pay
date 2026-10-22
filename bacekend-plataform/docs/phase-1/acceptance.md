@@ -4,7 +4,7 @@
 
 La Fase 1 implementa la base ejecutable de plataforma: composition root, configuración tipada, BFF Axum/OpenAPI, contrato Protobuf/Tonic y módulo `platform_runtime` con límites de dominio, aplicación e infraestructura; readiness atraviesa HTTP→BFF→gRPC→módulo. También instrumenta correlación, métricas Prometheus, exportación OTLP, apagado ordenado y diagnóstico seguro. No agrega reglas comerciales, tenants, autenticación de usuario, mutaciones persistidas ni frontends funcionales.
 
-**Estado: cerrada — 2026-10-22, tras revalidar configuración real.** La revisión detectó que `bacekend-plataform/.env` carecía de variables de runtime y que la evidencia anterior había usado variables exportadas desde la terminal. Se añadieron las variables faltantes al `.env` local ignorado por Git y se volvió a ejecutar `run-production.sh` sin overrides. Readiness y petición HTTP respondieron 200, el endpoint de métricas rechazó acceso sin token (401) y permitió el scrape autenticado (200), Prometheus reportó el target de plataforma `up=1`, Loki recibió logs estructurados correlacionados y Tempo devolvió tres spans para la traza de aceptación. Sentry Cloud ya había aceptado una prueba de ingestión HTTP 200; la SDK del backend se inicializa con el DSN del mismo `.env` y aplica el saneador probado unitariamente.
+**Estado: cerrada — 2026-10-22, tras automatizar la aceptación del timeout.** La prueba de aceptación cubre el éxito y la desconexión contra el servidor real `platform_runtime`, además del timeout de dos segundos mediante un listener TCP real que acepta la conexión y no responde. El caso cruza HTTP→BFF→cliente Tonic, valida el envelope `module_timeout`, `timeout`, `retryable=true`, la propagación de `correlation_id`/`trace_id`, la correlación de eventos de fallo/cierre y la redacción del token. No se simula una respuesta gRPC. La evidencia anterior de runtime y observabilidad se conserva; las verificaciones de código se repitieron después de este cambio.
 
 Las decisiones de arquitectura viven en [`../adr/`](../adr/), incluida [ADR-0007: destino Sentry](../adr/ADR-0007-destino-sentry.md) y [ADR-0008: autenticación de interfaces locales de infraestructura](../adr/ADR-0008-autenticacion-infraestructura-local.md). El alcance funcional y los gates completos continúan en el [roadmap](../../ROADMAP.md).
 
@@ -14,7 +14,7 @@ Las decisiones de arquitectura viven en [`../adr/`](../adr/), incluida [ADR-0007
 |---|---|---|
 | PostgreSQL / migraciones | No se persiste estado de negocio. | Health/readiness no consulta PostgreSQL; no se agregan schemas o tablas sin ownership funcional. |
 | Frontend → REST/OpenAPI → BFF | Endpoints operacionales `/health/live`, `/health/ready` y `/openapi.json`; no hay frontend ejecutable. | Los endpoints no son UX tenant/admin. Se acepta el BFF con cliente HTTP real y contrato OpenAPI; no se crea UI de salud. |
-| BFF → módulo gRPC | Axum llama a `platform_runtime` por contrato Protobuf/Tonic; el probe de inicio también propaga contexto. | Aceptación real HTTP→Axum→Tonic client/server→módulo; comprobar trace/correlation, éxito, error, timeout y envelope seguro. |
+| BFF → módulo gRPC | Axum llama a `platform_runtime` por contrato Protobuf/Tonic; el probe de inicio también propaga contexto. | Éxito y desconexión usan el servidor real HTTP→Axum→Tonic→módulo. Para el timeout se usa inyección de fallo de transporte en un listener TCP real, sin respuesta gRPC simulada; verificar envelope seguro y eventos de fallo/cierre con los mismos `correlation_id`, `trace_id`, código y categoría. |
 | Redis | No se requiere caché ni estado efímero en health/readiness. | No conectar ni reiniciar Redis como condición artificial de esta fase; primera subfase que lo use implementará `ConnectionManager`, backoff y Pub/Sub si aplica. |
 | JetStream / Outbox | No hay mutaciones ni efectos durables de dominio. | No emitir eventos de health. Outbox/consumer durable aplican en la primera mutación persistida y visible. |
 | Realtime | Health es lectura operacional puntual, sin audiencia ni transición persistida. | No corresponde emitir realtime; se documenta para evitar agregar Redis Pub/Sub como autoridad. |
@@ -29,10 +29,13 @@ Las decisiones de arquitectura viven en [`../adr/`](../adr/), incluida [ADR-0007
 
 ## Evidencia de aceptación ejecutada — 2026-10-22
 
+La aceptación de timeout recorre el endpoint HTTP real y el cliente Tonic hasta un fallo de transporte TCP controlado; el mismo test conserva el caso exitoso contra el módulo gRPC real y el fallo por módulo desconectado.
+
 - `cargo fmt --all -- --check`: pasó.
 - `cargo clippy --workspace --all-targets -- -D warnings`: pasó.
 - `cargo test --workspace --all-targets`: pasó; incluye aceptación HTTP→BFF→gRPC→módulo y pruebas de configuración/observabilidad.
-- Inventario de pruebas del workspace: 12 pruebas unitarias y 1 prueba automatizada de integración/aceptación HTTP→BFF→gRPC→módulo. No existe una suite separada de browser E2E ni frontend en esta fase; la interfaz de producto no forma parte del alcance de Fase 1. La aceptación de backend sí cruza HTTP y gRPC reales.
+- `cargo test -p bacekend-plataform --test http_grpc_acceptance -- --nocapture`: pasó; aceptación E2E HTTP→BFF→gRPC para éxito, módulo desconectado y timeout de transporte; verificó el envelope, retryability, correlación causal/cierre y redacción.
+- Inventario de pruebas del workspace: 12 pruebas unitarias y 1 prueba automatizada de integración/E2E HTTP→BFF→gRPC, con éxito y desconexión del módulo real y un timeout inducido en transporte TCP. No existe una suite de browser E2E ni frontend de producto en esta fase; la aceptación ejercita automáticamente todas las fronteras runtime aplicables desde HTTP.
 - `docker build --file bacekend-plataform/deploy/Dockerfile --tag payvia-platform:phase1-check .`: pasó; construyó el binario del backend de plataforma en imagen de runtime independiente.
 - `docker compose config --quiet`: pasó.
 - `docker compose exec -T prometheus promtool check config /etc/prometheus/prometheus.yml`: pasó.
@@ -71,4 +74,4 @@ Esta ampliación cubre el acceso administrativo a la pila local de desarrollo y 
 
 ## Resultado del cierre
 
-La Fase 1 queda cerrada para su alcance documentado. PostgreSQL, Redis, NATS JetStream/Outbox, autorización de tenant y realtime no aplican porque esta fase no persiste ni muta estado de negocio; sus justificaciones están en la matriz de integración. Sus pruebas e integraciones pertenecen a las fases que introducen esos dominios. La suite de esta fase no es una suite E2E del navegador ni cubre fallos/reconexión de servicios de negocio.
+La Fase 1 queda cerrada para su alcance documentado. La prueba automatizada recorre HTTP→BFF→gRPC→módulo en éxito y desconexión, y verifica el timeout en la frontera HTTP/Tonic con inyección de fallo de transporte, además de trazabilidad, clasificación y redacción. PostgreSQL, Redis, NATS JetStream/Outbox, autorización de tenant y realtime no aplican porque esta fase no persiste ni muta estado de negocio; sus justificaciones están en la matriz de integración. Sus pruebas e integraciones pertenecen a las fases que introducen esos dominios. No hay frontend de producto en esta fase; la aceptación automatizada cubre todas las fronteras runtime incluidas en su alcance.
