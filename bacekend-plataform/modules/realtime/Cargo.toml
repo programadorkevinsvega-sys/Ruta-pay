@@ -1,0 +1,22 @@
+[package]
+name = "platform-realtime"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+chrono.workspace = true
+opentelemetry.workspace = true
+payvia-observability = { path = "../../../crates/observability" }
+platform-contracts = { path = "../../crates/platform_contracts" }
+redis.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tonic.workspace = true
+tracing.workspace = true
+tracing-opentelemetry.workspace = true
+uuid.workspace = true

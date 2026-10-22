@@ -8,7 +8,7 @@
 >
 > Los backends comparten el workspace Cargo raíz solo para resolución/build. Cada uno tiene binario, imagen, configuración, secretos, red, artefactos operativos y despliegue independiente en su propia VM/VPS; los dos frontends también tienen despliegues separados. Los artefactos de esta aplicación pertenecen a `bacekend-plataform/deploy/`.
 >
-> Estado: Fase 0 y Fase 1 cerradas. La evidencia y matriz de aceptación de Fase 1 están en [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md). La Fase 2 sigue pendiente.
+> Estado: Fases 0, 1 y 2 cerradas en la rama `feat/platform-phase-2-identity-tenants`. El acta de Fase 2 está en [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md). La integración a `main` queda sujeta a revisión mediante PR; las fases posteriores siguen pendientes.
 
 ## Autoridad de dominio
 
@@ -62,14 +62,18 @@ Criterios de cierre 1.1: pruebas reales HTTP→BFF→gRPC→módulo; traza y cor
 
 ## Fase 2 — Identidad, tenant registry y aislamiento
 
-- [ ] Schemas/migraciones propiedad de identity/access y tenant registry.
-- [ ] Registro, verificación, activación, suspensión, cierre y auditoría de tenant.
-- [ ] Usuarios, sesiones, membresías, roles, permisos y cuentas de operadores independientes.
-- [ ] API Keys `test`/`live`: entropía, hash, prefijo, scopes, revocación y visualización única.
-- [ ] Contexto tenant autorizado de extremo a extremo; límites y unicidad con aislamiento tenant.
-- [ ] Superficie REST/OpenAPI para ambas apps detrás de BFF y contratos internos gRPC.
+La implementación se ejecuta conforme a la matriz previa de [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md). El primer corte incluye identidad/sesiones separadas para tenants y operadores, revisión manual de tenant, ciclo de vida de API Keys y las fronteras PostgreSQL/gRPC/Redis/JetStream/realtime y ambas aplicaciones frontend que aplican a estos cambios visibles.
 
-**Salida:** pruebas HTTP→BFF→gRPC→módulo verifican autenticación, permisos, tenant cruzado, revocación, errores y redacción con PostgreSQL real.
+- [x] Schemas/migraciones propiedad de identity/access, tenant registry y realtime, coordinadas sobre PostgreSQL.
+- [x] Registro, verificación, activación, suspensión, reactivación, cierre y auditoría de tenant.
+- [x] Usuarios, sesiones, membresías propietarias, roles, permisos y cuentas de operadores independientes.
+- [x] API Keys `test`/`live`: entropía, digest, prefijo, scopes, revocación y visualización única.
+- [x] Contexto tenant autorizado de extremo a extremo; límites, unicidad y RLS entre tenants.
+- [x] Superficie REST/OpenAPI para ambas apps detrás del BFF y contratos internos gRPC.
+- [x] Outbox→JetStream, membresía idempotente, WebSocket autenticado, replay por cursor y recuperación REST.
+- [x] E2E Playwright de ambas apps y recuperación multi-réplica tras reiniciar Redis/NATS de desarrollo.
+
+**Salida:** cumplida. Aceptación HTTP→BFF→gRPC→módulo verifica identidad, permisos, tenant cruzado, API Keys, auditoría, errores y redacción con PostgreSQL/Redis/NATS reales de desarrollo; Playwright recorre ambas aplicaciones. Evidencia en [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md).
 
 ## Fase 3 — Catálogo de planes, precios, límites y entitlement
 
@@ -171,4 +175,4 @@ Referencias oficiales para la implementación: [Wompi — ambientes y llaves](ht
 
 ## Estado
 
-Fase 0 y Fase 1 están cerradas dentro de su alcance documentado; la evidencia y limitaciones de Fase 1 están en [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md). Las fases comerciales posteriores están pendientes. Cuentas sandbox, credenciales o decisiones legales faltantes se documentan como bloqueos concretos; no se reemplazan por simulaciones.
+Fases 0, 1 y 2 están cerradas dentro de sus alcances documentados. Las evidencias están en [`docs/phase-0/`](docs/phase-0/), [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md) y [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md). Fase 2 está completa en `feat/platform-phase-2-identity-tenants` y requiere revisión por PR antes de integrarse. Las fases posteriores siguen pendientes; cuentas sandbox, credenciales o decisiones legales faltantes se documentan como bloqueos concretos, sin simulaciones.

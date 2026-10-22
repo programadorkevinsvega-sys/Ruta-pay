@@ -1,0 +1,249 @@
+use opentelemetry::propagation::Injector;
+use platform_contracts::identity_access::{
+    CreateApiKeyRequest, CreateApiKeyResponse, CreateOperatorSessionRequest,
+    CreateOperatorSessionResponse, CreateTenantSessionRequest, CreateTenantSessionResponse,
+    ListApiKeysRequest, ListApiKeysResponse, ListTenantMembershipsRequest,
+    ListTenantMembershipsResponse, RegisterTenantUserRequest, RegisterTenantUserResponse,
+    RevokeApiKeyRequest, RevokeApiKeyResponse, RevokeOperatorSessionRequest,
+    RevokeOperatorSessionResponse, RevokeSessionRequest, RevokeSessionResponse,
+    ValidateOperatorSessionRequest, ValidateOperatorSessionResponse, ValidateTenantSessionRequest,
+    ValidateTenantSessionResponse, identity_access_client::IdentityAccessClient as GrpcClient,
+};
+use std::time::Duration;
+use tonic::{
+    metadata::{MetadataKey, MetadataMap, MetadataValue},
+    transport::Channel,
+};
+
+pub struct IdentityAccessClient;
+
+impl IdentityAccessClient {
+    pub async fn operator_login(
+        client: &GrpcClient<Channel>,
+        email: String,
+        password: String,
+        source_ip: String,
+        correlation_id: &str,
+    ) -> Result<CreateOperatorSessionResponse, tonic::Status> {
+        let request = request_with_context(
+            CreateOperatorSessionRequest {
+                email,
+                password,
+                source_ip,
+                correlation_id: correlation_id.to_owned(),
+            },
+            correlation_id,
+        )?;
+        let mut client = client.clone();
+        client
+            .create_operator_session(request)
+            .await
+            .map(tonic::Response::into_inner)
+    }
+
+    pub async fn operator_logout(
+        client: &GrpcClient<Channel>,
+        token: String,
+        correlation_id: &str,
+    ) -> Result<RevokeOperatorSessionResponse, tonic::Status> {
+        let request = request_with_context(
+            RevokeOperatorSessionRequest {
+                session_token: token,
+                correlation_id: correlation_id.to_owned(),
+            },
+            correlation_id,
+        )?;
+        let mut client = client.clone();
+        client
+            .revoke_operator_session(request)
+            .await
+            .map(tonic::Response::into_inner)
+    }
+
+    pub async fn validate_operator_session(
+        client: &GrpcClient<Channel>,
+        token: String,
+        csrf_token: String,
+        correlation_id: &str,
+    ) -> Result<ValidateOperatorSessionResponse, tonic::Status> {
+        let request = request_with_context(
+            ValidateOperatorSessionRequest {
+                session_token: token,
+                csrf_token,
+                correlation_id: correlation_id.to_owned(),
+            },
+            correlation_id,
+        )?;
+        let mut client = client.clone();
+        client
+            .validate_operator_session(request)
+            .await
+            .map(tonic::Response::into_inner)
+    }
+
+    pub async fn register(
+        client: &GrpcClient<Channel>,
+        email: String,
+        password: String,
+        correlation_id: &str,
+    ) -> Result<RegisterTenantUserResponse, tonic::Status> {
+        let request = request_with_context(
+            RegisterTenantUserRequest {
+                email,
+                password,
+                correlation_id: correlation_id.to_owned(),
+            },
+            correlation_id,
+        )?;
+        let mut client = client.clone();
+        client
+            .register_tenant_user(request)
+            .await
+            .map(tonic::Response::into_inner)
+    }
+
+    pub async fn login(
+        client: &GrpcClient<Channel>,
+        email: String,
+        password: String,
+        source_ip: String,
+        correlation_id: &str,
+    ) -> Result<CreateTenantSessionResponse, tonic::Status> {
+        let request = request_with_context(
+            CreateTenantSessionRequest {
+                email,
+                password,
+                correlation_id: correlation_id.to_owned(),
+                source_ip,
+            },
+            correlation_id,
+        )?;
+        let mut client = client.clone();
+        client
+            .create_tenant_session(request)
+            .await
+            .map(tonic::Response::into_inner)
+    }
+
+    pub async fn logout(
+        client: &GrpcClient<Channel>,
+        token: String,
+        correlation_id: &str,
+    ) -> Result<RevokeSessionResponse, tonic::Status> {
+        let request = request_with_context(
+            RevokeSessionRequest {
+                session_token: token,
+                correlation_id: correlation_id.to_owned(),
+            },
+            correlation_id,
+        )?;
+        let mut client = client.clone();
+        client
+            .revoke_session(request)
+            .await
+            .map(tonic::Response::into_inner)
+    }
+
+    pub async fn validate_session(
+        client: &GrpcClient<Channel>,
+        token: String,
+        csrf_token: String,
+        correlation_id: &str,
+    ) -> Result<ValidateTenantSessionResponse, tonic::Status> {
+        let request = request_with_context(
+            ValidateTenantSessionRequest {
+                session_token: token,
+                csrf_token,
+                correlation_id: correlation_id.to_owned(),
+            },
+            correlation_id,
+        )?;
+        let mut client = client.clone();
+        client
+            .validate_tenant_session(request)
+            .await
+            .map(tonic::Response::into_inner)
+    }
+
+    pub async fn list_tenant_memberships(
+        client: &GrpcClient<Channel>,
+        body: ListTenantMembershipsRequest,
+        correlation_id: &str,
+    ) -> Result<ListTenantMembershipsResponse, tonic::Status> {
+        let request = request_with_context(body, correlation_id)?;
+        let mut client = client.clone();
+        client
+            .list_tenant_memberships(request)
+            .await
+            .map(tonic::Response::into_inner)
+    }
+
+    pub async fn create_api_key(
+        client: &GrpcClient<Channel>,
+        body: CreateApiKeyRequest,
+        correlation_id: &str,
+    ) -> Result<CreateApiKeyResponse, tonic::Status> {
+        let request = request_with_context(body, correlation_id)?;
+        let mut client = client.clone();
+        client
+            .create_api_key(request)
+            .await
+            .map(tonic::Response::into_inner)
+    }
+
+    pub async fn list_api_keys(
+        client: &GrpcClient<Channel>,
+        body: ListApiKeysRequest,
+        correlation_id: &str,
+    ) -> Result<ListApiKeysResponse, tonic::Status> {
+        let request = request_with_context(body, correlation_id)?;
+        let mut client = client.clone();
+        client
+            .list_api_keys(request)
+            .await
+            .map(tonic::Response::into_inner)
+    }
+
+    pub async fn revoke_api_key(
+        client: &GrpcClient<Channel>,
+        body: RevokeApiKeyRequest,
+        correlation_id: &str,
+    ) -> Result<RevokeApiKeyResponse, tonic::Status> {
+        let request = request_with_context(body, correlation_id)?;
+        let mut client = client.clone();
+        client
+            .revoke_api_key(request)
+            .await
+            .map(tonic::Response::into_inner)
+    }
+}
+
+fn request_with_context<T>(
+    body: T,
+    correlation_id: &str,
+) -> Result<tonic::Request<T>, tonic::Status> {
+    let mut request = tonic::Request::new(body);
+    request.metadata_mut().insert(
+        "x-correlation-id",
+        MetadataValue::try_from(correlation_id)
+            .map_err(|_| tonic::Status::invalid_argument("invalid correlation identifier"))?,
+    );
+    opentelemetry::global::get_text_map_propagator(|propagator| {
+        propagator.inject(&mut MetadataInjector(request.metadata_mut()))
+    });
+    request.set_timeout(Duration::from_secs(3));
+    Ok(request)
+}
+
+struct MetadataInjector<'a>(&'a mut MetadataMap);
+
+impl Injector for MetadataInjector<'_> {
+    fn set(&mut self, key: &str, value: String) {
+        if let (Ok(key), Ok(value)) = (
+            MetadataKey::from_bytes(key.as_bytes()),
+            MetadataValue::try_from(value),
+        ) {
+            self.0.insert(key, value);
+        }
+    }
+}

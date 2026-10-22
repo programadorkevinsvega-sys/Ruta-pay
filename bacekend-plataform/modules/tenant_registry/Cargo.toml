@@ -1,0 +1,20 @@
+[package]
+name = "platform-tenant-registry"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+async-nats.workspace = true
+chrono.workspace = true
+metrics.workspace = true
+payvia-observability = { path = "../../../crates/observability" }
+platform-contracts = { path = "../../crates/platform_contracts" }
+sqlx.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tonic.workspace = true
+tracing.workspace = true
+uuid.workspace = true
