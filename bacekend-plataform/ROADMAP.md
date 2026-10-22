@@ -1,0 +1,149 @@
+# Roadmap del Backend de Plataforma Payvia
+
+> Este roadmap cubre únicamente el backend que gobierna tenants, planes, precios, límites, cuotas, suscripciones, facturación de Payvia, identidad y autorización. El backend de pasarelas tiene su propio [README](../bacekend-pasarela/README.md) y [roadmap](../bacekend-pasarela/ROADMAP.md).
+>
+> Estado: planificación. El código actual es un scaffold y no satisface fases funcionales.
+
+## Autoridad de dominio
+
+Plataforma es la fuente de verdad de tenant lifecycle, identidad/permisos, planes/precios versionados, entitlement, límites/cuotas, suscripciones, facturas y decisión de autorización. El servicio de pasarelas no puede cambiar esos datos ni inferir permiso localmente.
+
+Las llamadas síncronas usan contratos gRPC internos autenticados. Plataforma decide autorización antes de invocar `ExecuteAuthorizedGatewayOperation` y liga una concesión firmada de corta duración a identidad de servicio, tenant, entorno, cuenta, operación, capacidades requeridas, monto/moneda, plan/versión, límites, `jti`, expiración y trazas. Pasarelas valida criptográficamente esa concesión y cada claim. No hay callback RPC circular durante la operación. Timeout de autorización, respuesta incompleta o incompatibilidad significan denegación. Los cambios y eventos entre backends tienen contratos versionados y entrega durable Outbox/JetStream cuando corresponda.
+
+## Criterios obligatorios para cada fase y subfase
+
+Antes de implementar una subfase, documentar su requisito, ownership y matriz de integración: PostgreSQL/schema/migración; frontend→REST/OpenAPI→BFF; BFF→módulo dueño por gRPC; interacción gRPC con backend de pasarelas; uso concreto de Redis; productores/consumidores NATS/Outbox; realtime y recuperación por REST/cursor. Cada componente no aplicable requiere justificación previa, específica y comprobable.
+
+En la misma subfase se implementan y prueban ambos lados de los contratos afectados. Errores de validación, autenticación/autorización, conflicto, timeout/conectividad, persistencia y dependencias aplicables deben tener tipos/códigos, diagnóstico seguro, mapeo y recuperación documentados. Toda aceptación verifica evento específico de fallo y cierre HTTP con igual `correlation_id`, `trace_id` y código/categoría; incluye redacción automática de datos sensibles. Cada cambio persistido visible usa Outbox versionado → JetStream → realtime autenticado → TanStack Query → recuperación REST, salvo justificación concreta registrada previamente.
+
+Pruebas unitarias y de propiedades aplican a la lógica; integración/aceptación ejecuta PostgreSQL, Redis y NATS reales aislados cuando corresponda y cruza frontend/API/BFF/gRPC/módulo. No se permiten fixtures, seeds o respuestas simuladas para sustituir integración real. Redis y consumers JetStream deben demostrar reconexión/re-suscripción o recuperación durable. Cada fase queda completa antes de iniciar la siguiente y registra comandos, resultados y bloqueos reales.
+
+## Fase 0 — Auditoría, decisiones y workspace
+
+- [ ] Auditar scaffold, dependencias, configuración, CI y documentación.
+- [ ] Completar ADRs de contratos gRPC, concesiones firmadas, migraciones coordinadas, identidad de servicio, operación y pruebas cross-backend.
+- [ ] Diseñar bounded contexts: identity/access, tenant registry, catalog/pricing, entitlements/quotas, subscription billing, authorization, audit, BFF y realtime.
+- [ ] Acordar con pasarelas `gateway_credentials`: plataforma autoriza y reenvía altas/rotaciones por gRPC/mTLS; pasarelas persiste ciphertext en su módulo dueño. Prohibir persistencia duplicada/eventos con secretos en plataforma.
+- [ ] Versionar `payment_method` como unión `card|pse|crypto`, incluyendo referencias bancarias PSE permitidas y settlement cripto decimal string separado del importe comercial entero.
+- [ ] Definir threat model cross-backend: mTLS/cert rotation, identidad/scopes, grants ligados al request, replay, tamaño/rate limits, deadlines, retries y eventos/observabilidad redactados.
+- [ ] Definir Cargo workspace/binarios, límites de crates, contratos gRPC/eventos, identidad de servicio, amenazas y entornos.
+- [ ] Definir las dos apps frontend separadas: tenant y administración de plataforma.
+- [ ] Matriz de integraciones y plan de pruebas inicial por subfase.
+
+**Salida:** ADRs aprobadas; arquitectura, ownership, autorización inter-backend, matrices, contratos, amenazas y fases quedan trazables. Scaffold vacío no cierra la fase.
+
+## Fase 1 — Fundaciones y observabilidad
+
+- [ ] Configuración tipada y secretos por entorno, fallando de forma segura.
+- [ ] Tokio/Axum BFF, gRPC interno, OpenAPI y propagación W3C.
+- [ ] Errores tipados y envelopes seguros.
+- [ ] Logs JSON estructurados; OpenTelemetry, métricas y Sentry con redacción.
+- [ ] Eventos diagnósticos en cada frontera: inicio, dependencia, fallo y cierre; duración propia/total y clasificación retryable fundada.
+- [ ] Health/readiness, apagado ordenado, dashboards/alertas y salud del pipeline de telemetría.
+
+**Salida:** integración automatizada prueba contexto HTTP→gRPC→módulo, eventos correlacionados y ausencia de secretos.
+
+## Fase 2 — Identidad, tenant registry y aislamiento
+
+- [ ] Schemas/migraciones propiedad de identity/access y tenant registry.
+- [ ] Registro, verificación, activación, suspensión, cierre y auditoría de tenant.
+- [ ] Usuarios, sesiones, membresías, roles, permisos y cuentas de operadores independientes.
+- [ ] API Keys `test`/`live`: entropía, hash, prefijo, scopes, revocación y visualización única.
+- [ ] Contexto tenant autorizado de extremo a extremo; límites y unicidad con aislamiento tenant.
+- [ ] Superficie REST/OpenAPI para ambas apps detrás de BFF y contratos internos gRPC.
+
+**Salida:** pruebas HTTP→BFF→gRPC→módulo verifican autenticación, permisos, tenant cruzado, revocación, errores y redacción con PostgreSQL real.
+
+## Fase 3 — Catálogo de planes, precios, límites y entitlement
+
+- [ ] Planes y versiones inmutables de precio/moneda/periodo; cambios con vigencias explícitas.
+- [ ] Capacidades, límites, cuotas, políticas de excedente y restricciones por entorno.
+- [ ] Evaluación determinista del entitlement por tenant, plan y fecha efectiva.
+- [ ] Ledger durable de consumo/cuotas y protección contra concurrencia y replay.
+- [ ] API administrativa de catálogo y consulta tenant de su plan/consumo sin filtrar datos internos.
+- [ ] Contrato de entitlement/autorización consumible por gateway mediante gRPC.
+
+**Salida:** pruebas reales cubren límites exactos, excedentes, concurrencia, cambio versionado de plan, fechas y aislamiento.
+
+## Fase 4 — Suscripciones y facturación de uso Payvia
+
+- [ ] Ownership del ciclo de negocio de payment intents/transacciones: API Keys, idempotency scope, transiciones válidas y eventos normalizados; el backend de pasarelas ejecuta solamente llamadas de protocolo autorizadas.
+- [ ] Cobro a compradores de los tenants según el flujo configurado, separado del cobro que Payvia realiza a los tenants por usar la plataforma.
+- [ ] Ciclo de suscripción, periodos, prorrateo si se aprueba, facturas y partidas inmutables.
+- [ ] Cálculo de cobros de Payvia independiente de montos y fees de una transacción procesada para el tenant.
+- [ ] Cobro de invoice por el backend de pasarelas con scope de servicio `platform_billing_collection` limitado, auditado y autorizado sin bypass.
+- [ ] Estados de pago/reintentos y conciliación de la factura, sin duplicar efectos financieros.
+- [ ] Eventos Outbox de invoice, pago, mora, suspensión y cambios de suscripción.
+- [ ] Reglas de notificación y recuperación realtime a las apps pertinentes.
+
+**Salida:** aceptación integrada comprueba invoice persistida → autorización → comando al servicio pasarela → resultado verificado → ledger/Outbox, incluyendo timeout, redelivery y reconciliación. Sandbox real requerido para la pasarela.
+
+## Fase 5 — Decisión de autorización y concesiones para el backend de pasarelas
+
+- [ ] Contrato gRPC versionado `ExecuteAuthorizedGatewayOperation` y `ReportVerifiedProviderEvent` (o contratos versionados equivalentes).
+- [ ] Autenticación mutua TLS/mTLS, identidad de servicio rotatoria y autorización por método/scope.
+- [ ] Política por tenant, API Key, entorno, cuenta proveedor, plan, cuota, operación, monto/moneda y estado de cuenta.
+- [ ] Concesión firmada de corta duración y uso único/Idempotency-Key, ligada al comando y verificable por pasarelas.
+- [ ] Decisiones tipadas: allow/deny y razón estable segura; no exponer reglas internas o datos de otros tenants.
+- [ ] Denegación cerrada ante timeout de decisión, revocación, concesión expirada o alterada y versión incompatible.
+- [ ] Pruebas de contrato/conformidad compartidas y propagación de `correlation_id`/`trace_id`.
+- [ ] Pruebas negativas y resiliencia: certificado inválido/expirado/rotado, caller no autorizado, payload grande/malformado, rate limit, replay, deadline, desconexión y recuperación idempotente.
+- [ ] Configuración de credenciales tenant llega por BFF→plataforma→gRPC mTLS→`gateway_credentials`; no se persiste en plataforma ni se publica en NATS.
+
+**Salida:** plataforma solo envía operaciones que ha autorizado y pasarelas no puede ejecutarlas sin concesión vigente válida; matriz de errores y recuperación aprobada.
+
+## Fase 6 — Auditoría, eventos y realtime
+
+- [ ] Auditoría inmutable de administración, authz, tenant, plan, precio, límite y facturación.
+- [ ] Outbox en la transacción de negocio y relay durable JetStream.
+- [ ] Consumers durable idempotentes y DLQ/replay con permisos operativos.
+- [ ] Realtime multi-replica con `event_id`, cursor, aggregate version, scope, deduplicación, orden y huecos.
+- [ ] WebSocket por BFF autenticado; TanStack Query central en tenant/admin y recuperación REST por cursor/snapshot.
+- [ ] Redis Pub/Sub solo fan-out efímero, reconexión acotada y resuscripción.
+
+**Salida:** restart/reconnect tests sobre PostgreSQL/Redis/NATS reales de desarrollo prueban replay, reparación REST, permisos, orden y no pérdida confirmada.
+
+## Fase 7 — Frontends independientes
+
+- [ ] Aplicación tenant: registro/invitación, plan/uso, suscripción/facturas, API Keys y estado de cuenta.
+- [ ] Aplicación administración: tenants, catálogo/versiones, precios, límites, consumo, facturación, autorización y auditoría.
+- [ ] Sesiones, permisos, navegación, cliente API y caché separados; ambas apps consumen exclusivamente BFF REST/OpenAPI/WebSocket autenticado.
+- [ ] UX de denegación, cuota agotada, error recuperable, conexión perdida y datos actualizándose.
+- [ ] Pruebas UI propias sin usarlas como sustituto de aceptación HTTP→BFF→gRPC real.
+
+**Salida:** pruebas de permisos y contratos para ambas aplicaciones; frontend no accede a PostgreSQL, Redis, NATS, gRPC interno o servicio pasarela directamente.
+
+## Fase 8 — Calidad, seguridad, resiliencia y rendimiento
+
+- [ ] Unitarias, properties, integración, E2E de frontera, contratos, aislamiento tenant y autorización.
+- [ ] Pruebas reales de caídas/reinicios PostgreSQL/Redis/JetStream en servicios de desarrollo documentados; nunca producción.
+- [ ] Seguridad de sesiones, API Keys, SSRF, rate limit, replay, auditoría, secretos y separación de roles.
+- [ ] Carga/concurrencia k6, benchmark de decisiones authz y pruebas de saturación/recuperación.
+- [ ] Fuzzing de parsers expuestos y revisión de dependencias, SAST y configuración.
+- [ ] SLO, dashboards, alertas, runbooks y reporte de cobertura de flujos/errores críticos.
+
+**Salida:** no hay defectos críticos/altos abiertos ni criterios bloqueados presentados como pasados; evidencia reproducible y limitaciones registradas.
+
+## Fase 9 — Operación y piloto
+
+- [ ] Despliegue seguro, entornos separados, backups/restauración, migraciones coordinadas y rotación de claves.
+- [ ] Runbooks de tenant suspendido, deuda, reintento/reconciliación, authz caída, replay y recuperación realtime.
+- [ ] Piloto, soporte, términos/privacidad y cumplimiento aplicable.
+- [ ] Lanzamiento solo tras demostrar aislamiento, billing, autorización, trazabilidad, recuperación y conciliación.
+
+## Registro de integración obligatorio por subfase
+
+| Frontera | Decisión/diseño previo | Evidencia de aceptación |
+|---|---|---|
+| PostgreSQL y migraciones | schema dueño, transacción, rollback/compatibilidad | migración aplicada y pruebas reales de aislamiento/consistencia |
+| Frontend → HTTP/OpenAPI → BFF | apps y usuario/permiso | aceptación automatizada del endpoint y envelope |
+| BFF → módulo plataforma (gRPC) | método, contrato y contexto | propagación de identidad, error y traza |
+| Plataforma → backend pasarela | decisión, concesión ligada al comando, mTLS y versión | grant válido/alterado/expirado, denegación previa y contrato real |
+| Redis | uso TTL o justificación N/A | degradación/reconexión/re-suscripción |
+| NATS/Outbox | evento, dueño, consumer, replay o justificación N/A | redelivery/idempotencia y correlación |
+| Realtime/recuperación | audiencia, cursor, WebSocket, REST snapshot | orden, huecos, reconexión y autorización |
+| Errores/telemetría | clase, código, redacción, duración | fallo diagnóstico + cierre correlacionados |
+
+## Estado
+
+Todas las fases están pendientes hasta que se complete su salida con evidencia registrada. Cuentas sandbox, credenciales o decisiones legales faltantes se documentan como bloqueos concretos; no se reemplazan por simulaciones.
