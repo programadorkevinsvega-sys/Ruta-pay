@@ -2,7 +2,7 @@
 
 ## Flujo de ramas y revisión
 
-`main` debe mantenerse funcional y verificable. Los cambios importantes de código, arquitectura o seguridad se desarrollan en ramas descriptivas y se presentan mediante Pull Request con resumen, decisiones técnicas, verificaciones ejecutadas y riesgos conocidos. Los cambios triviales de documentación pueden hacerse en `main` cuando las protecciones lo permitan. No se permite force push ni reescribir historial compartido. No se integra si las verificaciones obligatorias fallan; los cambios sensibles requieren revisión manual. Consulta las reglas de agentes y proyecto para el procedimiento completo.
+`main` es exclusivamente la rama principal de integración; debe mantenerse funcional y verificable y no es una rama de trabajo. Todo cambio de código y todo cambio importante de documentación se desarrolla en una rama descriptiva y se presenta mediante Pull Request. Solo las correcciones editoriales triviales pueden hacerse directamente en `main` cuando las protecciones lo permitan; ante cualquier duda, usa una rama. El Pull Request queda para revisión y aprobación del usuario; el agente no lo integra automáticamente. No se permite force push ni reescribir historial compartido. No se integra si las verificaciones obligatorias fallan; los cambios sensibles requieren revisión manual. Consulta las reglas de agentes y proyecto para el procedimiento completo.
 
 > Orquestador de pagos multi-pasarela en Rust.
 > Última actualización: 2026-10-21 · Estado general: **planificación**

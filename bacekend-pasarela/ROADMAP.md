@@ -2,7 +2,7 @@
 
 ## Flujo de ramas y revisión
 
-`main` debe mantenerse funcional y verificable. Desarrolla funcionalidades, cambios arquitectónicos, correcciones complejas y modificaciones de seguridad en ramas descriptivas; presenta los cambios importantes en Pull Request con resumen, decisiones, verificaciones ejecutadas y riesgos conocidos. Los cambios triviales de documentación pueden hacerse en `main` cuando las protecciones lo permitan. No se permite force push ni reescribir historial compartido. No integres si fallan verificaciones obligatorias; los cambios sensibles requieren revisión manual.
+`main` es exclusivamente la rama principal de integración; debe mantenerse funcional y verificable y no es una rama de trabajo. Todo cambio de código y todo cambio importante de documentación se desarrolla en una rama descriptiva y se presenta mediante Pull Request. Solo las correcciones editoriales triviales pueden hacerse directamente en `main` cuando las protecciones lo permitan; ante cualquier duda, usa una rama. El Pull Request queda para revisión y aprobación del usuario; el agente no lo integra automáticamente. No se permite force push ni reescribir historial compartido. No integres si fallan verificaciones obligatorias; los cambios sensibles requieren revisión manual.
 
 > Este roadmap cubre adapters y protocolos de Wompi, Bold y proveedores que se incorporen en módulos independientes. Tenant, plan, precios, límites, suscripción, billing de Payvia y autorización pertenecen al [backend de plataforma](../bacekend-plataform/README.md).
 >
