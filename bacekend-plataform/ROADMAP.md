@@ -8,7 +8,7 @@
 >
 > Los backends comparten el workspace Cargo raíz solo para resolución/build. Cada uno tiene binario, imagen, configuración, secretos, red, artefactos operativos y despliegue independiente en su propia VM/VPS; los dos frontends también tienen despliegues separados. Los artefactos de esta aplicación pertenecen a `bacekend-plataform/deploy/`.
 >
-> Estado: Fase 0 cerrada; Fase 1 en validación. La evidencia, matriz y bloqueos de Fase 1 se mantienen en [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md). Las fases comerciales siguen pendientes.
+> Estado: Fase 0 y Fase 1 cerradas. La evidencia y matriz de aceptación de Fase 1 están en [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md). La Fase 2 sigue pendiente.
 
 ## Autoridad de dominio
 
@@ -48,17 +48,17 @@ El informe de auditoría conserva los comandos ejecutados y el inventario real. 
 
 La subfase 1.1 implementa el primer corte operativo: configuración tipada y validada; BFF Axum con OpenAPI y endpoints operacionales; contrato y servidor gRPC del módulo runtime; propagación W3C/correlation; errores tipados y envelopes seguros; logs JSON, OpenTelemetry/OTLP, métricas y Sentry con redacción; readiness verificada, apagado ordenado y diagnósticos de cada frontera. Su matriz previa, con N/A justificados, está en [`docs/phase-0/integration-matrix.md`](docs/phase-0/integration-matrix.md). El health endpoint es una interfaz operacional; por eso no crea una pantalla de producto ni requiere UI React. La aceptación debe usar cliente HTTP real y cruzar el límite de red gRPC. El Dockerfile y configuración de observabilidad son específicos del backend y se encuentran bajo `bacekend-plataform/deploy/`; su build usa la raíz como contexto Cargo, pero no contiene ni despliega el binario de pasarelas.
 
-Criterios de cierre 1.1: pruebas reales HTTP→BFF→gRPC→módulo; traza y correlation ID presentes en el servidor RPC; éxito y fallos de validación/configuración, autorización donde corresponda, deadline/conectividad y dependencia; evento causal y respuesta HTTP correlacionados con código/categoría y duraciones; redacción verificada; health/readiness distinta y basada en dependencias existentes; apagado ordenado probado; formato, clippy y pruebas ejecutados. No se exige PostgreSQL, Redis, JetStream, Outbox ni realtime en este corte, según las justificaciones de la matriz. Sentry y OTLP se instrumentan y configuran desde el inicio; la recepción externa queda bloqueada hasta contar con DSN/Collector válidos y no se reportará como comprobada sin envío verificable.
+Criterios de cierre 1.1: pruebas reales HTTP→BFF→gRPC→módulo; traza y correlation ID presentes en el servidor RPC; éxito y fallos de validación/configuración, autorización donde corresponda, deadline/conectividad y dependencia; evento causal y respuesta HTTP correlacionados con código/categoría y duraciones; redacción verificada; health/readiness distinta y basada en dependencias existentes; apagado ordenado probado; formato, clippy y pruebas ejecutados. No se exige PostgreSQL, Redis, JetStream, Outbox ni realtime en este corte, según las justificaciones de la matriz. Sentry y OTLP se instrumentan y configuran desde el inicio; su recepción externa solo se reporta como comprobada con envío verificable, evidenciado en el documento de aceptación.
 
-- [ ] Configuración tipada y secretos por entorno, fallando de forma segura.
-- [ ] Tokio/Axum BFF, gRPC interno, OpenAPI y propagación W3C.
-- [ ] Errores tipados y envelopes seguros.
-- [ ] Logs JSON estructurados; OpenTelemetry, métricas y Sentry con redacción.
-- [ ] Eventos diagnósticos en cada frontera: inicio, dependencia, fallo y cierre; duración propia/total y clasificación retryable fundada.
-- [ ] Health/readiness, apagado ordenado, dashboards/alertas y salud del pipeline de telemetría.
+- [x] Configuración tipada y secretos por entorno, fallando de forma segura.
+- [x] Tokio/Axum BFF, gRPC interno, OpenAPI y propagación W3C.
+- [x] Errores tipados y envelopes seguros.
+- [x] Logs JSON estructurados; OpenTelemetry, métricas y Sentry con redacción.
+- [x] Eventos diagnósticos en cada frontera: inicio, dependencia, fallo y cierre; duración propia/total y clasificación retryable fundada.
+- [x] Health/readiness, apagado ordenado, dashboards/alertas y salud del pipeline de telemetría.
 - [x] Artefacto de despliegue exclusivo para `bacekend-plataform`, con configuración operativa bajo `bacekend-plataform/deploy/`; build y ejecución no inician el backend de pasarelas.
 
-**Salida:** integración automatizada prueba contexto HTTP→gRPC→módulo, eventos correlacionados y ausencia de secretos.
+**Salida:** integración automatizada prueba contexto HTTP→gRPC→módulo, eventos correlacionados y ausencia de secretos. Fase 1 cerrada con evidencia registrada en [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md).
 
 ## Fase 2 — Identidad, tenant registry y aislamiento
 
