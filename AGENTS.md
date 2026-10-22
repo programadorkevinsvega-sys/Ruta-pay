@@ -6,6 +6,16 @@
 - El `README.md` de la raíz debe presentar el proyecto con información necesaria para entender su propósito, estado real, arquitectura general, requisitos/instrucciones verificadas y enlaces a documentación especializada. No lo conviertas en un depósito de detalles internos, contratos extensos, ejemplos especulativos, contenido repetido de los roadmaps ni información ajena al uso y orientación general del repositorio.
 - No omitas documentación requerida por las reglas: coloca el detalle en el documento normativo, roadmap, ADR o guía del módulo correspondiente y enlázalo desde el README raíz cuando sea útil.
 
+## Ramas, verificación e integración
+
+- `main` es la rama principal y debe mantenerse funcional y verificable. Para funcionalidades, refactorizaciones importantes, cambios de arquitectura, correcciones complejas o cambios de seguridad, trabaja en una rama descriptiva; por ejemplo `feat/key-rotation`, `fix/authorization-check`, `security/secret-encryption`, `refactor/key-service` o `docs/installation`.
+- Los cambios triviales de documentación pueden hacerse directamente en `main` cuando las protecciones del repositorio lo permitan. No uses esa excepción para cambios de código significativos.
+- No hagas `push --force` sobre `main` ni reescribas historial compartido. No mezcles cambios sin relación; usa commits pequeños, coherentes y descriptivos. Nunca incluyas secretos, credenciales ni archivos locales sensibles.
+- Antes de integrar cambios, revisa el diff y la presencia de secretos; ejecuta las pruebas y verificaciones relevantes del proyecto (incluidos formato y lints cuando apliquen). Compilar por sí solo no valida un cambio. Investiga y documenta fallos; no los ignores ni afirmes que una verificación pasó si no se ejecutó.
+- Para cambios importantes, prepara un Pull Request con resumen, decisiones técnicas, pruebas ejecutadas y riesgos pendientes. No integres cambios con verificaciones obligatorias fallidas. Cambios sensibles de cifrado, autenticación, autorización o gestión de claves requieren la revisión exigida por el proyecto; el agente no debe fusionarlos automáticamente.
+- El agente puede desarrollar, verificar y preparar ramas/PR de forma autónoma. Detente y solicita intervención cuando falten permisos, se requiera una decisión de seguridad importante o no sea posible validar la seguridad del cambio. No despliegues a producción ni ejecutes operaciones destructivas sin autorización explícita cuando corresponda.
+- Mantén activadas las comprobaciones automatizadas disponibles, protección de ramas cuando el repositorio la soporte, historial auditable y una estrategia de reversión. Aplica el proceso proporcionalmente: no añadas trámites de PR para cambios triviales permitidos en `main`.
+
 Estas instrucciones aplican a todo el trabajo del repositorio, especialmente a `bacekend-plataform/` y `bacekend-pasarela/`. Son obligatorias junto con las instrucciones de niveles superiores y cualquier `AGENTS.md` más específico.
 
 ## Cumplimiento normativo desde el día uno
@@ -59,7 +69,7 @@ No elijas uno de esos documentos e ignores los demás. El roadmap define qué ca
 - Antes de escribir código en una fase/subfase, añade a su documentación una matriz de integración que defina PostgreSQL/migraciones, API frontend→BFF (HTTP REST/OpenAPI), BFF→módulo (gRPC), uso concreto de Redis y eventos/consumidores NATS JetStream con Outbox, o justifique explícitamente cada componente no aplicable. Implementa y prueba esa matriz como parte de la misma fase/subfase.
 - Antes de implementar un cambio, actualiza primero la documentación pertinente para reflejar requisito, diseño, contrato y criterios de aceptación. Mantén documentación e implementación sincronizadas; no dejes la documentación para el final.
 - Completa la fase actual al 100 % antes de empezar la siguiente: cumple todos sus requisitos y criterios, integra los dominios, termina documentación y verificaciones y deja evidencia del cierre. No declares cerrada ni abandones una fase con tareas pendientes. Si un bloqueo externo impide completarla, detente en esa fase y documenta exactamente qué falta y por qué.
-- Trabaja siempre en la rama `main`. No crees, cambies ni uses ramas alternativas o worktrees para este proyecto. Al completar cada cambio coherente, crea en `main` un commit con mensaje detallado que describa cambios y dominios; después haz push de `main` al remoto configurado y confirma el resultado. No reescribas historial publicado: no uses force push, rebase, amend ni squash de commits publicados. Si no puedes completar el commit o push, informa el motivo concreto y deja claro qué quedó pendiente.
+- Sigue la política de ramas, verificaciones e integración de la sección **Ramas, verificación e integración**. Los cambios triviales documentales permitidos pueden confirmarse en `main`; los cambios importantes se trabajan en rama y se proponen para revisión antes de integrarlos.
 
 ## Código sin usar, supresiones y datos ficticios
 

@@ -1,5 +1,9 @@
 # Roadmap del Backend de Pasarelas Payvia
 
+## Flujo de ramas y revisión
+
+`main` debe mantenerse funcional y verificable. Desarrolla funcionalidades, cambios arquitectónicos, correcciones complejas y modificaciones de seguridad en ramas descriptivas; presenta los cambios importantes en Pull Request con resumen, decisiones, verificaciones ejecutadas y riesgos conocidos. Los cambios triviales de documentación pueden hacerse en `main` cuando las protecciones lo permitan. No se permite force push ni reescribir historial compartido. No integres si fallan verificaciones obligatorias; los cambios sensibles requieren revisión manual.
+
 > Este roadmap cubre adapters y protocolos de Wompi, Bold y proveedores que se incorporen en módulos independientes. Tenant, plan, precios, límites, suscripción, billing de Payvia y autorización pertenecen al [backend de plataforma](../bacekend-plataform/README.md).
 >
 > Estado: planificación. El crate actual es un scaffold, no una integración funcional.

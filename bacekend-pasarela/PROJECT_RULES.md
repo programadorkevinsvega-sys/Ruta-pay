@@ -75,3 +75,7 @@ Estas obligaciones aplican en cada módulo y cambio desde su diseño inicial; no
 ## Higiene del repositorio y README principal
 
 No crear archivos, carpetas o documentos Markdown innecesarios, duplicados o sin propósito verificable para este backend. Actualizar primero la documentación existente y mantener cada detalle en el documento dueño. El README raíz debe conservar únicamente la orientación general necesaria de Payvia —propósito, estado real, arquitectura resumida, instrucciones verificadas y enlaces—; los detalles internos de pasarelas, contratos y fases permanecen en los documentos especializados.
+
+## Ramas, verificación e integración
+
+Mantén `main` funcional y verificable. Usa ramas descriptivas para funcionalidades, refactorizaciones importantes, cambios arquitectónicos, correcciones complejas y modificaciones de seguridad; los cambios triviales de documentación pueden ir directamente a `main` si las protecciones lo permiten. No hagas force push ni reescribas historial compartido. Mantén commits pequeños y coherentes, revisa diffs y secretos y ejecuta las verificaciones pertinentes antes de integrar; compilar no basta. Los cambios importantes se proponen en un Pull Request con resumen, decisiones, pruebas y riesgos. No integres con verificaciones obligatorias fallidas ni fusiones automáticamente cambios sensibles de cifrado/autenticación/autorización sin la revisión requerida. Conserva historial auditable y reversión; no añadas proceso innecesario a cambios pequeños.
