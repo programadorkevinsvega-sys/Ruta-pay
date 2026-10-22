@@ -13,6 +13,7 @@ La infraestructura compartida se inicia explícitamente con `docker compose --en
 ## Decisión
 
 1. Añadir pgAdmin 4 con su autenticación nativa y persistencia en un volumen propio. El usuario es el correo configurado mediante `PGADMIN_DEFAULT_EMAIL`; la contraseña se configura mediante `PGADMIN_DEFAULT_PASSWORD`.
+   - Al registrar PostgreSQL desde este pgAdmin de Compose, usar `postgres` como host, `5432` como puerto, los valores de `POSTGRES_DB` y `POSTGRES_USER`, y `POSTGRES_PASSWORD` como contraseña. `127.0.0.1` dentro del contenedor apunta a pgAdmin, no a PostgreSQL. El nombre visible, por ejemplo `Payvia local`, se escribe en la pestaña General y no como host.
 2. Añadir RedisInsight con el acceso a Redis preconfigurado. Como RedisInsight no aporta en esta configuración una cuenta nativa de inicio de sesión, publicar su interfaz únicamente detrás de Nginx Basic Auth. Mantener el puerto interno fuera de los puertos del host.
 3. Habilitar Basic Auth nativa en Prometheus mediante `--web.config.file` y hash bcrypt. Grafana consulta Prometheus con las mismas credenciales de forma provisionada como dato seguro.
 4. Mantener Loki y Tempo en la red privada de Compose, sin publicar directamente sus puertos. Nginx aplica Basic Auth antes de reenviar solicitudes. Sus raíces muestran una página informativa que dirige a Grafana; `/ready` es la ruta de disponibilidad.
@@ -25,6 +26,7 @@ La política de entrada usa los mecanismos documentados por [pgAdmin para conten
 ## Consecuencias
 
 - Las credenciales de desarrollo no se almacenan en Git, documentación, imágenes ni `.env` raíz. Cada desarrollador consulta sus valores localmente en `bacekend-plataform/.env`.
+- pgAdmin y PostgreSQL comparten la red Compose `postgres_admin`; pgAdmin resuelve PostgreSQL por el DNS interno `postgres`. El puerto `127.0.0.1:5432` corresponde a clientes ejecutados directamente en el host, no a clientes dentro del contenedor pgAdmin.
 - Los puertos directos de Loki y Tempo dejan de estar disponibles desde el host; las consultas locales usan sus rutas protegidas o Grafana.
 - NATS Surveyor añade observabilidad de NATS y requiere una identidad con acceso a la cuenta de sistema. El privilegio queda confinado a la red Compose local y su puerto HTTP no se publica.
 - Nginx es una dependencia adicional para acceder a RedisInsight, Loki y Tempo desde el host. Si se cae, esos servicios siguen en su red privada pero sus interfaces protegidas no son accesibles desde el host.

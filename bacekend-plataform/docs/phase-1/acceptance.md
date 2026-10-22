@@ -63,6 +63,7 @@ Esta ampliación cubre el acceso administrativo a la pila local de desarrollo y 
 - Prometheus rechazó una petición sin credenciales (`401`) y aceptó la autenticada (`200`); `promtool check config` y `promtool check web-config` pasaron.
 - El proxy rechazó solicitudes anónimas (`401`) y admitió solicitudes autenticadas (`200`) en Loki, Tempo y RedisInsight. Loki y Tempo devolvieron `200` en `/ready`.
 - pgAdmin sirvió su formulario de login (`200`); Grafana sirvió su endpoint de salud (`200`) y su datasource Prometheus reportó `OK`.
+- Conectividad pgAdmin→PostgreSQL: el contenedor pgAdmin resolvió el servicio Compose `postgres` y estableció una conexión TCP al puerto `5432`. Los parámetros de registro y la diferencia entre `postgres` (DNS interno) y `127.0.0.1` (puerto del host) quedan en ADR-0008 e `infra/README.md`.
 - Prometheus reportó `nats-surveyor` como `up`. El exporter no publica una consola web: sus métricas se consultan por Grafana.
 - Las raíces `/` de Loki y Tempo ahora muestran una página informativa protegida. Antes el `404` era el comportamiento de una API sin página raíz; `/ready` es la prueba de disponibilidad.
 - La contraseña HTTP de scrape de NATS Surveyor se rotó después de aparecer en la salida de un comando auxiliar; los servicios se recrearon con el valor actualizado. No se registran valores de credenciales en esta evidencia.
