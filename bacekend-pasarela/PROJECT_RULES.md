@@ -71,3 +71,7 @@ Aplicar desde el día uno y en todos los módulos/crates, workers, APIs, infraes
 - Documentos equivalentes del [backend de plataforma](../bacekend-plataform/PROJECT_RULES.md), que deben permanecer sincronizados con los prompts y reglas normativas comunes.
 
 Estas obligaciones aplican en cada módulo y cambio desde su diseño inicial; no se aplazan a una etapa posterior ni se consideran satisfechas por scaffolds o verificaciones no ejecutadas. Si un requisito no aplica, su justificación técnica concreta y verificable debe quedar documentada antes de implementar la fase/subfase. Una incompatibilidad real se explica y resuelve antes de continuar, sin omitir ni debilitar requisitos. La topología de dos backends y el ownership de realtime en plataforma están establecidos en `ARCHITECTURE_RULES.md`; las ADRs detallan el contrato y la operación sin cambiar esa decisión.
+
+## Higiene del repositorio y README principal
+
+No crear archivos, carpetas o documentos Markdown innecesarios, duplicados o sin propósito verificable para este backend. Actualizar primero la documentación existente y mantener cada detalle en el documento dueño. El README raíz debe conservar únicamente la orientación general necesaria de Payvia —propósito, estado real, arquitectura resumida, instrucciones verificadas y enlaces—; los detalles internos de pasarelas, contratos y fases permanecen en los documentos especializados.

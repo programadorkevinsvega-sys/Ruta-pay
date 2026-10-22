@@ -3223,3 +3223,7 @@ La arquitectura permite evolucionar contratos y despliegues sin compartir códig
 ---
 
 # FIN DEL CONTRATO DE ARQUITECTURA
+
+## Higiene documental del repositorio
+
+Está prohibido crear archivos o documentos Markdown innecesarios, duplicados o sin un propósito verificable dentro de la arquitectura, un requisito o un entregable. Reutiliza y actualiza la documentación existente cuando corresponda. El `README.md` principal debe limitarse a presentar Payvia, comunicar su estado real, resumir la arquitectura y las capacidades pertinentes, ofrecer requisitos/instrucciones que hayan sido verificadas y enlazar la documentación detallada. No debe acumular contratos extensos, detalles internos que pertenecen a otros documentos, contenido especulativo ni información que no sea necesaria para orientar sobre el proyecto.

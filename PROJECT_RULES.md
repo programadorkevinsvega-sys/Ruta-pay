@@ -166,6 +166,10 @@ Cada fase incluye pruebas unitarias y de propiedades cuando aporten valor, integ
 
 ## Documentación y estado
 
+### Higiene de archivos y README principal
+
+Está prohibido crear archivos, carpetas o documentos Markdown innecesarios, duplicados o sin relación verificable con un requisito, entregable, decisión técnica o mantenimiento del proyecto. Antes de añadir documentación, revisa si debe actualizarse un archivo existente y conserva cada tema en su documento dueño. El `README.md` raíz debe contener solo la presentación y orientación general necesarias: propósito, estado real, arquitectura resumida, requisitos/instrucciones verificadas y enlaces a guías específicas. Los contratos extensos, decisiones, planes detallados y contenido especulativo pertenecen a sus documentos especializados, no al README principal.
+
 El código actual es un scaffold mínimo. Antes de cada fase y subfase, su documentación debe definir requisito, ownership, migración, REST/OpenAPI, gRPC, tratamiento Redis/NATS/Outbox, seguridad, errores, integración realtime/recuperación, pruebas y aceptación. Se actualiza el estado solo con evidencia ejecutada; un endpoint, tipo, mock o documento por sí solo no cierra una capacidad. No se inicia la siguiente fase hasta completar todos los criterios aplicables o documentar un bloqueo externo concreto dentro de la fase actual.
 
 Pendientes externos —cuentas, credenciales sandbox, países/monedas habilitados, tarifas y requisitos legales— se anotan por proveedor y bloquean solo las subfases que realmente dependan de ellos. Nunca se sustituyen con capacidades inventadas.

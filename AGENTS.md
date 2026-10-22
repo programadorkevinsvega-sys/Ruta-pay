@@ -1,5 +1,11 @@
 # Instrucciones obligatorias para agentes del backend
 
+## Higiene del repositorio y README principal
+
+- Está prohibido crear archivos, carpetas o documentos Markdown que no sean necesarios para un requisito, entregable, decisión técnica o mantenimiento verificable del proyecto. Antes de crear uno, comprueba si el contenido corresponde a un archivo existente; evita duplicados, borradores abandonados, notas temporales y documentación redundante.
+- El `README.md` de la raíz debe presentar el proyecto con información necesaria para entender su propósito, estado real, arquitectura general, requisitos/instrucciones verificadas y enlaces a documentación especializada. No lo conviertas en un depósito de detalles internos, contratos extensos, ejemplos especulativos, contenido repetido de los roadmaps ni información ajena al uso y orientación general del repositorio.
+- No omitas documentación requerida por las reglas: coloca el detalle en el documento normativo, roadmap, ADR o guía del módulo correspondiente y enlázalo desde el README raíz cuando sea útil.
+
 Estas instrucciones aplican a todo el trabajo del repositorio, especialmente a `bacekend-plataform/` y `bacekend-pasarela/`. Son obligatorias junto con las instrucciones de niveles superiores y cualquier `AGENTS.md` más específico.
 
 ## Cumplimiento normativo desde el día uno

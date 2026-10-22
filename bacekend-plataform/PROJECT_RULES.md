@@ -62,3 +62,7 @@ Estas obligaciones aplican en cada módulo y cambio desde su diseño inicial; no
 ## Límite de despliegue
 
 Este backend es independiente del backend de pasarelas; ambos cumplen las reglas de monolito modular y los contratos cross-backend de `ARCHITECTURE_RULES.md`. Las ADRs de implementación definen mensajes, claves, límites, timeouts y migraciones sin modificar ownership de dominio.
+
+## Higiene del repositorio y README principal
+
+No crear archivos, carpetas o documentos Markdown innecesarios, duplicados o sin propósito verificable para este backend. Actualizar primero la documentación existente y mantener cada detalle en el documento dueño. El README raíz debe conservar únicamente la orientación general necesaria de Payvia —propósito, estado real, arquitectura resumida, instrucciones verificadas y enlaces—; los detalles internos de plataforma, contratos y fases permanecen en los documentos especializados.
