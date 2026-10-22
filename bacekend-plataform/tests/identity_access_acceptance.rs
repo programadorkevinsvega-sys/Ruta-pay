@@ -5,6 +5,7 @@ use platform_contracts::{
     identity_access::identity_access_client::IdentityAccessClient,
     runtime::runtime_probe_client::RuntimeProbeClient,
 };
+use platform_identity_access::application::operator_bootstrap::OperatorBootstrapService;
 use reqwest::{Client, StatusCode, header};
 use sha2::{Digest, Sha256};
 use sqlx::postgres::PgPoolOptions;
@@ -146,6 +147,42 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         "runtime identity must not bypass row-level security"
     );
 
+    let operator_email = format!("operator_{}@example.test", Uuid::new_v4().simple());
+    let operator_password = format!("Operator-password-{}!", Uuid::new_v4().simple());
+    let bootstrap_service = OperatorBootstrapService::new(runtime_pool.clone());
+    let operator_id = bootstrap_service
+        .bootstrap_first_operator(
+            &operator_email,
+            &operator_password,
+            "corr_operator_bootstrap",
+        )
+        .await
+        .expect("first operator bootstrap uses the real application service");
+    assert!(
+        matches!(
+            bootstrap_service
+                .bootstrap_first_operator(
+                    "second_operator@example.test",
+                    "Another-valid-password-123!",
+                    "corr_operator_bootstrap_replay"
+                )
+                .await,
+            Err(platform_identity_access::application::identity_service::IdentityError::OperatorBootstrapClosed)
+        ),
+        "bootstrap only succeeds once"
+    );
+    let operator_bootstrap_event: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM identity_access.outbox_events WHERE aggregate_id = $1 AND event_type = 'identity.operator.bootstrap.completed')",
+    )
+    .bind(operator_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("operator bootstrap outbox event is queryable");
+    assert!(
+        operator_bootstrap_event,
+        "operator bootstrap is durable for realtime"
+    );
+
     let redis_client = redis::Client::open(redis_url).expect("Redis URL parses");
     let redis_manager = redis::aio::ConnectionManager::new(redis_client)
         .await
@@ -277,7 +314,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         URL_SAFE_NO_PAD.encode(ip_digest)
     );
     let mut redis_connection = redis_manager.clone();
-    for key in [account_key, ip_key] {
+    for key in [&account_key, &ip_key] {
         let ttl: i64 = redis::cmd("TTL")
             .arg(key)
             .query_async(&mut redis_connection)
@@ -356,6 +393,118 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             .any(|value| value.starts_with("payvia_tenant_csrf=") && value.contains("Secure"))
     );
 
+    let tenant_session_used_for_operator = client
+        .get(format!("http://{http_addr}/v1/platform/identity/session"))
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={session_cookie}; payvia_platform_csrf={csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("tenant session cannot access operator identity");
+    assert_eq!(
+        tenant_session_used_for_operator.status(),
+        StatusCode::UNAUTHORIZED
+    );
+
+    let operator_login = client
+        .post(format!("http://{http_addr}/v1/platform/identity/session"))
+        .header(header::ORIGIN, &origin)
+        .header("x-correlation-id", "corr_operator_login")
+        .json(&serde_json::json!({
+            "email": operator_email,
+            "password": operator_password
+        }))
+        .send()
+        .await
+        .expect("operator login response arrives");
+    assert_eq!(operator_login.status(), StatusCode::OK);
+    let operator_cookies: Vec<String> = operator_login
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok().map(str::to_owned))
+        .collect();
+    let operator_session_cookie = cookie_value(&operator_cookies, "payvia_platform_session");
+    let operator_csrf_cookie = cookie_value(&operator_cookies, "payvia_platform_csrf");
+    let operator_session = client
+        .get(format!("http://{http_addr}/v1/platform/identity/session"))
+        .header(
+            header::COOKIE,
+            format!(
+                "payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"
+            ),
+        )
+        .send()
+        .await
+        .expect("operator session validates through the BFF");
+    assert_eq!(operator_session.status(), StatusCode::OK);
+    let operator_session_used_for_tenant = client
+        .delete(format!("http://{http_addr}/v1/identity/session"))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!(
+                "payvia_tenant_session={operator_session_cookie}; payvia_tenant_csrf={operator_csrf_cookie}"
+            ),
+        )
+        .header("x-csrf-token", &operator_csrf_cookie)
+        .send()
+        .await
+        .expect("operator session cannot access tenant identity");
+    assert_eq!(
+        operator_session_used_for_tenant.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let operator_logout = client
+        .delete(format!("http://{http_addr}/v1/platform/identity/session"))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!(
+                "payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"
+            ),
+        )
+        .header("x-csrf-token", &operator_csrf_cookie)
+        .header("x-correlation-id", "corr_operator_logout")
+        .send()
+        .await
+        .expect("operator logout response arrives");
+    assert_eq!(operator_logout.status(), StatusCode::NO_CONTENT);
+    let operator_logout_audited: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM identity_access.audit_events WHERE actor_id = $1 AND action = 'identity.session.revoked' AND correlation_id = 'corr_operator_logout')",
+    )
+    .bind(operator_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("operator session revocation audit is queryable");
+    assert!(
+        operator_logout_audited,
+        "operator session revocation is auditable"
+    );
+    let session_revocation_event: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM identity_access.outbox_events WHERE event_type = 'identity.session.revoked' AND audience = 'platform_operator')",
+    )
+    .fetch_one(&migration_pool)
+    .await
+    .expect("operator session revocation event is queryable");
+    assert!(
+        session_revocation_event,
+        "operator session revocation reaches durable outbox"
+    );
+    let operator_replay = client
+        .get(format!("http://{http_addr}/v1/platform/identity/session"))
+        .header(
+            header::COOKIE,
+            format!(
+                "payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"
+            ),
+        )
+        .send()
+        .await
+        .expect("revoked operator session replay is rejected");
+    assert_eq!(operator_replay.status(), StatusCode::UNAUTHORIZED);
+
     let rejected_csrf = client
         .delete(format!("http://{http_addr}/v1/identity/session"))
         .header(header::ORIGIN, &origin)
@@ -382,6 +531,17 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("valid logout response arrives");
     assert_eq!(logout.status(), StatusCode::NO_CONTENT);
+    let tenant_logout_audited: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM identity_access.audit_events WHERE actor_id = $1 AND action = 'identity.session.revoked' AND correlation_id = 'corr_identity_logout')",
+    )
+    .bind(registered_user_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("tenant session revocation audit is queryable");
+    assert!(
+        tenant_logout_audited,
+        "tenant session revocation is auditable"
+    );
     let replay = client
         .delete(format!("http://{http_addr}/v1/identity/session"))
         .header(header::ORIGIN, &origin)
@@ -429,7 +589,13 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         }
     }
 
-    for attempt in 0..40 {
+    let mut isolated_ip_counter = redis_manager.clone();
+    let _: u64 = redis::cmd("DEL")
+        .arg(&ip_key)
+        .query_async(&mut isolated_ip_counter)
+        .await
+        .expect("test-owned per-IP counter is reset before threshold acceptance");
+    for attempt in 0..51 {
         let response = client
             .post(format!("http://{http_addr}/v1/identity/session"))
             .header(header::ORIGIN, &origin)
@@ -444,7 +610,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             .send()
             .await
             .expect("per-IP rate limit response arrives");
-        let expected_status = if attempt == 39 {
+        let expected_status = if attempt == 50 {
             StatusCode::TOO_MANY_REQUESTS
         } else {
             StatusCode::UNAUTHORIZED
@@ -454,13 +620,13 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             expected_status,
             "unexpected status for per-IP rate limit attempt {attempt}"
         );
-        if attempt == 39 {
+        if attempt == 50 {
             let rate_limit_error: serde_json::Value =
                 response.json().await.expect("safe per-IP limit envelope");
             assert_eq!(rate_limit_error["error"]["code"], "identity_rate_limited");
             assert_eq!(
                 rate_limit_error["error"]["correlation_id"],
-                "corr_identity_ip_limit_39"
+                "corr_identity_ip_limit_50"
             );
         }
     }
@@ -518,12 +684,27 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     assert!(
         !event_values
             .iter()
+            .any(|value| value.contains(&operator_password))
+    );
+    assert!(
+        !event_values
+            .iter()
             .any(|value| value.contains(&session_cookie))
     );
     assert!(
         !event_values
             .iter()
             .any(|value| value.contains(&csrf_cookie))
+    );
+    assert!(
+        !event_values
+            .iter()
+            .any(|value| value.contains(&operator_session_cookie))
+    );
+    assert!(
+        !event_values
+            .iter()
+            .any(|value| value.contains(&operator_csrf_cookie))
     );
 
     let _ = http_stop.send(());

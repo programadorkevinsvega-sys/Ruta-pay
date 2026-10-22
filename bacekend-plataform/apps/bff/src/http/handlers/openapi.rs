@@ -9,6 +9,9 @@ use utoipa::OpenApi;
         super::identity::register,
         super::identity::login,
         super::identity::logout,
+        super::identity::operator_login,
+        super::identity::operator_session,
+        super::identity::operator_logout,
         super::identity::create_api_key,
         super::identity::list_api_keys,
         super::identity::revoke_api_key
@@ -19,6 +22,7 @@ use utoipa::OpenApi;
         super::identity::Credentials,
         super::identity::RegisteredUser,
         super::identity::SessionStarted,
+        super::identity::OperatorSessionResponse,
         super::identity::NewApiKey,
         super::identity::ApiKeyCreated,
         super::identity::ApiKeyMetadataResponse

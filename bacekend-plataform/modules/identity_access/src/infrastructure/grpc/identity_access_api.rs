@@ -2,12 +2,13 @@ use crate::application::identity_service::{IdentityError, IdentityService};
 use opentelemetry::{global, propagation::Extractor, trace::TraceContextExt};
 use payvia_observability::{current_span_id, current_trace_id};
 use platform_contracts::identity_access::{
-    ApiKeyMetadata, CreateApiKeyRequest, CreateApiKeyResponse, CreateTenantSessionRequest,
-    CreateTenantSessionResponse, ListApiKeysRequest, ListApiKeysResponse,
-    RegisterTenantUserRequest, RegisterTenantUserResponse, RevokeApiKeyRequest,
-    RevokeApiKeyResponse, RevokeSessionRequest, RevokeSessionResponse,
-    ValidateTenantSessionRequest, ValidateTenantSessionResponse,
-    identity_access_server::IdentityAccess,
+    ApiKeyMetadata, CreateApiKeyRequest, CreateApiKeyResponse, CreateOperatorSessionRequest,
+    CreateOperatorSessionResponse, CreateTenantSessionRequest, CreateTenantSessionResponse,
+    ListApiKeysRequest, ListApiKeysResponse, RegisterTenantUserRequest, RegisterTenantUserResponse,
+    RevokeApiKeyRequest, RevokeApiKeyResponse, RevokeOperatorSessionRequest,
+    RevokeOperatorSessionResponse, RevokeSessionRequest, RevokeSessionResponse,
+    ValidateOperatorSessionRequest, ValidateOperatorSessionResponse, ValidateTenantSessionRequest,
+    ValidateTenantSessionResponse, identity_access_server::IdentityAccess,
 };
 use tonic::{Request, Response, Status};
 use tracing::Instrument;
@@ -94,10 +95,23 @@ impl IdentityAccess for IdentityAccessApi {
     ) -> Result<Response<RevokeSessionResponse>, Status> {
         let correlation_id = request.get_ref().correlation_id.clone();
         let span = grpc_span(&request, "revoke_session", &correlation_id);
+        let traceparent = request
+            .metadata()
+            .get("traceparent")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
         let body = request.into_inner();
         async move {
             let started = std::time::Instant::now();
-            match self.service.revoke_tenant_session(&body.session_token).await {
+            match self
+                .service
+                .revoke_tenant_session(
+                    &body.session_token,
+                    &correlation_id,
+                    traceparent.as_deref(),
+                )
+                .await
+            {
                 Ok(()) => {
                     tracing::info!(event.name = "grpc.module.response", component = "identity_access", operation = "revoke_session", result = "success", duration_total_ms = started.elapsed().as_millis() as u64, correlation_id = %correlation_id, trace_id = %current_trace_id(), span_id = %current_span_id());
                     Ok(Response::new(RevokeSessionResponse {}))
@@ -200,6 +214,108 @@ impl IdentityAccess for IdentityAccessApi {
             }
         }.instrument(span).await
     }
+
+    async fn create_operator_session(
+        &self,
+        request: Request<CreateOperatorSessionRequest>,
+    ) -> Result<Response<CreateOperatorSessionResponse>, Status> {
+        let correlation_id = request.get_ref().correlation_id.clone();
+        let span = grpc_span(&request, "create_operator_session", &correlation_id);
+        let body = request.into_inner();
+        async move {
+            let started = std::time::Instant::now();
+            tracing::info!(event.name = "grpc.module.request.started", component = "identity_access", operation = "create_operator_session", correlation_id = %correlation_id, trace_id = %current_trace_id(), span_id = %current_span_id());
+            match self
+                .service
+                .create_operator_session(&body.email, &body.password, &body.source_ip)
+                .await
+            {
+                Ok(session) => {
+                    let response = CreateOperatorSessionResponse {
+                        user_id: session.user_id.to_string(),
+                        session_token: session.session_token.expose_once().to_owned(),
+                        csrf_token: session.csrf_token.expose_once().to_owned(),
+                        expires_at: session.expires_at.to_rfc3339(),
+                    };
+                    tracing::info!(event.name = "grpc.module.response", component = "identity_access", operation = "create_operator_session", result = "success", duration_total_ms = started.elapsed().as_millis() as u64, correlation_id = %correlation_id, trace_id = %current_trace_id(), span_id = %current_span_id());
+                    Ok(Response::new(response))
+                }
+                Err(error) => Err(log_and_map(
+                    error,
+                    "create_operator_session",
+                    &correlation_id,
+                    started.elapsed().as_millis() as u64,
+                )),
+            }
+        }
+        .instrument(span)
+        .await
+    }
+
+    async fn revoke_operator_session(
+        &self,
+        request: Request<RevokeOperatorSessionRequest>,
+    ) -> Result<Response<RevokeOperatorSessionResponse>, Status> {
+        let correlation_id = request.get_ref().correlation_id.clone();
+        let span = grpc_span(&request, "revoke_operator_session", &correlation_id);
+        let traceparent = request
+            .metadata()
+            .get("traceparent")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        let body = request.into_inner();
+        async move {
+            let started = std::time::Instant::now();
+            match self
+                .service
+                .revoke_operator_session(
+                    &body.session_token,
+                    &correlation_id,
+                    traceparent.as_deref(),
+                )
+                .await
+            {
+                Ok(()) => Ok(Response::new(RevokeOperatorSessionResponse {})),
+                Err(error) => Err(log_and_map(
+                    error,
+                    "revoke_operator_session",
+                    &correlation_id,
+                    started.elapsed().as_millis() as u64,
+                )),
+            }
+        }
+        .instrument(span)
+        .await
+    }
+
+    async fn validate_operator_session(
+        &self,
+        request: Request<ValidateOperatorSessionRequest>,
+    ) -> Result<Response<ValidateOperatorSessionResponse>, Status> {
+        let correlation_id = request.get_ref().correlation_id.clone();
+        let span = grpc_span(&request, "validate_operator_session", &correlation_id);
+        let body = request.into_inner();
+        async move {
+            let started = std::time::Instant::now();
+            match self
+                .service
+                .validate_operator_session(&body.session_token, &body.csrf_token)
+                .await
+            {
+                Ok(user_id) => Ok(Response::new(ValidateOperatorSessionResponse {
+                    user_id: user_id.to_string(),
+                })),
+                Err(error) => Err(log_and_map(
+                    error,
+                    "validate_operator_session",
+                    &correlation_id,
+                    started.elapsed().as_millis() as u64,
+                )),
+            }
+        }
+        .instrument(span)
+        .await
+    }
 }
 
 fn grpc_span<T>(
@@ -268,10 +384,10 @@ fn log_and_map(
             "validation",
             Status::invalid_argument("identity input is invalid"),
         ),
-        IdentityError::AccountConflict => (
+        IdentityError::AccountConflict | IdentityError::OperatorBootstrapClosed => (
             "identity_conflict",
             "conflict",
-            Status::already_exists("account already exists"),
+            Status::already_exists("identity resource already exists"),
         ),
         IdentityError::AuthenticationFailed => (
             "authentication_failed",

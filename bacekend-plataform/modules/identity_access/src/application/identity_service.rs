@@ -87,6 +87,67 @@ impl IdentityService {
         Ok(user_id)
     }
 
+    pub async fn create_operator_session(
+        &self,
+        email: &str,
+        password: &str,
+        source_ip: &str,
+    ) -> Result<CreatedSession, IdentityError> {
+        let email = EmailAddress::parse(email).map_err(|_| IdentityError::AuthenticationFailed)?;
+        self.enforce_login_rate_limit(email.as_str(), source_ip)
+            .await?;
+        let row = sqlx::query(
+            "SELECT id, password_hash, status FROM identity_access.operator_users WHERE email_normalized = $1",
+        )
+        .bind(email.as_str())
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or(IdentityError::AuthenticationFailed)?;
+        let user_id: Uuid = row.try_get("id").map_err(IdentityError::Database)?;
+        let password_hash: String = row
+            .try_get("password_hash")
+            .map_err(IdentityError::Database)?;
+        let status: String = row.try_get("status").map_err(IdentityError::Database)?;
+        let password_owned = password.to_owned();
+        let verified =
+            tokio::task::spawn_blocking(move || verify_password(&password_owned, &password_hash))
+                .await
+                .map_err(|_| IdentityError::HashingTaskFailed)?;
+        if status != "active" || !verified {
+            return Err(IdentityError::AuthenticationFailed);
+        }
+        self.issue_session(user_id, "operator_user").await
+    }
+
+    pub async fn validate_operator_session(
+        &self,
+        token: &str,
+        csrf_token: &str,
+    ) -> Result<Uuid, IdentityError> {
+        let token_digest = Sha256::digest(token.as_bytes());
+        let csrf_digest = Sha256::digest(csrf_token.as_bytes());
+        let row = sqlx::query(
+            "SELECT s.subject_id FROM identity_access.sessions s JOIN identity_access.operator_users u ON u.id=s.subject_id AND u.status='active' WHERE s.token_digest=$1 AND s.csrf_digest=$2 AND s.subject_kind='operator_user' AND s.revoked_at IS NULL AND s.expires_at>now()",
+        )
+        .bind(token_digest.as_slice())
+        .bind(csrf_digest.as_slice())
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(|row| row.try_get("subject_id").map_err(IdentityError::Database))
+            .transpose()?
+            .ok_or(IdentityError::AuthenticationFailed)
+    }
+
+    pub async fn revoke_operator_session(
+        &self,
+        token: &str,
+        correlation_id: &str,
+        traceparent: Option<&str>,
+    ) -> Result<(), IdentityError> {
+        self.revoke_session_for_kind(token, "operator_user", correlation_id, traceparent)
+            .await
+    }
+
     pub async fn create_tenant_session(
         &self,
         email: &str,
@@ -197,18 +258,101 @@ impl IdentityService {
         Ok(())
     }
 
-    pub async fn revoke_tenant_session(&self, token: &str) -> Result<(), IdentityError> {
+    pub async fn revoke_tenant_session(
+        &self,
+        token: &str,
+        correlation_id: &str,
+        traceparent: Option<&str>,
+    ) -> Result<(), IdentityError> {
+        self.revoke_session_for_kind(token, "tenant_user", correlation_id, traceparent)
+            .await
+    }
+
+    async fn revoke_session_for_kind(
+        &self,
+        token: &str,
+        subject_kind: &'static str,
+        correlation_id: &str,
+        traceparent: Option<&str>,
+    ) -> Result<(), IdentityError> {
         let token_digest = Sha256::digest(token.as_bytes());
+        let mut transaction = self.pool.begin().await?;
         let result = sqlx::query(
-            "UPDATE identity_access.sessions SET revoked_at = now() WHERE token_digest = $1 AND subject_kind = 'tenant_user' AND revoked_at IS NULL",
+            "UPDATE identity_access.sessions SET revoked_at = now() WHERE token_digest = $1 AND subject_kind = $2 AND revoked_at IS NULL RETURNING id, subject_id",
         )
         .bind(token_digest.as_slice())
+        .bind(subject_kind)
+        .fetch_optional(&mut *transaction)
+        .await?
+        .ok_or(IdentityError::AuthenticationFailed)?;
+        let session_id: Uuid = result.try_get("id").map_err(IdentityError::Database)?;
+        let subject_id: Uuid = result
+            .try_get("subject_id")
+            .map_err(IdentityError::Database)?;
+        let audience = if subject_kind == "operator_user" {
+            "platform_operator"
+        } else {
+            "tenant_user"
+        };
+        sqlx::query(
+            "INSERT INTO identity_access.outbox_events (event_id, aggregate_id, aggregate_version, event_type, schema_version, audience, payload, traceparent) VALUES ($1, $2, 1, 'identity.session.revoked', 1, $3, $4, $5)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(session_id)
+        .bind(audience)
+        .bind(serde_json::json!({ "session_id": session_id, "subject_id": subject_id, "subject_kind": subject_kind, "status": "revoked" }))
+        .bind(traceparent)
+        .execute(&mut *transaction)
+        .await?;
+        sqlx::query(
+            "INSERT INTO identity_access.audit_events (event_id, actor_kind, actor_id, action, resource_id, outcome, correlation_id, trace_id) VALUES ($1, $2, $3, 'identity.session.revoked', $4, 'completed', $5, $6)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(subject_kind)
+        .bind(subject_id)
+        .bind(session_id)
+        .bind(correlation_id)
+        .bind(payvia_observability::current_trace_id())
+        .execute(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    async fn issue_session(
+        &self,
+        user_id: Uuid,
+        subject_kind: &'static str,
+    ) -> Result<CreatedSession, IdentityError> {
+        let mut random_bytes = [0_u8; 32];
+        let mut csrf_bytes = [0_u8; 32];
+        getrandom::fill(&mut random_bytes).map_err(|_| IdentityError::RandomSourceUnavailable)?;
+        getrandom::fill(&mut csrf_bytes).map_err(|_| IdentityError::RandomSourceUnavailable)?;
+        let token = URL_SAFE_NO_PAD.encode(random_bytes);
+        let csrf_token = URL_SAFE_NO_PAD.encode(csrf_bytes);
+        let token_digest = Sha256::digest(token.as_bytes());
+        let csrf_digest = Sha256::digest(csrf_token.as_bytes());
+        let session_id = Uuid::new_v4();
+        let expires_at = Utc::now()
+            + chrono::TimeDelta::from_std(SESSION_LIFETIME)
+                .map_err(|_| IdentityError::TimeConfigurationInvalid)?;
+        sqlx::query(
+            "INSERT INTO identity_access.sessions (id, subject_kind, subject_id, token_digest, csrf_digest, expires_at) VALUES ($1, $2, $3, $4, $5, $6)",
+        )
+        .bind(session_id)
+        .bind(subject_kind)
+        .bind(user_id)
+        .bind(token_digest.as_slice())
+        .bind(csrf_digest.as_slice())
+        .bind(expires_at)
         .execute(&self.pool)
         .await?;
-        if result.rows_affected() == 0 {
-            return Err(IdentityError::AuthenticationFailed);
-        }
-        Ok(())
+        Ok(CreatedSession {
+            user_id,
+            session_token: SecretToken(token),
+            csrf_token: SecretToken(csrf_token),
+            expires_at,
+        })
     }
 
     pub async fn validate_tenant_session(
@@ -452,6 +596,8 @@ pub enum IdentityError {
     PasswordHash(#[from] PasswordHashError),
     #[error("account already exists")]
     AccountConflict,
+    #[error("operator bootstrap has already been completed")]
+    OperatorBootstrapClosed,
     #[error("authentication failed")]
     AuthenticationFailed,
     #[error("authorization denied")]

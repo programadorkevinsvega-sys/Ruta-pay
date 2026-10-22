@@ -32,6 +32,12 @@ pub fn router(
             post(identity::login).delete(identity::logout),
         )
         .route(
+            "/v1/platform/identity/session",
+            get(identity::operator_session)
+                .post(identity::operator_login)
+                .delete(identity::operator_logout),
+        )
+        .route(
             "/v1/tenants/{tenant_id}/api-keys",
             get(identity::list_api_keys).post(identity::create_api_key),
         )

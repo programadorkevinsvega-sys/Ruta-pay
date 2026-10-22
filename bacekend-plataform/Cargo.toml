@@ -3,6 +3,10 @@ name = "bacekend-plataform"
 version.workspace = true
 edition.workspace = true
 
+[[bin]]
+name = "bootstrap-platform-operator"
+path = "src/bin/bootstrap_platform_operator.rs"
+
 [dependencies]
 axum.workspace = true
 metrics-exporter-prometheus.workspace = true
@@ -13,12 +17,14 @@ payvia-platform-core = { path = "platform" }
 platform-identity-access = { path = "modules/identity_access" }
 platform-tenant-registry = { path = "modules/tenant_registry" }
 redis.workspace = true
+rpassword.workspace = true
 sqlx.workspace = true
 url.workspace = true
 tokio.workspace = true
 tonic.workspace = true
 tracing.workspace = true
 serde_json.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 base64.workspace = true
@@ -29,4 +35,3 @@ opentelemetry.workspace = true
 opentelemetry_sdk.workspace = true
 tracing-opentelemetry.workspace = true
 serde_json.workspace = true
-uuid.workspace = true

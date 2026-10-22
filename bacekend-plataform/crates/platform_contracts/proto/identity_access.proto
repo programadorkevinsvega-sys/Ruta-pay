@@ -9,6 +9,9 @@ service IdentityAccess {
   rpc CreateApiKey (CreateApiKeyRequest) returns (CreateApiKeyResponse);
   rpc ListApiKeys (ListApiKeysRequest) returns (ListApiKeysResponse);
   rpc RevokeApiKey (RevokeApiKeyRequest) returns (RevokeApiKeyResponse);
+  rpc CreateOperatorSession (CreateOperatorSessionRequest) returns (CreateOperatorSessionResponse);
+  rpc RevokeOperatorSession (RevokeOperatorSessionRequest) returns (RevokeOperatorSessionResponse);
+  rpc ValidateOperatorSession (ValidateOperatorSessionRequest) returns (ValidateOperatorSessionResponse);
 }
 
 message RegisterTenantUserRequest {
@@ -99,3 +102,34 @@ message RevokeApiKeyRequest {
 }
 
 message RevokeApiKeyResponse {}
+
+message CreateOperatorSessionRequest {
+  string email = 1;
+  string password = 2;
+  string source_ip = 3;
+  string correlation_id = 4;
+}
+
+message CreateOperatorSessionResponse {
+  string user_id = 1;
+  string session_token = 2;
+  string csrf_token = 3;
+  string expires_at = 4;
+}
+
+message RevokeOperatorSessionRequest {
+  string session_token = 1;
+  string correlation_id = 2;
+}
+
+message RevokeOperatorSessionResponse {}
+
+message ValidateOperatorSessionRequest {
+  string session_token = 1;
+  string csrf_token = 2;
+  string correlation_id = 3;
+}
+
+message ValidateOperatorSessionResponse {
+  string user_id = 1;
+}
