@@ -4,7 +4,7 @@
 
 La Fase 1 implementa la base ejecutable de plataforma: composition root, configuración tipada, BFF Axum/OpenAPI, contrato Protobuf/Tonic y módulo `platform_runtime` con límites de dominio, aplicación e infraestructura; readiness atraviesa HTTP→BFF→gRPC→módulo. También instrumenta correlación, métricas Prometheus, exportación OTLP, apagado ordenado y diagnóstico seguro. No agrega reglas comerciales, tenants, autenticación de usuario, mutaciones persistidas ni frontends funcionales.
 
-**Estado: cerrada — 2026-10-22.** Se completó la aceptación HTTP→BFF→gRPC→módulo, la propagación de trazas, la telemetría local, el apagado y el build/run release. Sentry Cloud aceptó un evento de prueba por su endpoint de ingestión (HTTP 200); el payload de esa prueba no contenía datos privados y la prueba unitaria del saneador comprueba la eliminación de mensajes, datos de request, breadcrumbs, tags y extras.
+**Estado: cerrada — 2026-10-22, tras revalidar configuración real.** La revisión detectó que `bacekend-plataform/.env` carecía de variables de runtime y que la evidencia anterior había usado variables exportadas desde la terminal. Se añadieron las variables faltantes al `.env` local ignorado por Git y se volvió a ejecutar `run-production.sh` sin overrides. Readiness y petición HTTP respondieron 200, el endpoint de métricas rechazó acceso sin token (401) y permitió el scrape autenticado (200), Prometheus reportó el target de plataforma `up=1`, Loki recibió logs estructurados correlacionados y Tempo devolvió tres spans para la traza de aceptación. Sentry Cloud ya había aceptado una prueba de ingestión HTTP 200; la SDK del backend se inicializa con el DSN del mismo `.env` y aplica el saneador probado unitariamente.
 
 Las decisiones de arquitectura viven en [`../adr/`](../adr/), incluida [ADR-0007: destino Sentry](../adr/ADR-0007-destino-sentry.md). El alcance funcional y los gates completos continúan en el [roadmap](../../ROADMAP.md).
 
@@ -22,16 +22,21 @@ Las decisiones de arquitectura viven en [`../adr/`](../adr/), incluida [ADR-0007
 | Sentry Cloud | Se usa el proyecto Cloud del grupo; el DSN es secreto del backend local/de despliegue. | El endpoint Cloud aceptó una prueba controlada (HTTP 200); el payload era mínimo y no contenía datos privados. El binario release también emitió su evento de fallo de bind con el DSN configurado. La prueba unitaria verifica el saneador antes del envío. |
 | Despliegue | Backend de plataforma tiene su Dockerfile, `.env` ignorado y scripts de build/run independientes; no existe `.env` en la raíz. | `build-production.sh` compila solo `bacekend-plataform`; `run-production.sh` carga `bacekend-plataform/.env` y ejecuta el binario `target/release`. La infraestructura local usa ese mismo archivo de forma explícita con `docker compose --env-file bacekend-plataform/.env`. No despliega pasarela ni frontends. |
 
+### Revalidación de configuración de runtime
+
+`bacekend-plataform/.env` define `APP_HTTP_ADDR`, `APP_MODULE_GRPC_ADDR`, `APP_METRICS_ADDR`, `APP_METRICS_BEARER_TOKEN`, `APP_ENV`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `RUST_LOG` y `SENTRY_DSN`. El bearer de métricas de la app coincide con `PLATFORM_METRICS_TOKEN`, del que se aprovisiona el secreto del scrape Prometheus. Prometheus, Loki y Tempo son destinos de la infraestructura; no requieren credenciales de conexión directas en la app porque el Collector enruta la telemetría. La app exporta OTLP al Collector; el Collector envía trazas a Tempo, logs a Loki y métricas al endpoint scrapeado por Prometheus. No se copian valores secretos a la documentación ni al repositorio.
+
 ## Evidencia de aceptación ejecutada — 2026-10-22
 
 - `cargo fmt --all -- --check`: pasó.
 - `cargo clippy --workspace --all-targets -- -D warnings`: pasó.
 - `cargo test --workspace --all-targets`: pasó; incluye aceptación HTTP→BFF→gRPC→módulo y pruebas de configuración/observabilidad.
+- Inventario de pruebas del workspace: 12 pruebas unitarias y 1 prueba automatizada de integración/aceptación HTTP→BFF→gRPC→módulo. No existe una suite separada de browser E2E ni frontend en esta fase; la interfaz de producto no forma parte del alcance de Fase 1. La aceptación de backend sí cruza HTTP y gRPC reales.
 - `docker build --file bacekend-plataform/deploy/Dockerfile --tag payvia-platform:phase1-check .`: pasó; construyó el binario del backend de plataforma en imagen de runtime independiente.
 - `docker compose config --quiet`: pasó.
 - `docker compose exec -T prometheus promtool check config /etc/prometheus/prometheus.yml`: pasó.
 - `docker compose exec -T prometheus promtool check rules /etc/prometheus/alerts.yml`: pasó; encontró 11 reglas.
-- Prueba de runtime: health devolvió HTTP 200; propagó correlation y trace; Prometheus scrape `up=1` y consultó histograma; Loki recibió eventos correlacionados; Tempo devolvió spans del trace. Canary sensible no apareció en Loki.
+- Prueba inicial de runtime: health devolvió HTTP 200; propagó correlation y trace; Prometheus scrape `up=1` y consultó histograma; Loki recibió eventos correlacionados; Tempo devolvió spans del trace. Canary sensible no apareció en Loki. Esa prueba usó variables exportadas y por sí sola no validaba la carga del `.env`.
 - Degradación Collector: con Collector detenido, health siguió devolviendo 200; después de reiniciarlo, Loki recibió telemetría nueva y Tempo una nueva tanda.
 - Apagado: SIGTERM al binario real terminó limpiamente y emitió eventos correlacionados de apagado.
 - Configuración de Compose y `git diff --check`: pasaron.
@@ -44,7 +49,9 @@ Las decisiones de arquitectura viven en [`../adr/`](../adr/), incluida [ADR-0007
 - Loki encontró seis eventos con el `correlation_id` de aceptación; Tempo devolvió tres spans para el `trace_id`. La consulta de series de Loki mostró únicamente `service_name` como etiqueta indexada; IDs de correlación/traza permanecen disponibles como metadatos para diagnóstico sin crear series de alta cardinalidad.
 - SIGTERM al binario release terminó con código 0.
 - Sentry Cloud aceptó un evento mínimo de aceptación por HTTPS, con respuesta HTTP 200 e ID `23352e0de5d3a7dc38ffec579538449b`; el código del proyecto valida el DSN y la prueba del saneador cubre campos sensibles.
+- Revalidación con el `.env` del backend: `run-production.sh` arrancó el binario release sin variables manuales adicionales; readiness/request HTTP `200`, `/metrics` sin bearer `401` y con bearer `200`, target `payvia-platform` en Prometheus `up=1`, consulta de Loki `200` con entradas correlacionadas y consulta de Tempo `200` con tres spans. El proceso se detuvo con SIGTERM al terminar la comprobación.
+- Verificación automatizada repetida durante esta revalidación: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` y `cargo test --workspace --all-targets`: pasaron; el conjunto ejecutó 13 pruebas (12 unitarias y 1 integración/aceptación).
 
 ## Resultado del cierre
 
-La Fase 1 queda cerrada. PostgreSQL, Redis, NATS JetStream/Outbox, autorización de tenant y realtime no aplican porque esta fase no persiste ni muta estado de negocio; sus justificaciones están en la matriz de integración. Sus pruebas e integraciones pertenecen a las fases que introducen esos dominios. No queda un bloqueo de Fase 1.
+La Fase 1 queda cerrada para su alcance documentado. PostgreSQL, Redis, NATS JetStream/Outbox, autorización de tenant y realtime no aplican porque esta fase no persiste ni muta estado de negocio; sus justificaciones están en la matriz de integración. Sus pruebas e integraciones pertenecen a las fases que introducen esos dominios. La suite de esta fase no es una suite E2E del navegador ni cubre fallos/reconexión de servicios de negocio.

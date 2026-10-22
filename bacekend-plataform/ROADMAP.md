@@ -171,4 +171,4 @@ Referencias oficiales para la implementación: [Wompi — ambientes y llaves](ht
 
 ## Estado
 
-Fase 0 está cerrada. Fase 1 está implementada y continúa abierta mientras no se complete la aceptación Sentry Cloud y se verifiquen todos sus criterios; consultar [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md). Las fases comerciales posteriores están pendientes. Cuentas sandbox, credenciales o decisiones legales faltantes se documentan como bloqueos concretos; no se reemplazan por simulaciones.
+Fase 0 y Fase 1 están cerradas dentro de su alcance documentado; la evidencia y limitaciones de Fase 1 están en [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md). Las fases comerciales posteriores están pendientes. Cuentas sandbox, credenciales o decisiones legales faltantes se documentan como bloqueos concretos; no se reemplazan por simulaciones.
