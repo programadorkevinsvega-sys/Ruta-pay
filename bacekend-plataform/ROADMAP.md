@@ -20,17 +20,21 @@ Pruebas unitarias y de propiedades aplican a la lógica; integración/aceptació
 
 ## Fase 0 — Auditoría, decisiones y workspace
 
-- [ ] Auditar scaffold, dependencias, configuración, CI y documentación.
-- [ ] Completar ADRs de contratos gRPC, concesiones firmadas, migraciones coordinadas, identidad de servicio, operación y pruebas cross-backend.
-- [ ] Diseñar bounded contexts: identity/access, tenant registry, catalog/pricing, entitlements/quotas, subscription billing, authorization, audit, BFF y realtime.
-- [ ] Acordar con pasarelas `gateway_credentials`: plataforma autoriza y reenvía altas/rotaciones por gRPC/mTLS; pasarelas persiste ciphertext en su módulo dueño. Prohibir persistencia duplicada/eventos con secretos en plataforma.
-- [ ] Versionar `payment_method` como unión `card|pse|crypto`, incluyendo referencias bancarias PSE permitidas y settlement cripto decimal string separado del importe comercial entero.
-- [ ] Definir threat model cross-backend: mTLS/cert rotation, identidad/scopes, grants ligados al request, replay, tamaño/rate limits, deadlines, retries y eventos/observabilidad redactados.
-- [ ] Completar los binarios/crates de plataforma dentro del workspace Cargo único de la raíz y definir límites de crates, contratos gRPC/eventos, identidad de servicio, amenazas y entornos.
-- [ ] Definir las dos apps frontend separadas: `frontends/frontend-pasarela/` para tenant y `frontends/frontend-plataform/` para administración de plataforma.
-- [ ] Matriz de integraciones y plan de pruebas inicial por subfase.
+- [x] Auditar scaffold, dependencias, configuración, CI y documentación. Evidencia: [`docs/phase-0/initial-audit.md`](docs/phase-0/initial-audit.md).
+- [x] Registrar ADRs de contratos gRPC, concesiones firmadas, migraciones coordinadas, identidad de servicio, operación y pruebas cross-backend en [`docs/adr/`](docs/adr/).
+- [x] Diseñar bounded contexts: identity/access, tenant registry, catalog/pricing, entitlements/quotas, subscription billing, authorization, audit, BFF y realtime. Evidencia: [`docs/phase-0/bounded-contexts.md`](docs/phase-0/bounded-contexts.md).
+- [x] Fijar el acuerdo de `gateway_credentials`: plataforma autoriza y reenvía altas/rotaciones por gRPC/mTLS; pasarelas persiste ciphertext en su módulo dueño. Se prohíbe persistencia duplicada/eventos con secretos en plataforma. Evidencia: ADR-0002.
+- [x] Versionar el contrato conceptual `payment_method` como unión `card|pse|crypto`, incluyendo settlement cripto decimal string separado del importe comercial entero. Evidencia: ADR-0005.
+- [x] Definir threat model cross-backend: identidad/scopes y mTLS con rotación, grants ligados al request, replay, tamaño/rate limits, deadlines, retries y telemetría redactada. Evidencia: [`docs/phase-0/threat-model.md`](docs/phase-0/threat-model.md).
+- [ ] Completar crates/apps y contratos gRPC/eventos ejecutables de plataforma dentro del workspace raíz, respetando límites definidos. El workspace hoy contiene los dos paquetes/binarios iniciales; no se crean crates vacíos. Falta implementar el primer contrato técnico real para cumplir aceptación transversal.
+- [x] Definir las dos apps frontend separadas: `frontends/frontend-pasarela/` para tenant y `frontends/frontend-plataform/` para administración de plataforma. Evidencia: ADR-0001 y auditoría de sus documentos actuales.
+- [x] Documentar la matriz de integración y el plan de aceptación por fase en [`docs/phase-0/integration-matrix.md`](docs/phase-0/integration-matrix.md).
 
-**Salida:** ADRs aprobadas; arquitectura, ownership, autorización inter-backend, matrices, contratos, amenazas y fases quedan trazables. Scaffold vacío no cierra la fase.
+**Salida:** decisiones de arquitectura aceptadas para el proyecto; ownership, autorización inter-backend, matrices, contratos conceptuales, amenazas y fases quedan trazables. Las ADRs registran decisiones ya establecidas por las reglas normativas; las decisiones de detalle no definidas por ellas siguen abiertas y no se presentan como aprobadas. Fase 0 sigue parcialmente completada/bloqueada hasta completar crates/apps/contratos ejecutables y resolver el criterio runtime indicado abajo; no se inicia Fase 1.
+
+### Evidencia y límites de Fase 0
+
+El informe de auditoría registra los comandos ejecutados y el inventario real. No hay mutaciones persistidas visibles que originen realtime; Redis y NATS/Outbox son N/A en esta fase con justificación previa. La matriz registra el conflicto: la aceptación transversal pide probar HTTP→BFF→gRPC→módulo en cada fase, pero Fase 0 no define un runtime BFF/gRPC y el scaffold no contiene módulos. El criterio de cierre permanece pendiente: debe completarse un corte técnico de esta fase con un contrato real y aceptación, o resolverse el alcance mediante gobierno del proyecto sin debilitar la regla normativa. Hasta completar crates/apps/contratos ejecutables y resolver ese criterio, no se inicia Fase 1 ni se declara Fase 0 cerrada.
 
 ## Fase 1 — Fundaciones y observabilidad
 

@@ -58,7 +58,7 @@ Los módulos de plataforma son crates con ownership propio. El BFF no contiene n
 
 Stack objetivo: Rust/Tokio, Axum, `tonic`/`prost`, SQLx, PostgreSQL 15+, Redis con TTL, NATS JetStream/Outbox, OpenTelemetry, Sentry, React/TypeScript para los clientes. Para ejecutar una instalación local completa se necesitarán toolchains fijados, servicios de desarrollo, secretos de aplicación y, al probar pagos, credenciales oficiales sandbox.
 
-El crate actual es un scaffold y aún no existe configuración reproducible del workspace Cargo raíz compartido, base de datos, NATS, Redis o BFF. Por eso todavía no hay comandos de instalación/arranque que se puedan declarar verificados. No uses los siguientes contratos de ejemplo como endpoints disponibles hasta que OpenAPI esté publicado.
+El workspace Cargo compartido ya está configurado en el `Cargo.toml` de la raíz e incluye ambos paquetes backend sin workspaces anidados. El crate de plataforma sigue siendo un scaffold y todavía no hay configuración reproducible de base de datos, NATS, Redis o BFF. Por eso aún no hay comandos de instalación/arranque integral que se puedan declarar verificados. No uses los siguientes contratos de ejemplo como endpoints disponibles hasta que OpenAPI esté publicado.
 
 ## Uso de la API pública (contrato objetivo)
 
@@ -155,7 +155,7 @@ El importe `transaction.amount` permanece como el importe comercial en unidades 
 
 ## Instalación y estado actual
 
-No hay instalación ejecutable verificada. Antes de publicar comandos deben existir manifests/workspace, versiones fijadas, configuración de servicios locales y migraciones aplicables. Sigue el [roadmap](ROADMAP.md); el scaffold actual no implementa esta API, worker, WebSocket ni webhooks.
+No hay instalación funcional integral verificada. El workspace Cargo raíz y los manifests de paquete existen; faltan configuración de servicios locales, módulos, migraciones y aplicaciones ejecutables. Sigue el [roadmap](ROADMAP.md); el scaffold actual no implementa esta API, worker, WebSocket ni webhooks.
 
 ## Fuera de responsabilidad
 
@@ -192,6 +192,10 @@ Toda operación administrativa y decisión de autorización es auditable. Se apl
 ## Estado
 
 El crate actual es un scaffold `Cargo.toml`/`src/main.rs`; no implementa estas capacidades. No se debe declarar una funcionalidad disponible hasta contar con migraciones, lógica, contratos, integración real, pruebas y evidencia de operación.
+
+## Fase 0 — Auditoría y decisiones
+
+La auditoría, los bounded contexts, el modelo de amenazas, las decisiones de arquitectura y la matriz de integración se registran en [`docs/phase-0/`](docs/phase-0/), con ADRs en [`docs/adr/`](docs/adr/). La aceptación runtime HTTP→BFF→gRPC aún no existe y no se declara como completada; el roadmap registra la discrepancia de alcance y su resolución propuesta antes de iniciar Fase 1.
 
 ## Roadmap y reglas
 
