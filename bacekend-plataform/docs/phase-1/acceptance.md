@@ -6,7 +6,7 @@ La Fase 1 implementa la base ejecutable de plataforma: composition root, configu
 
 **Estado: cerrada — 2026-10-22, tras revalidar configuración real.** La revisión detectó que `bacekend-plataform/.env` carecía de variables de runtime y que la evidencia anterior había usado variables exportadas desde la terminal. Se añadieron las variables faltantes al `.env` local ignorado por Git y se volvió a ejecutar `run-production.sh` sin overrides. Readiness y petición HTTP respondieron 200, el endpoint de métricas rechazó acceso sin token (401) y permitió el scrape autenticado (200), Prometheus reportó el target de plataforma `up=1`, Loki recibió logs estructurados correlacionados y Tempo devolvió tres spans para la traza de aceptación. Sentry Cloud ya había aceptado una prueba de ingestión HTTP 200; la SDK del backend se inicializa con el DSN del mismo `.env` y aplica el saneador probado unitariamente.
 
-Las decisiones de arquitectura viven en [`../adr/`](../adr/), incluida [ADR-0007: destino Sentry](../adr/ADR-0007-destino-sentry.md). El alcance funcional y los gates completos continúan en el [roadmap](../../ROADMAP.md).
+Las decisiones de arquitectura viven en [`../adr/`](../adr/), incluida [ADR-0007: destino Sentry](../adr/ADR-0007-destino-sentry.md) y [ADR-0008: autenticación de interfaces locales de infraestructura](../adr/ADR-0008-autenticacion-infraestructura-local.md). El alcance funcional y los gates completos continúan en el [roadmap](../../ROADMAP.md).
 
 ## Matriz de integración
 
@@ -21,6 +21,7 @@ Las decisiones de arquitectura viven en [`../adr/`](../adr/), incluida [ADR-0007
 | Errores y observabilidad | Eventos estructurados de inicio, dependencia, fallo y cierre; OTLP, Sentry opcional, métricas Prometheus privadas y redacción. | Aceptar campos correlation/trace, error estable, categoría/código, duraciones y ausencia de canario sensible en los sinks. |
 | Sentry Cloud | Se usa el proyecto Cloud del grupo; el DSN es secreto del backend local/de despliegue. | El endpoint Cloud aceptó una prueba controlada (HTTP 200); el payload era mínimo y no contenía datos privados. El binario release también emitió su evento de fallo de bind con el DSN configurado. La prueba unitaria verifica el saneador antes del envío. |
 | Despliegue | Backend de plataforma tiene su Dockerfile, `.env` ignorado y scripts de build/run independientes; no existe `.env` en la raíz. | `build-production.sh` compila solo `bacekend-plataform`; `run-production.sh` carga `bacekend-plataform/.env` y ejecuta el binario `target/release`. La infraestructura local usa ese mismo archivo de forma explícita con `docker compose --env-file bacekend-plataform/.env`. No despliega pasarela ni frontends. |
+| Interfaces administrativas de infraestructura local | pgAdmin 4 y RedisInsight para los almacenes de desarrollo; Prometheus protegido con Basic Auth; Loki y Tempo accesibles por proxy autenticado; NATS Surveyor interno como exporter (sin UI propia). Grafana conserva su login y datasource Prometheus autenticado. | Se valida rechazo anónimo y acceso autenticado en Prometheus, proxy de Loki/Tempo/RedisInsight; readiness de Loki/Tempo; UI HTTP de pgAdmin/Grafana; health del datasource de Prometheus y target `nats-surveyor` en estado `up`. Los usuarios y contraseñas solo viven en el `.env` ignorado y archivos locales generados. Diseño y límites en ADR-0008. |
 
 ### Revalidación de configuración de runtime
 
@@ -51,6 +52,21 @@ Las decisiones de arquitectura viven en [`../adr/`](../adr/), incluida [ADR-0007
 - Sentry Cloud aceptó un evento mínimo de aceptación por HTTPS, con respuesta HTTP 200 e ID `23352e0de5d3a7dc38ffec579538449b`; el código del proyecto valida el DSN y la prueba del saneador cubre campos sensibles.
 - Revalidación con el `.env` del backend: `run-production.sh` arrancó el binario release sin variables manuales adicionales; readiness/request HTTP `200`, `/metrics` sin bearer `401` y con bearer `200`, target `payvia-platform` en Prometheus `up=1`, consulta de Loki `200` con entradas correlacionadas y consulta de Tempo `200` con tres spans. El proceso se detuvo con SIGTERM al terminar la comprobación.
 - Verificación automatizada repetida durante esta revalidación: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` y `cargo test --workspace --all-targets`: pasaron; el conjunto ejecutó 13 pruebas (12 unitarias y 1 integración/aceptación).
+
+### Ampliación de interfaces administrativas locales — 2026-10-22
+
+Esta ampliación cubre el acceso administrativo a la pila local de desarrollo y no añade persistencia ni comportamiento de dominio al backend. Se documenta aquí porque el stack compartido respalda la observabilidad y verificación de la Fase 1.
+
+- `docker compose --env-file bacekend-plataform/.env config --quiet`: pasó tras añadir los servicios y la autenticación.
+- `bash -n infra/prepare-dev-secrets.sh` y `git diff --check`: pasaron.
+- `docker compose --env-file bacekend-plataform/.env up -d` dejó los servicios de desarrollo en ejecución; PostgreSQL y Redis quedaron `healthy`. No se borraron volúmenes.
+- Prometheus rechazó una petición sin credenciales (`401`) y aceptó la autenticada (`200`); `promtool check config` y `promtool check web-config` pasaron.
+- El proxy rechazó solicitudes anónimas (`401`) y admitió solicitudes autenticadas (`200`) en Loki, Tempo y RedisInsight. Loki y Tempo devolvieron `200` en `/ready`.
+- pgAdmin sirvió su formulario de login (`200`); Grafana sirvió su endpoint de salud (`200`) y su datasource Prometheus reportó `OK`.
+- Prometheus reportó `nats-surveyor` como `up`. El exporter no publica una consola web: sus métricas se consultan por Grafana.
+- Las raíces `/` de Loki y Tempo ahora muestran una página informativa protegida. Antes el `404` era el comportamiento de una API sin página raíz; `/ready` es la prueba de disponibilidad.
+- La contraseña HTTP de scrape de NATS Surveyor se rotó después de aparecer en la salida de un comando auxiliar; los servicios se recrearon con el valor actualizado. No se registran valores de credenciales en esta evidencia.
+- Esta aceptación no valida login interactivo de usuario en navegador, despliegue productivo ni recepción OTLP después de reinicios destructivos. Las interfaces se enlazan a loopback y la configuración se limita a desarrollo local.
 
 ## Resultado del cierre
 

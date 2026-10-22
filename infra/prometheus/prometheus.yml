@@ -9,6 +9,9 @@ rule_files:
 
 scrape_configs:
   - job_name: prometheus
+    basic_auth:
+      username: payvia_metrics_admin
+      password_file: /run/secrets/prometheus_admin_password
     static_configs:
       - targets: [prometheus:9090]
 
@@ -39,6 +42,13 @@ scrape_configs:
   - job_name: nats
     static_configs:
       - targets: [nats-exporter:7777]
+
+  - job_name: nats-surveyor
+    basic_auth:
+      username: payvia_scraper
+      password_file: /run/secrets/nats_surveyor_http_password
+    static_configs:
+      - targets: [nats-surveyor:7777]
 
   - job_name: node
     static_configs:

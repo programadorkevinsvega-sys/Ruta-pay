@@ -11,23 +11,37 @@ La configuración está fijada a tags de imagen versionados. El archivo de prepa
 | PostgreSQL | `127.0.0.1:5432` | volumen `postgres_data` |
 | Redis con AOF y contraseña | `127.0.0.1:6379` | volumen `redis_data` |
 | NATS con JetStream y autenticación | `127.0.0.1:4222` | volumen `nats_data` |
+| pgAdmin 4 | `127.0.0.1:5050` | volumen `pgadmin_data`; login pgAdmin |
+| RedisInsight | `127.0.0.1:5540` | volumen `redisinsight_data`; Basic Auth en proxy y conexión Redis preconfigurada |
 | Node Exporter | solo red interna Compose | métricas del host local de desarrollo |
-| Prometheus | `127.0.0.1:9091` | volumen `prometheus_data`, 15 días |
+| Prometheus | `127.0.0.1:9091` | Basic Auth, volumen `prometheus_data`, 15 días |
 | Grafana | `127.0.0.1:3000` | volumen `grafana_data` |
 | OTLP gRPC/HTTP Collector | `127.0.0.1:4317` / `127.0.0.1:4318` | imagen oficial Contrib 0.162.0 fijada en GHCR; exporta a Tempo, Loki y Prometheus |
-| Tempo | `127.0.0.1:3200` (HTTP API solo local) | volumen `tempo_data`, 7 días |
-| Loki | `127.0.0.1:3100` (HTTP API solo local) | volumen `loki_data`, 7 días |
-| Exporters de PostgreSQL, Redis y NATS | solo red interna Compose | sin estado propio |
+| Tempo | `127.0.0.1:3200` detrás de proxy Basic Auth | volumen `tempo_data`, 7 días |
+| Loki | `127.0.0.1:3100` detrás de proxy Basic Auth | volumen `loki_data`, 7 días |
+| Exporters de PostgreSQL, Redis, NATS y NATS Surveyor | solo red interna Compose; scrape autenticado cuando corresponde | sin estado propio |
 
-Las credenciales locales de la infraestructura están en `bacekend-plataform/.env`, ignorado por Git. Grafana utiliza `GRAFANA_ADMIN_USER` y `GRAFANA_ADMIN_PASSWORD`. `docker compose --env-file bacekend-plataform/.env` usa ese archivo solo para interpolar la configuración del stack local. Cada backend debe mantener un `.env` independiente con todas las variables que necesita; si ambos usan PostgreSQL, Redis o NATS, sus archivos contienen las mismas variables y valores compartidos, en copias separadas. Un cambio a esas credenciales requiere actualizar cada archivo correspondiente. En producción, inyecta secretos independientes por servicio y entorno.
+Las credenciales locales están en `bacekend-plataform/.env`, ignorado por Git, y los hashes/archivos de servicio en `infra/.local/secrets/`. `docker compose --env-file bacekend-plataform/.env` usa ese archivo para interpolar el stack local; no se crea un `.env` raíz. Cada backend conserva su `.env` independiente, aunque repita credenciales compartidas de PostgreSQL, Redis o NATS.
+
+| Interfaz | Usuario | Contraseña | Autenticación |
+|---|---|---|---|
+| Grafana | `GRAFANA_ADMIN_USER` | `GRAFANA_ADMIN_PASSWORD` | Nativa Grafana |
+| pgAdmin 4 | `PGADMIN_DEFAULT_EMAIL` | `PGADMIN_DEFAULT_PASSWORD` | Nativa pgAdmin; se usa el correo como usuario |
+| Prometheus | `PROMETHEUS_ADMIN_USER` | `PROMETHEUS_ADMIN_PASSWORD` | Basic Auth nativa; hash bcrypt local |
+| Loki, Tempo y RedisInsight | `INFRA_UI_USER` | `INFRA_UI_PASSWORD` | Basic Auth del proxy local |
+| NATS Surveyor | `NATS_SURVEYOR_USER` / `NATS_SURVEYOR_HTTP_USER` | `NATS_SURVEYOR_PASSWORD` / `NATS_SURVEYOR_HTTP_PASSWORD` | Credencial NATS de sistema y Basic Auth del endpoint de métricas |
+
+Los valores secretos se generan y consultan localmente en `bacekend-plataform/.env`; no se imprimen en esta guía ni se versionan. NATS Surveyor es un exporter de métricas, no un panel web: sus datos se consultan en Grafana con el usuario/contraseña de Grafana. RedisInsight no tiene una cuenta local configurable equivalente a pgAdmin; su interfaz queda detrás del proxy autenticado y su conexión a Redis viene preconfigurada con el usuario `default` y la contraseña de Redis.
 
 Los paneles de Grafana cubren aplicaciones (RPS, p50/p95/p99, 5xx, solicitudes en curso), PostgreSQL, dependencias compartidas (Redis/NATS), recursos del host y pipeline de observabilidad (scrapes, logs y trazas). Las reglas Prometheus cubren disponibilidad, proporción de errores, latencia HTTP p95, saturación HTTP, recursos del host y disponibilidad de Collector/Loki/Tempo. `platform.yml` apunta por defecto al listener nativo local en `host.docker.internal:9090`; para usarlo, enlaza el listener a `0.0.0.0:9090`, configura el token local y limita el acceso al host de desarrollo. `pasarela.yml` queda sin target hasta que su operador configure una dirección local/privada.
 
-Loki queda sin autenticación y sus APIs de consulta, junto con Tempo, se publican únicamente en `127.0.0.1` para permitir verificaciones locales de ingestión. No expongas esos puertos ni uses esta configuración en producción. Todos los puertos publicados se limitan a loopback.
+Prometheus autentica su interfaz web con Basic Auth. Loki y Tempo no implementan autenticación propia: sus puertos internos no se publican y el host solo llega a ellos por un proxy Basic Auth en `127.0.0.1`. RedisInsight usa el mismo proxy. Los servicios permanecen en redes privadas de Compose y ningún puerto de administración se publica fuera de loopback.
+
+Loki y Tempo son APIs, no consolas web. Por eso `/` podía devolver `404 page not found`; eso no significa que la ingesta esté caída. Usa `/ready` para comprobar disponibilidad y Grafana (`http://localhost:3000`) para explorar logs y trazas. La raíz local muestra una página explicativa y enlaza a Grafana; el proxy solicita autenticación antes de servirla.
 
 ## Preparar y validar
 
-Requisitos: Docker Engine con el plugin Compose, Bash y OpenSSL. Para el backend Rust: Rust/Cargo del toolchain fijado por el repositorio.
+Requisitos: Docker Engine con el plugin Compose, Bash y OpenSSL. `infra/prepare-dev-secrets.sh` usa Docker para generar hashes bcrypt sin imprimir contraseñas. Para el backend Rust: Rust/Cargo del toolchain fijado por el repositorio.
 
 ```bash
 ./infra/prepare-dev-secrets.sh
@@ -43,7 +57,9 @@ docker compose --env-file bacekend-plataform/.env down
 
 No uses `docker compose down -v` salvo que quieras borrar todos los datos locales. Las pruebas de reinicio deben documentar antes el servicio afectado y solo apuntar a esta composición de desarrollo, nunca a producción.
 
-El script genera `PLATFORM_METRICS_TOKEN` y `PASARELA_METRICS_TOKEN`; entrégalos por el mecanismo de secretos de cada aplicación como `APP_METRICS_BEARER_TOKEN`. La dirección de métricas remota debe quedar accesible solo por red privada y el token tener al menos 32 caracteres. Añade targets en `infra/prometheus/targets/platform.yml` y `pasarela.yml` usando direcciones alcanzables desde Docker; nunca pongas tokens en esos archivos. Para ejecución nativa local, una opción es enlazar el listener de métricas a `0.0.0.0` con token y restringir el firewall al host de desarrollo.
+El script genera usuarios/contraseñas administrativas, credenciales de NATS Surveyor, hashes para Prometheus/proxy y los secretos ya existentes. `PLATFORM_METRICS_TOKEN` y `PASARELA_METRICS_TOKEN` se entregan a cada aplicación como `APP_METRICS_BEARER_TOKEN`; nunca van en los archivos de targets. Los targets usan direcciones alcanzables desde Docker.
+
+Al regenerar `infra/.local/secrets/nats-server.conf`, aplica la configuración al NATS local con `docker compose --env-file bacekend-plataform/.env up -d --force-recreate nats`. Esto interrumpe temporalmente las conexiones NATS y hace que los clientes se reconecten; conserva el volumen JetStream y solo apunta al stack local de desarrollo.
 
 Para validar configuración Compose sin iniciar contenedores, ejecuta `docker compose --env-file bacekend-plataform/.env config --quiet`. La verificación completa de ingestión, reglas, dashboards, alertas y degradación requiere levantar la infraestructura y ejecutar pruebas de integración en un entorno aislado.
 

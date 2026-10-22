@@ -6,6 +6,10 @@ datasources:
     uid: prometheus
     access: proxy
     url: http://prometheus:9090
+    basicAuth: true
+    basicAuthUser: ${PROMETHEUS_ADMIN_USER}
+    secureJsonData:
+      basicAuthPassword: ${PROMETHEUS_ADMIN_PASSWORD}
     isDefault: true
     editable: false
   - name: Loki

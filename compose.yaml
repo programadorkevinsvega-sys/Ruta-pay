@@ -14,13 +14,12 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql
       - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    networks: [data, postgres_admin]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks: [data]
-
   redis:
     image: redis:8.10.2-alpine
     restart: unless-stopped
@@ -30,13 +29,12 @@ services:
     volumes:
       - redis_data:/data
       - ./infra/.local/secrets/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    networks: [data, redis_admin]
     healthcheck:
       test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(awk '$$1 == \"requirepass\" {print $$2}' /usr/local/etc/redis/redis.conf)\" redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks: [data]
-
   nats:
     image: nats:2.15.1-alpine
     restart: unless-stopped
@@ -78,6 +76,71 @@ services:
     depends_on: [nats]
     networks: [messaging, monitoring]
 
+  nats-surveyor:
+    image: natsio/nats-surveyor:0.9.11
+    restart: unless-stopped
+    environment:
+      NATS_SURVEYOR_SERVERS: nats://nats:4222
+      NATS_SURVEYOR_USER: ${NATS_SURVEYOR_USER:?run infra/prepare-dev-secrets.sh first}
+      NATS_SURVEYOR_PASSWORD: ${NATS_SURVEYOR_PASSWORD:?run infra/prepare-dev-secrets.sh first}
+      NATS_SURVEYOR_COUNT: "1"
+      NATS_SURVEYOR_JSZ: all
+      NATS_SURVEYOR_JSZ_LEADERS_ONLY: "true"
+      NATS_SURVEYOR_HTTP_USER: ${NATS_SURVEYOR_HTTP_USER:?run infra/prepare-dev-secrets.sh first}
+      NATS_SURVEYOR_HTTP_PASS: ${NATS_SURVEYOR_HTTP_PASSWORD:?run infra/prepare-dev-secrets.sh first}
+    depends_on: [nats]
+    networks: [messaging, monitoring]
+
+  pgadmin:
+    image: dpage/pgadmin4:9.17
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:?run infra/prepare-dev-secrets.sh first}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:?run infra/prepare-dev-secrets.sh first}
+      PGADMIN_DISABLE_POSTFIX: "true"
+      PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: "True"
+    ports:
+      - "127.0.0.1:5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [postgres_admin]
+
+  redisinsight:
+    image: redis/redisinsight:3.8.0
+    restart: unless-stopped
+    environment:
+      RI_APP_HOST: 0.0.0.0
+      RI_APP_PORT: "5540"
+      RI_ENCRYPTION_KEY: ${REDISINSIGHT_ENCRYPTION_KEY:?run infra/prepare-dev-secrets.sh first}
+      RI_REDIS_HOST: redis
+      RI_REDIS_PORT: "6379"
+      RI_REDIS_ALIAS: payvia-dev
+      RI_REDIS_USERNAME: default
+      RI_REDIS_PASSWORD: ${REDIS_PASSWORD:?run infra/prepare-dev-secrets.sh first}
+    volumes:
+      - redisinsight_data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks: [redis_admin]
+
+  admin-auth-proxy:
+    image: nginx:1.30.6-alpine3.24
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3100:3100"
+      - "127.0.0.1:3200:3200"
+      - "127.0.0.1:5540:5540"
+    volumes:
+      - ./infra/nginx/monitoring-auth.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/.local/secrets/infra-ui.htpasswd:/etc/nginx/secrets/infra-ui.htpasswd:ro
+      - ./infra/nginx/landing.html:/usr/share/nginx/html/index.html:ro
+    depends_on: [loki, tempo, redisinsight]
+    networks: [monitoring, redis_admin]
+
   node-exporter:
     image: prom/node-exporter:v1.10.2
     restart: unless-stopped
@@ -97,24 +160,26 @@ services:
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=15d
       - --web.enable-lifecycle
+      - --web.config.file=/run/secrets/prometheus-web.yml
     ports:
       - "127.0.0.1:9091:9090"
     volumes:
       - ./infra/prometheus:/etc/prometheus:ro
       - ./infra/.local/secrets/platform_metrics_token:/run/secrets/platform_metrics_token:ro
       - ./infra/.local/secrets/pasarela_metrics_token:/run/secrets/pasarela_metrics_token:ro
+      - ./infra/.local/secrets/prometheus-web.yml:/run/secrets/prometheus-web.yml:ro
+      - ./infra/.local/secrets/prometheus_admin_password:/run/secrets/prometheus_admin_password:ro
+      - ./infra/.local/secrets/nats_surveyor_http_password:/run/secrets/nats_surveyor_http_password:ro
       - prometheus_data:/prometheus
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on: [postgres-exporter, redis-exporter, nats-exporter, node-exporter, otel-collector]
+    depends_on: [postgres-exporter, redis-exporter, nats-exporter, nats-surveyor, node-exporter, otel-collector]
     networks: [monitoring]
 
   loki:
     image: grafana/loki:3.7.7
     restart: unless-stopped
     command: ["-config.file=/etc/loki/local-config.yaml"]
-    ports:
-      - "127.0.0.1:3100:3100"
     volumes:
       - ./infra/loki/config.yaml:/etc/loki/local-config.yaml:ro
       - loki_data:/loki
@@ -124,8 +189,6 @@ services:
     image: grafana/tempo:3.1.0
     restart: unless-stopped
     command: ["-config.file=/etc/tempo/config.yaml"]
-    ports:
-      - "127.0.0.1:3200:3200"
     volumes:
       - ./infra/tempo/config.yaml:/etc/tempo/config.yaml:ro
       - tempo_data:/var/tempo
@@ -149,6 +212,8 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?run infra/prepare-dev-secrets.sh first}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?run infra/prepare-dev-secrets.sh first}
+      PROMETHEUS_ADMIN_USER: ${PROMETHEUS_ADMIN_USER:?run infra/prepare-dev-secrets.sh first}
+      PROMETHEUS_ADMIN_PASSWORD: ${PROMETHEUS_ADMIN_PASSWORD:?run infra/prepare-dev-secrets.sh first}
       GF_USERS_ALLOW_SIGN_UP: "false"
     ports:
       - "127.0.0.1:3000:3000"
@@ -167,8 +232,12 @@ volumes:
   loki_data:
   tempo_data:
   grafana_data:
+  pgadmin_data:
+  redisinsight_data:
 
 networks:
   data:
   messaging:
   monitoring:
+  postgres_admin:
+  redis_admin:
