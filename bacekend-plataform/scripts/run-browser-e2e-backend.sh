@@ -27,6 +27,8 @@ suffix="$(python3 -c 'import secrets; print(secrets.token_hex(8))')"
 database_name="payvia_browser_e2e_${suffix}"
 runtime_role="payvia_e2e_${suffix}"
 runtime_password="$(python3 -c 'import secrets; print(secrets.token_urlsafe(36))')"
+migration_role="payvia_migrator_e2e_${suffix}"
+migration_password="$(python3 -c 'import secrets; print(secrets.token_urlsafe(36))')"
 operator_email="e2e_${suffix}@example.test"
 operator_password="$(python3 -c 'import secrets; print("Aa1!" + secrets.token_urlsafe(30))')"
 credentials_file="/tmp/payvia-platform-e2e-operator.json"
@@ -67,18 +69,18 @@ second_app_metrics_port="${e2e_ports[6]}"
 second_frontend_port="${e2e_ports[7]}"
 export PAYVIA_E2E_FRONTEND_ORIGIN="http://localhost:${frontend_port}"
 export PAYVIA_E2E_SECOND_FRONTEND_ORIGIN="http://localhost:${second_frontend_port}"
-urls="$(python3 - "${admin_url}" "${database_name}" "${runtime_role}" "${runtime_password}" <<'PYURL'
+urls="$(python3 - "${admin_url}" "${database_name}" "${migration_role}" "${migration_password}" "${runtime_role}" "${runtime_password}" <<'PYURL'
 import sys
 from urllib.parse import urlsplit, urlunsplit, quote
-source, database, role, password = sys.argv[1:]
+source, database, migration_role, migration_password, runtime_role, runtime_password = sys.argv[1:]
 url = urlsplit(source)
-def build(username, secret):
+def build(database_name, username, secret):
     netloc = f"{quote(username, safe='')}:{quote(secret, safe='')}@{url.hostname}"
     if url.port is not None:
         netloc += f":{url.port}"
-    return urlunsplit((url.scheme, netloc, f"/{database}", url.query, url.fragment))
-print(build(url.username or '', url.password or ''))
-print(build(role, password))
+    return urlunsplit((url.scheme, netloc, f"/{database_name}", url.query, url.fragment))
+print(build(database, migration_role, migration_password))
+print(build(database, runtime_role, runtime_password))
 PYURL
 )"
 migration_url="$(printf '%s\n' "${urls}" | sed -n '1p')"
@@ -100,16 +102,19 @@ cleanup() {
     psql "${admin_url}" -qAtc "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${database_name}'" >/dev/null || true
     dropdb --if-exists --maintenance-db="${admin_url}" "${database_name}" || true
     psql "${admin_url}" -qAtc "DROP ROLE IF EXISTS \"${runtime_role}\"" >/dev/null || true
+    psql "${admin_url}" -qAtc "DROP ROLE IF EXISTS \"${migration_role}\"" >/dev/null || true
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
 createdb --maintenance-db="${admin_url}" "${database_name}"
-PLATFORM_MIGRATION_DATABASE_URL="${migration_url}" cargo run --locked --manifest-path "${workspace_root}/Cargo.toml" -p bacekend-plataform --bin migrate-platform
-psql "${admin_url}" -v ON_ERROR_STOP=1 -c "CREATE ROLE \"${runtime_role}\" LOGIN PASSWORD '${runtime_password}'" >/dev/null
+psql "${admin_url}" -v ON_ERROR_STOP=1 -c "CREATE ROLE \"${migration_role}\" LOGIN PASSWORD '${migration_password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS" >/dev/null
+psql "${admin_url}" -v ON_ERROR_STOP=1 -c "GRANT CONNECT, CREATE ON DATABASE \"${database_name}\" TO \"${migration_role}\"" >/dev/null
+psql "${admin_url}" -v ON_ERROR_STOP=1 -c "CREATE ROLE \"${runtime_role}\" LOGIN PASSWORD '${runtime_password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS" >/dev/null
 psql "${admin_url}" -v ON_ERROR_STOP=1 -c "GRANT CONNECT ON DATABASE \"${database_name}\" TO \"${runtime_role}\"" >/dev/null
-psql "${migration_url}" -v ON_ERROR_STOP=1 -c "GRANT USAGE ON SCHEMA identity_access, tenant_registry, realtime TO \"${runtime_role}\"; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity_access, tenant_registry, realtime TO \"${runtime_role}\"; GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA identity_access, tenant_registry, realtime TO \"${runtime_role}\"" >/dev/null
+PLATFORM_MIGRATION_DATABASE_URL="${migration_url}" PLATFORM_DATABASE_URL="${database_url}" PLATFORM_RUNTIME_DB_ROLE="${runtime_role}" cargo run --locked --manifest-path "${workspace_root}/Cargo.toml" -p bacekend-plataform --bin migrate-platform
+psql "${migration_url}" -v ON_ERROR_STOP=1 -c "GRANT USAGE ON SCHEMA identity_access, tenant_registry, realtime TO \"${runtime_role}\"; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity_access, tenant_registry, realtime TO \"${runtime_role}\"; GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA identity_access, tenant_registry, realtime TO \"${runtime_role}\"; ALTER DEFAULT PRIVILEGES IN SCHEMA identity_access, tenant_registry, realtime GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO \"${runtime_role}\"; ALTER DEFAULT PRIVILEGES IN SCHEMA identity_access, tenant_registry, realtime GRANT USAGE, SELECT ON SEQUENCES TO \"${runtime_role}\"" >/dev/null
 export PLATFORM_DATABASE_URL="${database_url}"
 export PLATFORM_EVENT_CONSUMER_NAMESPACE="E2E_${suffix}"
 export E2E_OPERATOR_EMAIL="${operator_email}"

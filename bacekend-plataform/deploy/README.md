@@ -21,6 +21,24 @@ Los scripts de este backend son independientes del backend de pasarelas y resuel
 
 Variables requeridas para el runtime actual: `PLATFORM_DATABASE_URL` (rol PostgreSQL de aplicación sin `BYPASSRLS`) y `PLATFORM_REDIS_URL` (Redis autenticado). El backend las lee desde su propio `bacekend-plataform/.env`; no se usa un `.env` en la raíz. También lee `APP_HTTP_ADDR`, `APP_MODULE_GRPC_ADDR`, `APP_METRICS_ADDR`, `APP_METRICS_BEARER_TOKEN`, `APP_ENV`, `APP_VERSION`, `OTEL_EXPORTER_OTLP_ENDPOINT` y `SENTRY_DSN`. Direcciones, entorno y versión tienen defaults; OTLP, DSN y token son opcionales según la topología. Si métricas escucha fuera de loopback, el token debe tener al menos 32 caracteres y la red debe estar limitada al scraper privado. Usa un DSN distinto por backend/entorno y no lo imprimas ni lo pongas en Git.
 
+## Migraciones de PostgreSQL
+
+Las migraciones son versionadas y propiedad de cada módulo. El binario `migrate-platform` ejecuta los migradores de `identity_access`, `tenant_registry` y `realtime` de forma coordinada sobre la base física compartida. El proceso de la API nunca crea ni altera tablas al arrancar.
+
+Provisiona `PLATFORM_MIGRATION_DATABASE_URL` como secreto propio del backend y `PLATFORM_RUNTIME_DB_ROLE` con el nombre de la cuenta usada por `PLATFORM_DATABASE_URL`. El usuario migrador debe ser diferente del usuario runtime, no ser superusuario ni tener `BYPASSRLS`, y ser propietario de los schemas/tablas que migra o recibir los permisos DDL necesarios. El comando comprueba que las URLs pertenecen a la misma base y que los usuarios sean distintos. Tras aplicar migraciones, concede al rol runtime `USAGE`, DML y privilegios de secuencia en los schemas propiedad de plataforma y configura privilegios por defecto para futuras tablas creadas por el migrador. El runtime debe ser un rol sin `BYPASSRLS`. `PLATFORM_TEST_DATABASE_ADMIN_URL` es exclusivamente para pruebas de desarrollo aisladas y nunca se configura en producción.
+
+El despliegue sigue este orden: construir los dos binarios, tomar y verificar un backup recuperable, detener/poner en mantenimiento las escrituras incompatibles si la migración lo requiere, ejecutar la migración una sola vez, revisar su código de salida y el ledger SQLx de cada módulo, desplegar la nueva versión de plataforma y comprobar readiness y métricas. La VM debe tener exclusivamente el `.env` de plataforma con permisos restrictivos; no uses el `.env` de pasarelas, de los frontends ni uno general.
+
+```sh
+./bacekend-plataform/build-production.sh
+./bacekend-plataform/migrate-production.sh
+./bacekend-plataform/run-production.sh
+```
+
+`migrate-production.sh` carga `bacekend-plataform/.env` y ejecuta el binario release ya compilado; no ejecuta Cargo ni imprime la URL. Si falla, detén el despliegue, conserva el log diagnóstico saneado y no arranques la versión nueva hasta entender el error. No reviertas automáticamente migraciones con pérdida de datos: usa cambios expand/contract (agregar, desplegar compatibilidad, migrar datos, retirar en otra versión) y restaura backup solo con un plan probado.
+
+Para la base local existente, no se debe asumir que un schema sin filas en `_sqlx_migrations` está vacío o equivale a una instalación nueva. Antes de adoptar una versión base se verifican tablas, columnas, constraints, índices, políticas RLS, ownership y datos contra el SQL versionado; si hay diferencias, se detiene y se prepara una reconciliación específica sin borrar tablas ni datos.
+
 El primer operador se inicializa una sola vez desde una terminal local, con la migración `identity_access` aplicada y permiso PostgreSQL para insertar el operador:
 
 ```sh
