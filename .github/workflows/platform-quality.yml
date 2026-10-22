@@ -31,17 +31,9 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-      redis:
-        image: redis:8-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     env:
-      PLATFORM_REDIS_URL: redis://127.0.0.1:6379/0
+      REDIS_PASSWORD: payvia-redis-${{ github.run_id }}-${{ github.run_attempt }}-integration
+      PLATFORM_REDIS_URL: redis://:payvia-redis-${{ github.run_id }}-${{ github.run_attempt }}-integration@127.0.0.1:6379/0
       PLATFORM_DATABASE_URL: postgres://payvia_test:payvia-postgres-${{ github.run_id }}-${{ github.run_attempt }}-integration@127.0.0.1:5432/payvia_test?sslmode=disable
       PLATFORM_TEST_DATABASE_ADMIN_URL: postgres://payvia_test:payvia-postgres-${{ github.run_id }}-${{ github.run_attempt }}-integration@127.0.0.1:5432/payvia_test?sslmode=disable
       PLATFORM_NATS_URL: nats://127.0.0.1:4222
@@ -49,10 +41,28 @@ jobs:
       NATS_PASSWORD: payvia-platform-${{ github.run_id }}-${{ github.run_attempt }}-integration
     steps:
       - uses: actions/checkout@v4
+      - name: Mask ephemeral service credentials
+        run: |
+          postgres_password="payvia-postgres-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-integration"
+          echo "::add-mask::$postgres_password"
+          echo "::add-mask::$REDIS_PASSWORD"
+          echo "::add-mask::$NATS_PASSWORD"
       - uses: dtolnay/rust-toolchain@1.99.1
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Start authenticated Redis for acceptance tests
+        run: |
+          docker run --detach --name payvia-platform-test-redis --publish 6379:6379 redis:8-alpine \
+            redis-server --requirepass "$REDIS_PASSWORD"
+          for attempt in $(seq 1 30); do
+            if docker exec -e REDISCLI_AUTH="$REDIS_PASSWORD" payvia-platform-test-redis redis-cli ping | grep -q PONG; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs payvia-platform-test-redis
+          exit 1
       - name: Start authenticated JetStream for acceptance tests
         run: |
           docker run --detach --name payvia-platform-test-nats --publish 4222:4222 nats:2-alpine \
