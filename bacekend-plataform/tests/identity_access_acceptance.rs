@@ -1,3 +1,4 @@
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use opentelemetry::{global, trace::TracerProvider as _};
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerProvider};
 use platform_contracts::{
@@ -5,6 +6,7 @@ use platform_contracts::{
     runtime::runtime_probe_client::RuntimeProbeClient,
 };
 use reqwest::{Client, StatusCode, header};
+use sha2::{Digest, Sha256};
 use sqlx::postgres::PgPoolOptions;
 use std::{
     collections::HashMap,
@@ -155,7 +157,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let grpc_task = tokio::spawn(platform_runtime::module_config::serve(
         grpc_listener,
         grpc_pool,
-        redis_manager,
+        redis_manager.clone(),
         async move {
             let _ = grpc_signal.await;
         },
@@ -263,6 +265,29 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         "corr_identity_wrong_password"
     );
     assert_eq!(error_body["error"]["trace_id"], trace_id);
+
+    let account_digest = Sha256::digest(email.to_ascii_lowercase().as_bytes());
+    let account_key = format!(
+        "platform:identity:login:account:{}",
+        URL_SAFE_NO_PAD.encode(account_digest)
+    );
+    let ip_digest = Sha256::digest(test_source_ip.to_string().as_bytes());
+    let ip_key = format!(
+        "platform:identity:login:ip:{}",
+        URL_SAFE_NO_PAD.encode(ip_digest)
+    );
+    let mut redis_connection = redis_manager.clone();
+    for key in [account_key, ip_key] {
+        let ttl: i64 = redis::cmd("TTL")
+            .arg(key)
+            .query_async(&mut redis_connection)
+            .await
+            .expect("real Redis returns the rate-limit counter TTL");
+        assert!(
+            (1..=60).contains(&ttl),
+            "rate-limit Redis counter must expire within its configured window"
+        );
+    }
 
     let events = captured_events.lock().expect("event capture lock").clone();
     let module_failure = events
