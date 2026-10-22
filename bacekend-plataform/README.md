@@ -69,7 +69,7 @@ Las API keys, secretos OAuth y credenciales de estos proveedores se suministran 
 
 Stack objetivo: Rust/Tokio, Axum, `tonic`/`prost`, SQLx, PostgreSQL 15+, Redis con TTL, NATS JetStream/Outbox, OpenTelemetry, Sentry, React/TypeScript para los clientes. Las primitivas comunes de correlación e instrumentación viven en [`crates/observability`](../crates/observability/). Para ejecutar una instalación local completa se necesitarán toolchains fijados, servicios de desarrollo, secretos de aplicación y, al probar pagos, credenciales oficiales sandbox.
 
-El workspace Cargo compartido está definido en el `Cargo.toml` de la raíz; no hay workspaces anidados. Esto comparte resolución de dependencias y compilación, no despliegues: `bacekend-plataform` y `bacekend-pasarela` producen aplicaciones/imagenes separadas y se ejecutan en VM/VPS independientes. Los frontends tenant y administración también se publican de forma separada. La imagen de plataforma y su operación viven en [`deploy/`](deploy/); la infraestructura compartida local está descrita en [`infra/README.md`](../infra/README.md). La Fase 1 incorpora el primer corte operativo (BFF de salud, módulo gRPC de runtime, OpenAPI y observabilidad), no los endpoints comerciales. PostgreSQL, Redis, JetStream y los dominios de negocio todavía no están conectados al runtime de plataforma.
+El workspace Cargo compartido está definido en el `Cargo.toml` de la raíz; no hay workspaces anidados. Esto comparte resolución de dependencias y compilación, no despliegues: `bacekend-plataform` y `bacekend-pasarela` producen aplicaciones/imágenes separadas y se ejecutan en VM/VPS independientes. Los frontends tenant y administración también se publican de forma separada. La imagen de plataforma y su operación viven en [`deploy/`](deploy/); la infraestructura compartida local está descrita en [`infra/README.md`](../infra/README.md). Consulta el [`ROADMAP.md`](ROADMAP.md) para conocer el estado de implementación y los contratos que ya están disponibles.
 
 ## Uso de la API pública (contrato objetivo)
 
@@ -200,42 +200,9 @@ Cada frontera produce eventos correlacionados de inicio, llamada a dependencia, 
 
 Toda operación administrativa y decisión de autorización es auditable. Se aplican tenant isolation, least privilege, protección de secretos, rate limits y control de replay/idempotencia. No se confía en IDs, tenant claims o scopes proporcionados por el frontend sin validación del backend.
 
-## Estado de implementación
+## Estado del proyecto
 
-Fase 0 (auditoría, decisiones y workspace) está cerrada como fase documental. En Fase 1 está implementado el composition root del backend, la configuración tipada, los logs JSON, OpenTelemetry OTLP, Sentry configurable, métricas Prometheus privadas, el BFF Axum/OpenAPI, el contrato Tonic y el módulo `platform_runtime` con capas de dominio, aplicación e infraestructura. La aceptación HTTP→BFF→gRPC→módulo usa servidores reales en loopback. El artefacto de despliegue es independiente y compila solo `bacekend-plataform`; las bases de observabilidad se provisionan como infraestructura común desde la raíz, separadas del deploy del backend.
-
-No están implementados los dominios comerciales, persistencia, Redis/NATS, autenticación de tenants, frontends ejecutables ni integraciones Wompi/Factus/Resend. No uses los ejemplos de pagos de este README como endpoints disponibles.
-
-## Ejecución de la Fase 1
-
-Requisitos locales: Rust/Cargo fijados por el repositorio. Arranque del backend:
-
-```bash
-cargo run -p bacekend-plataform
-```
-
-Variables de entorno: `APP_HTTP_ADDR` (por defecto `0.0.0.0:8080`), `APP_MODULE_GRPC_ADDR` (por defecto `127.0.0.1:50051`, solo loopback mientras el canal interno no use mTLS), `APP_METRICS_ADDR` (por defecto `127.0.0.1:9090`), `APP_METRICS_BEARER_TOKEN` (obligatorio con al menos 32 caracteres si métricas escucha fuera de loopback), `APP_ENV`, `APP_VERSION`, `OTEL_EXPORTER_OTLP_ENDPOINT` y `SENTRY_DSN`. El DSN y el Collector son opcionales en desarrollo; sin ellos, logs y métricas locales siguen activos y las trazas no se exportan externamente.
-
-Endpoints disponibles en esta fase:
-
-- `GET /health/live`: comprueba que el proceso BFF responde, sin depender del módulo.
-- `GET /health/ready`: ejecuta una llamada gRPC real al módulo runtime y devuelve 503 con envelope seguro ante fallo/deadline.
-- `GET /openapi.json`: contrato OpenAPI de los endpoints de operación.
-- `GET http://127.0.0.1:9090/metrics`: scrape Prometheus; usa Bearer cuando el listener no es loopback.
-
-Ejemplo de verificación local después de iniciar el backend:
-
-```bash
-curl -i http://127.0.0.1:8080/health/ready
-curl -s http://127.0.0.1:8080/openapi.json
-curl -s http://127.0.0.1:9090/metrics
-```
-
-La API de pagos `POST /v1/payment_intents` descrita más abajo es un contrato objetivo de una fase futura, no está publicada en OpenAPI de esta entrega.
-
-## Fase 0 — Auditoría y decisiones
-
-La Fase 0 documental de auditoría, decisiones y workspace está cerrada. La evidencia, bounded contexts, modelo de amenazas, decisiones y matrices están en [`docs/phase-0/`](docs/phase-0/) y [`docs/adr/`](docs/adr/). El recorrido HTTP→BFF→gRPC→módulo forma parte de Fase 1 y se valida en la suite de aceptación integrada.
+El estado vigente y los contratos realmente disponibles se mantienen en [`ROADMAP.md`](ROADMAP.md). La Fase 1 está cerrada para el alcance de fundaciones y observabilidad; el recorrido automatizado HTTP→BFF→gRPC cubre éxito, desconexión y timeout, con evidencia en [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md). La auditoría, las matrices y las decisiones están en [`docs/phase-0/`](docs/phase-0/), [`docs/phase-1/`](docs/phase-1/) y [`docs/adr/`](docs/adr/). No se deben tratar contratos futuros como endpoints publicados.
 
 ## Roadmap y reglas
 

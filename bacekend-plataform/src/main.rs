@@ -1,8 +1,10 @@
-use payvia_platform_bff::http::routes::router;
-use payvia_platform_core::{config::AppConfig, metrics, telemetry};
-use platform_contracts::runtime::{ReadinessRequest, runtime_probe_client::RuntimeProbeClient};
+use payvia_platform_bff::{
+    common::grpc::runtime_probe_client::RuntimeProbeClient, http::routes::router,
+};
+use payvia_platform_core::{config::AppConfig, metrics, shutdown_signal, telemetry};
+use platform_contracts::runtime::runtime_probe_client::RuntimeProbeClient as RuntimeProbeGrpcClient;
 use std::time::Duration;
-use tokio::{net::TcpListener, signal, sync::watch};
+use tokio::{net::TcpListener, sync::watch};
 use tonic::transport::Endpoint;
 use tracing::Instrument;
 
@@ -46,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let endpoint = Endpoint::from_shared(format!("http://{runtime_addr}"))?
         .connect_timeout(Duration::from_secs(2))
         .timeout(Duration::from_secs(2));
-    let grpc_client = RuntimeProbeClient::connect(endpoint).await.map_err(|status| {
+    let grpc_client = RuntimeProbeGrpcClient::connect(endpoint).await.map_err(|status| {
         tracing::error!(event.name = "service.startup.dependency.failed", component = "platform_bff", operation = "connect_runtime", dependency = "platform_runtime", error_code = "grpc_connect_failed", error_category = "connectivity", dependency_error = %status, retryable = true);
         status
     })?;
@@ -65,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(event.name = "service.started", service = "payvia-platform", http_addr = %http_listener.local_addr()?, grpc_addr = %runtime_addr, metrics_addr = %config.metrics_addr);
     axum::serve(http_listener, router(grpc_client))
         .with_graceful_shutdown(async move {
-            shutdown_signal().await;
+            shutdown_signal::wait_for_shutdown_signal().await;
             let _ = shutdown_tx.send(true);
         })
         .await?;
@@ -110,30 +112,26 @@ async fn serve_runtime(
 }
 
 async fn verify_runtime_startup(
-    mut client: RuntimeProbeClient<tonic::transport::Channel>,
+    client: RuntimeProbeGrpcClient<tonic::transport::Channel>,
 ) -> Result<(), tonic::Status> {
-    let response = tokio::time::timeout(
-        Duration::from_secs(2),
-        client.check_readiness(tonic::Request::new(ReadinessRequest {
-            correlation_id: "startup_probe".to_owned(),
-        })),
-    )
-    .await
-    .map_err(|_| tonic::Status::deadline_exceeded("runtime startup probe timed out"))??;
-    if response.get_ref().status != "ready" || response.get_ref().component != "platform_runtime" {
-        return Err(tonic::Status::failed_precondition(
-            "runtime startup probe rejected",
-        ));
-    }
-    Ok(())
-}
-
-async fn shutdown_signal() {
-    if let Err(error) = signal::ctrl_c().await {
-        tracing::error!(event.name = "service.shutdown.signal_failed", component = "platform_runtime", error_class = "signal", error_code = %error);
-    }
-    tracing::info!(
-        event.name = "service.shutdown.started",
-        service = "payvia-platform"
+    let span = tracing::info_span!(
+        "grpc.client.startup_readiness",
+        correlation_id = "startup_probe"
     );
+    async move {
+        let response = tokio::time::timeout(
+            Duration::from_secs(2),
+            RuntimeProbeClient::check(&client, "startup_probe"),
+        )
+        .await
+        .map_err(|_| tonic::Status::deadline_exceeded("runtime startup probe timed out"))??;
+        if response.status != "ready" || response.component != "platform_runtime" {
+            return Err(tonic::Status::failed_precondition(
+                "runtime startup probe rejected",
+            ));
+        }
+        Ok(())
+    }
+    .instrument(span)
+    .await
 }

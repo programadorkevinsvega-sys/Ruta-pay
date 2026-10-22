@@ -18,9 +18,11 @@ storage:
     local:
       path: /var/tempo/blocks
 
-compactor:
-  compaction:
-    block_retention: 168h
+backend_scheduler:
+  provider:
+    compaction:
+      compaction:
+        block_retention: 168h
 
 usage_report:
   reporting_enabled: false
