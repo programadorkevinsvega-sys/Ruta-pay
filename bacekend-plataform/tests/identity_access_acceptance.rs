@@ -2,7 +2,9 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use opentelemetry::{global, trace::TracerProvider as _};
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerProvider};
 use platform_contracts::{
-    identity_access::identity_access_client::IdentityAccessClient,
+    identity_access::{
+        AuthorizeOperatorOperationRequest, identity_access_client::IdentityAccessClient,
+    },
     runtime::runtime_probe_client::RuntimeProbeClient,
 };
 use platform_identity_access::application::operator_bootstrap::OperatorBootstrapService;
@@ -207,6 +209,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let identity_client = IdentityAccessClient::connect(grpc_endpoint)
         .await
         .expect("identity gRPC channel connects");
+    let mut authorization_client = identity_client.clone();
     let http_listener = TcpListener::bind("127.0.0.1:0").await.expect("BFF bind");
     let http_addr = http_listener.local_addr().expect("BFF address");
     let origin = format!("http://localhost:{}", http_addr.port());
@@ -446,6 +449,35 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .collect();
     let operator_session_cookie = cookie_value(&operator_cookies, "payvia_platform_session");
     let operator_csrf_cookie = cookie_value(&operator_cookies, "payvia_platform_csrf");
+    let authorization = authorization_client
+        .authorize_operator_operation(AuthorizeOperatorOperationRequest {
+            session_token: operator_session_cookie.clone(),
+            csrf_token: operator_csrf_cookie.clone(),
+            permission: "tenants.activate".to_owned(),
+            correlation_id: "corr_operator_authorization".to_owned(),
+        })
+        .await
+        .expect("operator permission is checked in the identity module")
+        .into_inner();
+    assert_eq!(authorization.operator_id, operator_id.to_string());
+    let denied_authorization = authorization_client
+        .authorize_operator_operation(AuthorizeOperatorOperationRequest {
+            session_token: operator_session_cookie.clone(),
+            csrf_token: operator_csrf_cookie.clone(),
+            permission: "billing.refunds.issue".to_owned(),
+            correlation_id: "corr_operator_authorization_denied".to_owned(),
+        })
+        .await
+        .expect_err("unassigned permission is denied");
+    assert_eq!(denied_authorization.code(), tonic::Code::PermissionDenied);
+    let authorization_audit_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM identity_access.audit_events WHERE actor_id=$1 AND action='operator.authorization.checked' AND correlation_id IN ('corr_operator_authorization','corr_operator_authorization_denied')",
+    )
+    .bind(operator_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("authorization decisions are auditable");
+    assert_eq!(authorization_audit_count, 2);
     let operator_session = client
         .get(format!("http://{http_addr}/v1/platform/identity/session"))
         .header(

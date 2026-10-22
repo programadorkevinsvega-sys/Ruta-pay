@@ -2,7 +2,8 @@ use crate::application::identity_service::{IdentityError, IdentityService};
 use opentelemetry::{global, propagation::Extractor, trace::TraceContextExt};
 use payvia_observability::{current_span_id, current_trace_id};
 use platform_contracts::identity_access::{
-    ApiKeyMetadata, CreateApiKeyRequest, CreateApiKeyResponse, CreateOperatorSessionRequest,
+    ApiKeyMetadata, AuthorizeOperatorOperationRequest, AuthorizeOperatorOperationResponse,
+    CreateApiKeyRequest, CreateApiKeyResponse, CreateOperatorSessionRequest,
     CreateOperatorSessionResponse, CreateTenantSessionRequest, CreateTenantSessionResponse,
     ListApiKeysRequest, ListApiKeysResponse, RegisterTenantUserRequest, RegisterTenantUserResponse,
     RevokeApiKeyRequest, RevokeApiKeyResponse, RevokeOperatorSessionRequest,
@@ -308,6 +309,40 @@ impl IdentityAccess for IdentityAccessApi {
                 Err(error) => Err(log_and_map(
                     error,
                     "validate_operator_session",
+                    &correlation_id,
+                    started.elapsed().as_millis() as u64,
+                )),
+            }
+        }
+        .instrument(span)
+        .await
+    }
+
+    async fn authorize_operator_operation(
+        &self,
+        request: Request<AuthorizeOperatorOperationRequest>,
+    ) -> Result<Response<AuthorizeOperatorOperationResponse>, Status> {
+        let correlation_id = request.get_ref().correlation_id.clone();
+        let span = grpc_span(&request, "authorize_operator_operation", &correlation_id);
+        let body = request.into_inner();
+        async move {
+            let started = std::time::Instant::now();
+            match self
+                .service
+                .authorize_operator_operation(
+                    &body.session_token,
+                    &body.csrf_token,
+                    &body.permission,
+                    &correlation_id,
+                )
+                .await
+            {
+                Ok(operator_id) => Ok(Response::new(AuthorizeOperatorOperationResponse {
+                    operator_id: operator_id.to_string(),
+                })),
+                Err(error) => Err(log_and_map(
+                    error,
+                    "authorize_operator_operation",
                     &correlation_id,
                     started.elapsed().as_millis() as u64,
                 )),

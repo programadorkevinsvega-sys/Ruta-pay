@@ -12,6 +12,7 @@ service IdentityAccess {
   rpc CreateOperatorSession (CreateOperatorSessionRequest) returns (CreateOperatorSessionResponse);
   rpc RevokeOperatorSession (RevokeOperatorSessionRequest) returns (RevokeOperatorSessionResponse);
   rpc ValidateOperatorSession (ValidateOperatorSessionRequest) returns (ValidateOperatorSessionResponse);
+  rpc AuthorizeOperatorOperation (AuthorizeOperatorOperationRequest) returns (AuthorizeOperatorOperationResponse);
 }
 
 message RegisterTenantUserRequest {
@@ -132,4 +133,15 @@ message ValidateOperatorSessionRequest {
 
 message ValidateOperatorSessionResponse {
   string user_id = 1;
+}
+
+message AuthorizeOperatorOperationRequest {
+  string session_token = 1;
+  string csrf_token = 2;
+  string permission = 3;
+  string correlation_id = 4;
+}
+
+message AuthorizeOperatorOperationResponse {
+  string operator_id = 1;
 }
