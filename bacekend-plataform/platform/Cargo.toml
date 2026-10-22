@@ -1,0 +1,18 @@
+[package]
+name = "payvia-platform-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+payvia-observability = { path = "../../crates/observability" }
+metrics-exporter-prometheus.workspace = true
+axum.workspace = true
+tokio.workspace = true
+opentelemetry.workspace = true
+sentry.workspace = true
+subtle.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-opentelemetry.workspace = true
+uuid.workspace = true
+url.workspace = true

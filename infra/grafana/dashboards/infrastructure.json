@@ -1,0 +1,16 @@
+{
+  "id": null,
+  "uid": "payvia-infrastructure",
+  "title": "Payvia — Dependencias compartidas",
+  "tags": ["payvia", "infrastructure"],
+  "timezone": "browser",
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    { "id": 1, "type": "stat", "title": "Scrape: dependencias", "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "up{job=~\"postgres|redis|nats|node\"}", "legendFormat": "{{job}}", "refId": "A" }] },
+    { "id": 2, "type": "timeseries", "title": "Redis: memoria usada", "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "redis_memory_used_bytes", "legendFormat": "bytes", "refId": "A" }] },
+    { "id": 3, "type": "timeseries", "title": "NATS: mensajes JetStream almacenados", "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "nats_jetstream_server_store_msgs", "legendFormat": "mensajes", "refId": "A" }] }
+  ]
+}

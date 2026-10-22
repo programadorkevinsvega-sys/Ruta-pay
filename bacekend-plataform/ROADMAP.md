@@ -6,7 +6,9 @@
 
 > Este roadmap cubre únicamente el backend que gobierna tenants, planes, precios, límites, cuotas, suscripciones, facturación de Payvia, identidad, autorización y sus adapters propios de Wompi, Factus y Resend. El backend de pasarelas tiene su propio [README](../bacekend-pasarela/README.md) y [roadmap](../bacekend-pasarela/ROADMAP.md) para los pagos que los comercios procesan a sus compradores.
 >
-> Estado: planificación. El código actual es un scaffold y no satisface fases funcionales.
+> Los backends comparten el workspace Cargo raíz solo para resolución/build. Cada uno tiene binario, imagen, configuración, secretos, red, artefactos operativos y despliegue independiente en su propia VM/VPS; los dos frontends también tienen despliegues separados. Los artefactos de esta aplicación pertenecen a `bacekend-plataform/deploy/`.
+>
+> Estado: Fase 0 cerrada; Fase 1 en implementación y validación. Las fases comerciales siguen pendientes.
 
 ## Autoridad de dominio
 
@@ -31,17 +33,22 @@ Pruebas unitarias y de propiedades aplican a la lógica; integración/aceptació
 - [x] Versionar el contrato conceptual `payment_method` como unión `card|pse|crypto`, incluyendo settlement cripto decimal string separado del importe comercial entero. Evidencia: ADR-0005.
 - [x] Separar el recaudo de Payvia a sus tenants de los pagos de compradores procesados por pasarelas; asignar adapters propios de plataforma: Wompi para recaudo, Factus para facturación electrónica y Resend para correo. Evidencia: ADR-0006.
 - [x] Definir threat model cross-backend: identidad/scopes y mTLS con rotación, grants ligados al request, replay, tamaño/rate limits, deadlines, retries y telemetría redactada. Evidencia: [`docs/phase-0/threat-model.md`](docs/phase-0/threat-model.md).
-- [ ] Completar crates/apps y contratos gRPC/eventos ejecutables de plataforma dentro del workspace raíz, respetando límites definidos. El workspace hoy contiene los dos paquetes/binarios iniciales; no se crean crates vacíos. Falta implementar el primer contrato técnico real para cumplir aceptación transversal.
+- [x] Auditar la composición real del workspace raíz y confirmar que ambos backends son miembros independientes sin workspaces anidados.
+- [x] Definir los bounded contexts, ownership, contratos y fases de creación de crates/apps funcionales sin generar paquetes vacíos.
 - [x] Definir las dos apps frontend separadas: `frontends/frontend-pasarela/` para tenant y `frontends/frontend-plataform/` para administración de plataforma. Evidencia: ADR-0001 y auditoría de sus documentos actuales.
 - [x] Documentar la matriz de integración y el plan de aceptación por fase en [`docs/phase-0/integration-matrix.md`](docs/phase-0/integration-matrix.md).
 
-**Salida:** decisiones de arquitectura aceptadas para el proyecto; ownership, autorización inter-backend, matrices, contratos conceptuales, amenazas y fases quedan trazables. Las ADRs registran decisiones ya establecidas por las reglas normativas; las decisiones de detalle no definidas por ellas siguen abiertas y no se presentan como aprobadas. Fase 0 sigue parcialmente completada/bloqueada hasta completar crates/apps/contratos ejecutables y resolver el criterio runtime indicado abajo; no se inicia Fase 1.
+**Salida:** auditoría, decisiones, ownership, autorización inter-backend, matrices, contratos conceptuales, amenazas y fases documentados. Las ADRs registran decisiones ya establecidas por las reglas normativas; las decisiones de detalle no definidas por ellas siguen abiertas y no se presentan como aprobadas. Fase 0 queda cerrada como fase documental conforme a la decisión de alcance del proyecto; no afirma integración runtime. Las pruebas runtime HTTP→BFF→gRPC→módulo son criterio de Fase 1.
 
 ### Evidencia y límites de Fase 0
 
-El informe de auditoría registra los comandos ejecutados y el inventario real. No hay mutaciones persistidas visibles que originen realtime; Redis y NATS/Outbox son N/A en esta fase con justificación previa. La matriz registra el conflicto: la aceptación transversal pide probar HTTP→BFF→gRPC→módulo en cada fase, pero Fase 0 no define un runtime BFF/gRPC y el scaffold no contiene módulos. El criterio de cierre permanece pendiente: debe completarse un corte técnico de esta fase con un contrato real y aceptación, o resolverse el alcance mediante gobierno del proyecto sin debilitar la regla normativa. Hasta completar crates/apps/contratos ejecutables y resolver ese criterio, no se inicia Fase 1 ni se declara Fase 0 cerrada.
+El informe de auditoría conserva los comandos ejecutados y el inventario real. No hay mutaciones persistidas visibles que originen realtime; Redis y NATS/Outbox son N/A porque Fase 0 no implementa runtime ni dominio. Por decisión de alcance del proyecto, Fase 0 es documental y se cierra al completar auditoría, ADRs, bounded contexts, threat model, matriz y verificación estática del workspace. No requiere adelantar contratos ejecutables: la aceptación HTTP→BFF→gRPC→módulo pertenece a Fase 1 y debe completarse allí antes de cerrar esa fase.
 
 ## Fase 1 — Fundaciones y observabilidad
+
+La subfase 1.1 implementa el primer corte operativo: configuración tipada y validada; BFF Axum con OpenAPI y endpoints operacionales; contrato y servidor gRPC del módulo runtime; propagación W3C/correlation; errores tipados y envelopes seguros; logs JSON, OpenTelemetry/OTLP, métricas y Sentry con redacción; readiness verificada, apagado ordenado y diagnósticos de cada frontera. Su matriz previa, con N/A justificados, está en [`docs/phase-0/integration-matrix.md`](docs/phase-0/integration-matrix.md). El health endpoint es una interfaz operacional; por eso no crea una pantalla de producto ni requiere UI React. La aceptación debe usar cliente HTTP real y cruzar el límite de red gRPC. El Dockerfile y configuración de observabilidad son específicos del backend y se encuentran bajo `bacekend-plataform/deploy/`; su build usa la raíz como contexto Cargo, pero no contiene ni despliega el binario de pasarelas.
+
+Criterios de cierre 1.1: pruebas reales HTTP→BFF→gRPC→módulo; traza y correlation ID presentes en el servidor RPC; éxito y fallos de validación/configuración, autorización donde corresponda, deadline/conectividad y dependencia; evento causal y respuesta HTTP correlacionados con código/categoría y duraciones; redacción verificada; health/readiness distinta y basada en dependencias existentes; apagado ordenado probado; formato, clippy y pruebas ejecutados. No se exige PostgreSQL, Redis, JetStream, Outbox ni realtime en este corte, según las justificaciones de la matriz. Sentry y OTLP se instrumentan y configuran desde el inicio; la recepción externa queda bloqueada hasta contar con DSN/Collector válidos y no se reportará como comprobada sin envío verificable.
 
 - [ ] Configuración tipada y secretos por entorno, fallando de forma segura.
 - [ ] Tokio/Axum BFF, gRPC interno, OpenAPI y propagación W3C.
@@ -49,6 +56,7 @@ El informe de auditoría registra los comandos ejecutados y el inventario real. 
 - [ ] Logs JSON estructurados; OpenTelemetry, métricas y Sentry con redacción.
 - [ ] Eventos diagnósticos en cada frontera: inicio, dependencia, fallo y cierre; duración propia/total y clasificación retryable fundada.
 - [ ] Health/readiness, apagado ordenado, dashboards/alertas y salud del pipeline de telemetría.
+- [x] Artefacto de despliegue exclusivo para `bacekend-plataform`, con configuración operativa bajo `bacekend-plataform/deploy/`; build y ejecución no inician el backend de pasarelas.
 
 **Salida:** integración automatizada prueba contexto HTTP→gRPC→módulo, eventos correlacionados y ausencia de secretos.
 
@@ -163,4 +171,4 @@ Referencias oficiales para la implementación: [Wompi — ambientes y llaves](ht
 
 ## Estado
 
-Todas las fases están pendientes hasta que se complete su salida con evidencia registrada. Cuentas sandbox, credenciales o decisiones legales faltantes se documentan como bloqueos concretos; no se reemplazan por simulaciones.
+Fase 0 está cerrada. Fase 1 tiene implementación y verificaciones parciales registradas en [`docs/phase-0/integration-matrix.md`](docs/phase-0/integration-matrix.md), pero continúa abierta mientras no se valide la recepción externa de telemetría y el cierre completo de sus criterios. Las fases comerciales posteriores están pendientes. Cuentas sandbox, credenciales o decisiones legales faltantes se documentan como bloqueos concretos; no se reemplazan por simulaciones.

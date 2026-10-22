@@ -1,0 +1,13 @@
+.git
+.github
+target
+.env
+.env.*
+!.env.example
+frontends
+**/node_modules
+**/dist
+**/coverage
+infra/.local
+infra/data
+infra/secrets

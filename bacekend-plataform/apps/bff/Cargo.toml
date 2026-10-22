@@ -1,0 +1,20 @@
+[package]
+name = "payvia-platform-bff"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+axum.workspace = true
+metrics.workspace = true
+opentelemetry.workspace = true
+payvia-observability = { path = "../../../crates/observability" }
+platform-contracts = { path = "../../crates/platform_contracts" }
+payvia-platform-core = { path = "../../platform" }
+serde.workspace = true
+serde_json.workspace = true
+tonic.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-opentelemetry.workspace = true
+utoipa.workspace = true
+uuid.workspace = true

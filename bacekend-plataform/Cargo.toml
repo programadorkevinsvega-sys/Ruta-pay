@@ -4,3 +4,21 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+axum.workspace = true
+metrics-exporter-prometheus.workspace = true
+platform-contracts = { path = "crates/platform_contracts" }
+platform-runtime = { path = "modules/platform_runtime" }
+payvia-platform-bff = { path = "apps/bff" }
+payvia-platform-core = { path = "platform" }
+tokio.workspace = true
+tonic.workspace = true
+tracing.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+reqwest = { version = "0.12", features = ["json"] }
+tracing-subscriber.workspace = true
+opentelemetry.workspace = true
+opentelemetry_sdk.workspace = true
+tracing-opentelemetry.workspace = true
+serde_json.workspace = true

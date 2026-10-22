@@ -1,0 +1,114 @@
+groups:
+  - name: payvia-platform
+    rules:
+      - alert: PayviaPlatformMetricsUnavailable
+        expr: absent(up{job="payvia-platform"} == 1)
+        for: 2m
+        labels:
+          severity: critical
+          component: platform
+        annotations:
+          summary: "Prometheus no recibe métricas de plataforma"
+          description: "Verifica el target, APP_METRICS_ADDR y el token de scraping en la red privada."
+
+      - alert: PayviaPlatformHttpServerErrors
+        expr: sum(rate(payvia_http_requests_total{job="payvia-platform",status=~"5.."}[5m])) / clamp_min(sum(rate(payvia_http_requests_total{job="payvia-platform"}[5m])), 1) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: platform
+        annotations:
+          summary: "La proporción de respuestas HTTP 5xx de plataforma supera 5%"
+          description: "Investiga eventos estructurados con el mismo trace_id y correlation_id."
+
+      - alert: PayviaPlatformHttpLatencyP95High
+        expr: histogram_quantile(0.95, sum by (le) (rate(payvia_http_request_duration_seconds_bucket{job="payvia-platform"}[5m]))) > 1
+        for: 10m
+        labels:
+          severity: warning
+          component: platform
+        annotations:
+          summary: "La latencia HTTP p95 de plataforma supera 1 s"
+          description: "Revisa saturación y métricas de duración de dependencias."
+
+      - alert: PayviaHttpRequestsSaturated
+        expr: payvia_http_requests_in_flight > 100
+        for: 5m
+        labels:
+          severity: warning
+          component: application
+        annotations:
+          summary: "Hay más de 100 solicitudes HTTP simultáneas"
+          description: "Comprueba carga, límites de concurrencia y dependencias lentas."
+
+  - name: shared-infrastructure
+    rules:
+      - alert: SharedDependencyUnavailable
+        expr: up{job=~"postgres|redis|nats|node"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "Una dependencia compartida no responde al scraper"
+          description: "Identifica la dependencia por job y revisa sus logs y healthcheck."
+
+      - alert: TelemetryCollectorUnavailable
+        expr: up{job="otel-collector"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          component: observability
+        annotations:
+          summary: "OpenTelemetry Collector no está disponible"
+          description: "Los servicios deben seguir atendiendo; revisa exportación best-effort y backlog."
+
+      - alert: TelemetryExporterUnavailable
+        expr: up{job="otel-exported"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          component: observability
+        annotations:
+          summary: "El endpoint Prometheus del Collector no está disponible"
+          description: "Revisa el proceso Collector y su pipeline de métricas."
+
+      - alert: TelemetryBackendUnavailable
+        expr: up{job=~"tempo|loki"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          component: observability
+        annotations:
+          summary: "Loki o Tempo no está disponible"
+          description: "La aplicación debe continuar; revisa exportación best-effort y almacenamiento."
+
+      - alert: HostCpuSaturationHigh
+        expr: 100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 90
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "La CPU del host supera 90% de uso"
+          description: "Revisa carga, concurrencia y procesos del host indicado."
+
+      - alert: HostMemoryPressureHigh
+        expr: 100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 90
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "La memoria disponible del host es menor a 10%"
+          description: "Revisa consumo por proceso y límites de memoria."
+
+      - alert: HostFilesystemSpaceLow
+        expr: 100 * (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"}) > 85
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "Un filesystem del host supera 85% de uso"
+          description: "Identifica el mountpoint antes de que una dependencia se quede sin disco."

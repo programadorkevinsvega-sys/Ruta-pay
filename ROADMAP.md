@@ -94,7 +94,7 @@ Una fase se considera terminada solo cuando cumple **todo** lo siguiente:
 **Objetivo:** base técnica reproducible. **Duración:** 2 a 3 días.
 
 - [ ] **0.1 Workspace Cargo único:** verificar los paquetes de backend ya registrados en el workspace Cargo de la raíz, completar la estructura de sus crates/binarios y mantener una sola resolución/`Cargo.lock`. Mantener aplicaciones y despliegues independientes, ownership modular propio y sin dependencias de implementación cruzadas. Plataforma contiene tenants, identidad, planes, precios, límites, suscripciones, facturación y dominio de pagos; pasarelas contiene `gateway_wompi`, `gateway_bold` y futuros `gateway_<provider>`. Evitar crates genéricos `core`/`db` como dueños de dominio.
-- [ ] **0.2 Infraestructura local:** `docker-compose.yml` con Postgres, Redis y NATS JetStream.
+- [ ] **0.2 Infraestructura compartida local:** `compose.yaml` raíz con PostgreSQL, Redis, NATS JetStream, Prometheus, OpenTelemetry Collector, Loki, Tempo y Grafana; Sentry se provisiona con el instalador de su release oficial fijada porque su distribución autohospedada mantiene un Compose con sus propias dependencias. Incluye `crates/observability`, alertas, paneles y pruebas de correlación/redacción/degradación. Evidencia y comandos: [`infra/README.md`](infra/README.md). La configuración no unifica los despliegues de los backends ni frontends.
 - [ ] **0.3 Configuración tipada:** carga de `.env`, falla rápido si falta una variable.
 - [ ] **0.4 Convenciones:** errores tipados (`thiserror`), logging estructurado con `tracing`, `correlation_id` y `trace_id` por petición.
 - [ ] **0.5 Tooling:** `justfile` con `migrate`, `test`, `lint`, `fmt`; hooks pre-commit.
@@ -102,7 +102,7 @@ Una fase se considera terminada solo cuando cumple **todo** lo siguiente:
 - [ ] **0.7 Repositorio:** README, LICENSE, SECURITY.md, CONTRIBUTING.md, plantillas de issues y PR.
 - [ ] **0.8 Separación de backends:** ADR de topología, contratos gRPC plataforma→pasarelas, concesión de autorización y publicación de eventos pasarelas→plataforma, límites de datos, identidad de servicio, eventos y procedimiento de migración/despliegue.
 - [ ] **0.9 Aplicaciones frontend:** definir tenant y administración de plataforma como aplicaciones React + TypeScript independientes en `frontends/frontend-pasarela/` y `frontends/frontend-plataform/`, ambas detrás del BFF REST/OpenAPI; establecer sesión, permisos, cliente API y coordinación TanStack Query.
-- [ ] **0.10 Telemetría base:** fijar esquema de logs/eventos, propagación W3C, métricas, exportación OpenTelemetry, captura Sentry, redacción y salud del propio pipeline.
+- [ ] **0.10 Telemetría base:** fijar esquema de logs/eventos, propagación W3C, métricas para p50/p95/p99, RPS, errores, saturación y dependencias, exportación OpenTelemetry, captura Sentry best-effort, redacción, alertas, paneles y salud/degradación del propio pipeline mediante `crates/observability` compartido.
 
 **Criterio de salida:** ambos backends compilan desde el workspace Cargo único de la raíz como binarios/aplicaciones monolíticas modulares y despliegues independientes; servicios locales requeridos tienen configuración documentada; ownership, contratos/autorización entre backends, ambas aplicaciones frontend, flujo frontend→BFF→gRPC, telemetría y límites de confianza quedan definidos. Las ADRs de contratos, ownership y operación están aprobadas. No se considera producto ejecutable por compilar un workspace vacío.
 

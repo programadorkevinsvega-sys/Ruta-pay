@@ -2,9 +2,39 @@
 resolver = "3"
 members = [
     "bacekend-plataform",
+    "bacekend-plataform/apps/bff",
+    "bacekend-plataform/modules/platform_runtime",
+    "bacekend-plataform/crates/platform_contracts",
+    "bacekend-plataform/platform",
+    "crates/observability",
     "bacekend-pasarela",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+
+[workspace.dependencies]
+axum = { version = "0.8.9", features = ["json", "macros"] }
+metrics = "0.24.2"
+metrics-exporter-prometheus = "0.18.3"
+opentelemetry = { version = "0.33.0", features = ["trace", "logs"] }
+opentelemetry-appender-tracing = "0.33.0"
+opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["grpc-tonic", "trace", "logs"] }
+opentelemetry_sdk = { version = "0.33.0", features = ["trace", "logs", "rt-tokio"] }
+prost = "0.14.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sentry = { version = "0.49.3", default-features = false, features = ["backtrace", "contexts", "panic", "reqwest", "rustls", "tracing"] }
+thiserror = "2.0"
+subtle = "2.6.1"
+tokio = { version = "1.48", features = ["macros", "rt-multi-thread", "signal", "net", "time", "sync"] }
+tonic = { package = "tonic", version = "0.14.6", features = ["transport"] }
+tonic-prost = { package = "tonic-prost", version = "0.14.2" }
+tracing = "0.1"
+tokio-stream = { version = "0.1", features = ["net"] }
+tracing-opentelemetry = "0.34.0"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+utoipa = { version = "6.0.0", features = ["axum_extras"] }
+uuid = { version = "1.18", features = ["v4"] }
+url = "2.5.8"

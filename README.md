@@ -14,7 +14,7 @@ Una sola API para Wompi, Bold y proveedores habilitados, con webhooks verificado
 
 </div>
 
-> **Estado del repositorio:** planificación y scaffolds. Las funcionalidades y contratos de esta guía describen el diseño objetivo; no se consideran disponibles hasta que estén implementados, publicados en OpenAPI y validados mediante pruebas de aceptación.
+> **Estado del repositorio:** desarrollo por fases. El backend de plataforma tiene implementada su base operativa inicial; las funciones de producto y el backend de pasarelas siguen el estado indicado en sus respectivos roadmaps. Los contratos objetivo no se consideran disponibles hasta estar publicados y validados mediante aceptación.
 
 ## ¿Qué es Payvia?
 
@@ -71,6 +71,10 @@ La plataforma posee tenants, autorización, payment intents, transacciones, cobr
 
 Los navegadores consumen exclusivamente el BFF de plataforma mediante REST/OpenAPI y WebSocket autenticado. Nunca llaman al backend de pasarelas, a un proveedor, a gRPC, PostgreSQL, Redis o NATS.
 
+### Build y despliegues
+
+Los dos backends comparten el `Cargo.toml`/`Cargo.lock` raíz solo para resolver y compilar dependencias. Cada uno produce su binario/imagen, configuración, secretos y artefactos operativos propios y se despliega en su VM/VPS independiente. Los frontends también se construyen y despliegan por separado. El `compose.yaml` de la raíz define infraestructura común (datos, mensajería y observabilidad), no procesos de aplicaciones. El artefacto de plataforma vive en [`bacekend-plataform/deploy/`](bacekend-plataform/deploy/); los detalles de infraestructura están en [`infra/README.md`](infra/README.md).
+
 ## Comunicación segura entre backends
 
 Plataforma y pasarelas se autentican como servicios con identidad criptográfica sobre gRPC cifrado con TLS/mTLS. La identidad no depende de IP o de un header declarativo. Certificados y trust roots se rotan con periodo de solapamiento. Además de autenticar el servicio, cada RPC valida caller, método, scope y una concesión breve firmada, ligada al tenant, proveedor/cuenta, ambiente, importe/operación, audiencia, `jti` y expiración.
@@ -111,7 +115,7 @@ Rotación, revocación y cambios producen auditoría/eventos con referencias opa
 
 El diseño requiere Rust/Cargo para los backends, Node.js y un gestor de paquetes para cada frontend, y PostgreSQL, Redis y NATS JetStream en los entornos que los necesiten. Las versiones mínimas, archivos de entorno y comandos de instalación aún no están fijados en manifests ejecutables.
 
-En esta revisión todavía no existe una instalación integral que pueda ejecutarse de forma reproducible: el `Cargo.toml` raíz ya configura el workspace compartido y los backends son paquetes miembros, aunque todavía faltan crates/apps, dependencias y configuración reproducible; las aplicaciones web, las migraciones y la configuración de servicios también están en planificación. Por ello no se presenta `cargo run`, `npm install` ni comandos de infraestructura como si fueran pasos funcionales. Consulta los roadmaps para el orden de implementación.
+La implementación está en curso por fases; no hay una instalación de producto integral verificada. El backend de plataforma ya tiene un corte técnico inicial ejecutable y una imagen de despliegue propia, pero faltan dominios comerciales, persistencia y servicios de infraestructura; frontend y backend de pasarelas continúan sus propios roadmaps. Consulta cada README/roadmap para comandos que sí están disponibles y su estado real. No despliegues artefactos de un componente para operar otro.
 
 ## Uso de la API
 

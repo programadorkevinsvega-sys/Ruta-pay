@@ -1,0 +1,17 @@
+[package]
+name = "platform-runtime"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+platform-contracts = { path = "../../crates/platform_contracts" }
+payvia-platform-core = { path = "../../platform" }
+payvia-observability = { path = "../../../crates/observability" }
+opentelemetry.workspace = true
+thiserror.workspace = true
+metrics.workspace = true
+tokio-stream.workspace = true
+tokio.workspace = true
+tonic.workspace = true
+tracing.workspace = true
+tracing-opentelemetry.workspace = true

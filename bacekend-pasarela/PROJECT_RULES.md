@@ -45,7 +45,7 @@ Todo cambio visible sincroniza por evento durable, realtime autenticado y recupe
 
 ## Errores, telemetría y pruebas
 
-Modelar errores tipados por firma inválida, replay, capacidad no soportada, deny, expiración de concesión, conectividad/timeout, rate limit, persistencia y proveedor. Cada frontera registra eventos estructurados correlacionados de inicio, dependencia, fallo clasificado y resultado con código/categoría, `correlation_id`, `trace_id`, duración propia y total. No registrar secretos, concesiones completas, headers privados ni payload sensible. Verificar propagación y redacción de extremo a extremo.
+Modelar errores tipados por firma inválida, replay, capacidad no soportada, deny, expiración de concesión, conectividad/timeout, rate limit, persistencia y proveedor. Cada frontera registra logs JSON estructurados de inicio, dependencia, fallo clasificado y resultado con código/categoría, `correlation_id`, `trace_id`, `span_id` disponible, duración propia y total. Las métricas permiten p50/p95/p99, solicitudes por segundo, tasa de error, saturación y salud/duración de dependencias con cardinalidad acotada. Reutilizar [`payvia-observability`](../crates/observability/) del workspace; exportación Sentry/OTLP no debe bloquear solicitudes. Infraestructura, alertas y dashboards se versionan en `infra/`, sin fusionar el despliegue de aplicaciones. No registrar secretos, concesiones completas, headers privados ni payload sensible. Verificar propagación, redacción y degradación de extremo a extremo.
 
 ### Módulo `gateway_credentials`
 

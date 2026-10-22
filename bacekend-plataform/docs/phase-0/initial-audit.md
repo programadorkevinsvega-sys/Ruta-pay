@@ -40,8 +40,8 @@ No había pruebas de negocio antes de la fase. No se afirma integración con Pos
 
 ## Discrepancias y tratamiento
 
-1. El roadmap de plataforma define Fase 0 como auditoría, arquitectura y workspace; las reglas transversales exigen verificar el recorrido HTTP→BFF→gRPC en cada fase. El scaffold no contiene ninguna de esas fronteras. Para mantener el alcance sin fingir evidencia, esta fase registra la matriz y reserva la comprobación para el primer corte técnico de Fase 1. Fase 0 no puede declararse cerrada si el gobierno del repositorio interpreta que toda fase debe ya incluir un recorrido funcional; esa condición se mantiene explícita como bloqueo de cierre, no se marca como cumplida.
-2. El roadmap pide que los crates/apps del workspace se completen en Fase 0, mientras las reglas prohíben crates vacíos/stubs y asignan la implementación funcional por dominio a fases posteriores. Se prioriza definir límites y conservar paquetes/binarios reales, sin crear crates sin comportamiento. La composición de módulos ocurre al comenzar la fase funcional correspondiente.
+1. Fase 0 se define como auditoría, decisiones y workspace, sin runtime. Por decisión explícita del proyecto, la aceptación HTTP→BFF→gRPC se asigna a la primera fase de implementación (Fase 1). El scaffold auditado carecía de esas fronteras; este documento no afirma haberlas probado.
+2. El workspace contiene los dos paquetes/binarios iniciales y no tiene módulos funcionales. La Fase 0 documenta límites; crates/apps se incorporan con comportamiento real en las fases que los necesitan, evitando crates vacíos y stubs.
 3. El README de plataforma indicaba que el workspace compartido aún no existía; se actualizó para reflejar el workspace único raíz ya configurado y diferenciarlo de las capacidades funcionales que siguen pendientes.
 
 ## Riesgos priorizados
@@ -57,4 +57,4 @@ No había pruebas de negocio antes de la fase. No se afirma integración con Pos
 
 ## Estado
 
-Auditoría documental y verificaciones estáticas del workspace completadas. **Estado: parcialmente completada/bloqueada.** No se inicia Fase 1: faltan crates/apps y contratos ejecutables, y permanece el conflicto explícito sobre aceptación HTTP→BFF→gRPC dentro de Fase 0. No se levantaron dependencias ni se probaron integraciones.
+Auditoría documental y verificaciones estáticas del workspace completadas. **Estado: CERRADA (Fase 0 documental).** No se levantaron dependencias ni se probaron integraciones runtime; estas corresponden a Fase 1. Los crates/apps y contratos ejecutables se crearán con comportamiento real en las fases que los requieren, sin scaffolds vacíos.

@@ -36,9 +36,9 @@ Ambos backends utilizan una única base física PostgreSQL; cada módulo es due�
 
 ## Calidad, errores y realtime
 
-Cada fase/subfase empieza con matriz documentada: PostgreSQL/migraciones, ambas aplicaciones REST→BFF, BFF→módulo gRPC, gRPC a pasarelas/concesiones, Redis, NATS/Outbox, realtime/WebSocket y recuperación REST/cursor. Justificar previamente cualquier N/A y probar la matriz en la misma entrega.
+La Fase 0 es de auditoría/decisiones y se verifica mediante documentos y comprobaciones estáticas, sin runtime. Desde Fase 1, cada fase/subfase de implementación empieza con matriz documentada: PostgreSQL/migraciones, ambas aplicaciones REST→BFF, BFF→módulo gRPC, gRPC a pasarelas/concesiones, Redis, NATS/Outbox, realtime/WebSocket y recuperación REST/cursor. Justificar previamente cualquier N/A y probar la matriz en la misma entrega.
 
-Aplicar errores tipados y diagnosticables, autorización tenant en cada operación, redacción, eventos de inicio/dependencia/fallo/cierre con `correlation_id`, `trace_id`, categoría/código, duración propia y total. La aceptación verifica que fallo y cierre HTTP correlacionen y conserven el error, además del envelope seguro y ausencia de datos sensibles.
+Aplicar errores tipados y diagnosticables, autorización tenant en cada operación, redacción, eventos de inicio/dependencia/fallo/cierre con `correlation_id`, `trace_id`, `span_id` disponible, categoría/código, duración propia y total. El crate común [`payvia-observability`](../crates/observability/) estandariza identificadores, propagación, logs JSON, exportación OTLP por lotes y captura Sentry saneada, sin lógica de dominio. Las métricas deben permitir p50/p95/p99, solicitudes por segundo, errores, saturación y salud/duración de dependencias, con cardinalidad acotada. La telemetría no puede bloquear una operación si Sentry/Collector fallan. `infra/` versiona alertas y dashboards de aplicación, PostgreSQL, dependencias, host e ingestión. La aceptación verifica fallo/cierre correlacionados, envelope seguro, redacción y degradación de exportadores.
 
 Todo cambio persistido visible sigue Outbox versionado → JetStream → realtime autenticado → TanStack Query → REST autorizado por cursor/snapshot, salvo justificación previa verificable. Redis/NATS se prueban con servicios reales aislados y recuperación tras reinicio cuando se usen.
 

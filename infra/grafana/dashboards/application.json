@@ -1,0 +1,17 @@
+{
+  "id": null,
+  "uid": "payvia-application",
+  "title": "Payvia — Aplicaciones",
+  "tags": ["payvia", "application"],
+  "timezone": "browser",
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    { "id": 1, "type": "timeseries", "title": "Solicitudes por segundo", "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "sum by (job) (rate(payvia_http_requests_total[5m]))", "legendFormat": "{{job}}", "refId": "A" }] },
+    { "id": 2, "type": "timeseries", "title": "Latencia HTTP p50 / p95 / p99", "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "histogram_quantile(0.50, sum by (job, le) (rate(payvia_http_request_duration_seconds_bucket[5m])))", "legendFormat": "p50 {{job}}", "refId": "A" }, { "expr": "histogram_quantile(0.95, sum by (job, le) (rate(payvia_http_request_duration_seconds_bucket[5m])))", "legendFormat": "p95 {{job}}", "refId": "B" }, { "expr": "histogram_quantile(0.99, sum by (job, le) (rate(payvia_http_request_duration_seconds_bucket[5m])))", "legendFormat": "p99 {{job}}", "refId": "C" }] },
+    { "id": 3, "type": "timeseries", "title": "Respuestas HTTP 5xx", "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "sum by (job) (rate(payvia_http_requests_total{status=~\"5..\"}[5m]))", "legendFormat": "{{job}}", "refId": "A" }] },
+    { "id": 4, "type": "timeseries", "title": "Solicitudes en curso", "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "payvia_http_requests_in_flight", "legendFormat": "{{job}}", "refId": "A" }] }
+  ]
+}

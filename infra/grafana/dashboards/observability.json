@@ -1,0 +1,17 @@
+{
+  "id": null,
+  "uid": "payvia-observability",
+  "title": "Payvia — Pipeline de observabilidad",
+  "tags": ["payvia", "observability"],
+  "timezone": "browser",
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    { "id": 1, "type": "stat", "title": "Scrape de componentes de telemetría", "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "up{job=~\"prometheus|otel-collector|otel-exported\"}", "legendFormat": "{{job}}", "refId": "A" }] },
+    { "id": 2, "type": "timeseries", "title": "Muestras recibidas por Prometheus", "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "rate(prometheus_tsdb_head_samples_appended_total[5m])", "legendFormat": "muestras/s", "refId": "A" }] },
+    { "id": 3, "type": "logs", "title": "Logs estructurados en Loki", "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 }, "datasource": { "type": "loki", "uid": "loki" }, "targets": [{ "expr": "{service_name=~\".+\"}", "refId": "A" }] },
+    { "id": 4, "type": "traces", "title": "Trazas consultables en Tempo", "gridPos": { "h": 8, "w": 24, "x": 0, "y": 14 }, "datasource": { "type": "tempo", "uid": "tempo" }, "targets": [{ "queryType": "traceqlSearch", "query": "{}", "refId": "A" }] }
+  ]
+}

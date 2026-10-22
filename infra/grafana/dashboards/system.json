@@ -1,0 +1,16 @@
+{
+  "id": null,
+  "uid": "payvia-system",
+  "title": "Payvia — Recursos del host",
+  "tags": ["payvia", "infrastructure", "resources"],
+  "timezone": "browser",
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    { "id": 1, "type": "timeseries", "title": "CPU ocupada", "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])))", "legendFormat": "{{instance}}", "refId": "A" }] },
+    { "id": 2, "type": "timeseries", "title": "Memoria usada", "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)", "legendFormat": "{{instance}}", "refId": "A" }] },
+    { "id": 3, "type": "timeseries", "title": "Espacio usado por filesystem", "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "100 * (1 - node_filesystem_avail_bytes{fstype!~\"tmpfs|overlay|squashfs\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|overlay|squashfs\"})", "legendFormat": "{{mountpoint}}", "refId": "A" }] }
+  ]
+}
