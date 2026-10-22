@@ -1,5 +1,6 @@
 use opentelemetry::{global, trace::TracerProvider as _};
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerProvider};
+use platform_contracts::identity_access::identity_access_client::IdentityAccessClient as IdentityAccessGrpcClient;
 use platform_contracts::runtime::runtime_probe_client::RuntimeProbeClient;
 use std::{
     collections::HashMap,
@@ -62,8 +63,18 @@ async fn real_http_bff_and_grpc_module_cover_success_unavailable_and_timeout() {
         .expect("runtime bind");
     let runtime_addr = runtime_listener.local_addr().expect("runtime address");
     let (runtime_shutdown, runtime_signal) = oneshot::channel();
+    let database_pool = sqlx::postgres::PgPoolOptions::new()
+        .connect_lazy("postgres://platform:secret@127.0.0.1/platform")
+        .expect("lazy PostgreSQL pool parses");
+    let redis_url = std::env::var("PLATFORM_REDIS_URL").expect("real Redis test URL is configured");
+    let redis_client = redis::Client::open(redis_url).expect("Redis test URL parses");
+    let redis_manager = redis::aio::ConnectionManager::new(redis_client)
+        .await
+        .expect("real Redis connection is available");
     let runtime_task = tokio::spawn(platform_runtime::module_config::serve(
         runtime_listener,
+        database_pool,
+        redis_manager,
         async move {
             let _ = runtime_signal.await;
         },
@@ -73,14 +84,22 @@ async fn real_http_bff_and_grpc_module_cover_success_unavailable_and_timeout() {
     let grpc_client = RuntimeProbeClient::connect(endpoint)
         .await
         .expect("grpc connection");
+    let identity_endpoint =
+        tonic::transport::Endpoint::from_shared(format!("http://{runtime_addr}"))
+            .expect("valid identity gRPC endpoint");
+    let identity_client = IdentityAccessGrpcClient::connect(identity_endpoint)
+        .await
+        .expect("identity gRPC connection");
 
     let http_listener = TcpListener::bind("127.0.0.1:0").await.expect("BFF bind");
     let http_addr = http_listener.local_addr().expect("BFF address");
     let (http_shutdown, http_signal) = oneshot::channel();
+    let timeout_identity_client = identity_client.clone();
     let http_task = tokio::spawn(async move {
         axum::serve(
             http_listener,
-            payvia_platform_bff::http::routes::router(grpc_client),
+            payvia_platform_bff::http::routes::router(grpc_client, identity_client.clone())
+                .into_make_service_with_connect_info::<std::net::SocketAddr>(),
         )
         .with_graceful_shutdown(async move {
             let _ = http_signal.await;
@@ -235,7 +254,11 @@ async fn real_http_bff_and_grpc_module_cover_success_unavailable_and_timeout() {
     let timeout_http_task = tokio::spawn(async move {
         axum::serve(
             timeout_http_listener,
-            payvia_platform_bff::http::routes::router(blackhole_grpc_client),
+            payvia_platform_bff::http::routes::router(
+                blackhole_grpc_client,
+                timeout_identity_client,
+            )
+            .into_make_service_with_connect_info::<std::net::SocketAddr>(),
         )
         .with_graceful_shutdown(async move {
             let _ = timeout_http_signal.await;

@@ -10,6 +10,11 @@ platform-contracts = { path = "crates/platform_contracts" }
 platform-runtime = { path = "modules/platform_runtime" }
 payvia-platform-bff = { path = "apps/bff" }
 payvia-platform-core = { path = "platform" }
+platform-identity-access = { path = "modules/identity_access" }
+platform-tenant-registry = { path = "modules/tenant_registry" }
+redis.workspace = true
+sqlx.workspace = true
+url.workspace = true
 tokio.workspace = true
 tonic.workspace = true
 tracing.workspace = true
@@ -22,3 +27,4 @@ opentelemetry.workspace = true
 opentelemetry_sdk.workspace = true
 tracing-opentelemetry.workspace = true
 serde_json.workspace = true
+uuid.workspace = true

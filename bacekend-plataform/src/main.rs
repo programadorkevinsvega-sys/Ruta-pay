@@ -2,6 +2,7 @@ use payvia_platform_bff::{
     common::grpc::runtime_probe_client::RuntimeProbeClient, http::routes::router,
 };
 use payvia_platform_core::{config::AppConfig, metrics, shutdown_signal, telemetry};
+use platform_contracts::identity_access::identity_access_client::IdentityAccessClient as IdentityAccessGrpcClient;
 use platform_contracts::runtime::runtime_probe_client::RuntimeProbeClient as RuntimeProbeGrpcClient;
 use std::time::Duration;
 use tokio::{net::TcpListener, sync::watch};
@@ -41,10 +42,56 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::io::Error::other("telemetry initialization failed")
     })?;
     let metrics_handle = metrics::install_recorder()?;
+    let database_pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(20)
+        .acquire_timeout(Duration::from_secs(3))
+        .connect(&config.database_url)
+        .await
+        .inspect_err(|error| {
+            tracing::error!(
+                event.name = "service.startup.dependency.failed",
+                component = "platform_runtime",
+                operation = "connect_database",
+                dependency = "postgresql",
+                error_code = error
+                    .as_database_error()
+                    .and_then(|database| database.code())
+                    .as_deref()
+                    .unwrap_or("connection_failed"),
+                error_category = "connectivity",
+                retryable = true
+            );
+        })?;
+    let redis_client = redis::Client::open(config.redis_url.as_str())
+        .map_err(|_| std::io::Error::other("platform Redis URL is invalid"))?;
+    let redis_config = redis::aio::ConnectionManagerConfig::new()
+        .set_min_delay(Duration::from_millis(100))
+        .set_max_delay(Duration::from_secs(2))
+        .set_number_of_retries(10)
+        .set_connection_timeout(Some(Duration::from_secs(2)))
+        .set_response_timeout(Some(Duration::from_secs(2)));
+    let redis_manager = redis::aio::ConnectionManager::new_with_config(redis_client, redis_config)
+        .await
+        .inspect_err(|_| {
+            tracing::error!(
+                event.name = "service.startup.dependency.failed",
+                component = "platform_runtime",
+                operation = "connect_redis",
+                dependency = "redis",
+                error_code = "redis_connect_failed",
+                error_category = "connectivity",
+                retryable = true
+            );
+        })?;
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let runtime_listener = bind_listener(config.grpc_addr, "platform_runtime", "bind_grpc").await?;
     let runtime_addr = runtime_listener.local_addr()?;
-    let runtime_task = tokio::spawn(serve_runtime(runtime_listener, shutdown_rx.clone()));
+    let runtime_task = tokio::spawn(serve_runtime(
+        runtime_listener,
+        database_pool,
+        redis_manager,
+        shutdown_rx.clone(),
+    ));
     let endpoint = Endpoint::from_shared(format!("http://{runtime_addr}"))?
         .connect_timeout(Duration::from_secs(2))
         .timeout(Duration::from_secs(2));
@@ -55,6 +102,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     verify_runtime_startup(grpc_client.clone()).await.inspect_err(|status| {
         tracing::error!(event.name = "service.startup.readiness.failed", component = "platform_bff", operation = "startup_readiness", dependency = "platform_runtime", error_code = %status.code(), error_category = "dependency", retryable = status.code() == tonic::Code::Unavailable || status.code() == tonic::Code::DeadlineExceeded);
     })?;
+    let identity_endpoint = Endpoint::from_shared(format!("http://{runtime_addr}"))?
+        .connect_timeout(Duration::from_secs(2))
+        .timeout(Duration::from_secs(5));
+    let identity_client = IdentityAccessGrpcClient::connect(identity_endpoint)
+        .await
+        .inspect_err(|_| {
+            tracing::error!(
+                event.name = "service.startup.dependency.failed",
+                component = "platform_bff",
+                operation = "connect_identity_access",
+                dependency = "identity_access",
+                error_code = "grpc_connect_failed",
+                error_category = "connectivity",
+                retryable = true
+            );
+        })?;
     let metrics_listener =
         bind_listener(config.metrics_addr, "platform_metrics", "bind_metrics").await?;
     let metrics_task = tokio::spawn(metrics::serve(
@@ -65,12 +128,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
     let http_listener = bind_listener(config.http_addr, "platform_bff", "bind_http").await?;
     tracing::info!(event.name = "service.started", service = "payvia-platform", http_addr = %http_listener.local_addr()?, grpc_addr = %runtime_addr, metrics_addr = %config.metrics_addr);
-    axum::serve(http_listener, router(grpc_client))
-        .with_graceful_shutdown(async move {
-            shutdown_signal::wait_for_shutdown_signal().await;
-            let _ = shutdown_tx.send(true);
-        })
-        .await?;
+    axum::serve(
+        http_listener,
+        router(grpc_client, identity_client)
+            .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(async move {
+        shutdown_signal::wait_for_shutdown_signal().await;
+        let _ = shutdown_tx.send(true);
+    })
+    .await?;
     runtime_task.await??;
     metrics_task.await??;
     telemetry.tracer_provider.shutdown()?;
@@ -98,11 +165,13 @@ async fn bind_listener(
 
 async fn serve_runtime(
     listener: TcpListener,
+    database_pool: sqlx::PgPool,
+    redis_manager: redis::aio::ConnectionManager,
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<(), tonic::transport::Error> {
     let span = tracing::info_span!("grpc.server", component = "platform_runtime");
     async move {
-        platform_runtime::module_config::serve(listener, async move {
+        platform_runtime::module_config::serve(listener, database_pool, redis_manager, async move {
             let _ = shutdown.changed().await;
         })
         .await

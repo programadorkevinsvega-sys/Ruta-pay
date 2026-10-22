@@ -8,7 +8,7 @@
 >
 > Los backends comparten el workspace Cargo raíz solo para resolución/build. Cada uno tiene binario, imagen, configuración, secretos, red, artefactos operativos y despliegue independiente en su propia VM/VPS; los dos frontends también tienen despliegues separados. Los artefactos de esta aplicación pertenecen a `bacekend-plataform/deploy/`.
 >
-> Estado: Fase 0 y Fase 1 cerradas. La evidencia y matriz de aceptación de Fase 1 están en [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md). La Fase 2 sigue pendiente.
+> Estado: Fase 0 y Fase 1 cerradas. Fase 2 en implementación; su matriz previa y criterios de aceptación están en [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md).
 
 ## Autoridad de dominio
 
@@ -61,6 +61,8 @@ Criterios de cierre 1.1: pruebas reales HTTP→BFF→gRPC→módulo; traza y cor
 **Salida:** integración automatizada prueba contexto HTTP→gRPC→módulo, éxito, desconexión y timeout, eventos correlacionados y ausencia de secretos. Fase 1 cerrada con evidencia registrada en [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md).
 
 ## Fase 2 — Identidad, tenant registry y aislamiento
+
+La implementación se ejecuta conforme a la matriz previa de [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md). El primer corte incluye identidad/sesiones separadas para tenants y operadores, revisión manual de tenant, ciclo de vida de API Keys y las fronteras PostgreSQL/gRPC/Redis/JetStream/realtime y ambas aplicaciones frontend que aplican a estos cambios visibles.
 
 - [ ] Schemas/migraciones propiedad de identity/access y tenant registry.
 - [ ] Registro, verificación, activación, suspensión, cierre y auditoría de tenant.
@@ -171,4 +173,4 @@ Referencias oficiales para la implementación: [Wompi — ambientes y llaves](ht
 
 ## Estado
 
-Fase 0 y Fase 1 están cerradas dentro de su alcance documentado; la evidencia y limitaciones de Fase 1 están en [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md). Las fases comerciales posteriores están pendientes. Cuentas sandbox, credenciales o decisiones legales faltantes se documentan como bloqueos concretos; no se reemplazan por simulaciones.
+Fase 0 y Fase 1 están cerradas dentro de su alcance documentado; la evidencia de Fase 1 está en [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md). Fase 2 está en implementación y su aceptación está en [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md). Las fases posteriores siguen pendientes. Cuentas sandbox, credenciales o decisiones legales faltantes se documentan como bloqueos concretos; no se reemplazan por simulaciones.
