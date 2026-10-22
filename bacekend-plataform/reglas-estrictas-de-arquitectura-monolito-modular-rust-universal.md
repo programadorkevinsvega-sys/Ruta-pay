@@ -26,8 +26,8 @@ Los documentos duplicados entre backends deben conservarse sincronizados. Si hay
 
 Payvia contiene dos backends desplegables e independientes, que se organizarán como miembros del **workspace Cargo único definido por el `Cargo.toml` de la raíz del repositorio**. Compartir workspace, resolución de dependencias y `Cargo.lock` no los convierte en una sola aplicación ni elimina sus límites de despliegue:
 
-1. **Backend de plataforma:** tenant registry, identidad y permisos, API Keys, planes/precios/límites/cuotas, suscripciones, facturación de Payvia, reglas de negocio de payment intents/transacciones, auditoría, BFF tenant/admin, realtime y webhook delivery.
-2. **Backend de pasarelas:** adapters y protocolos técnicos de Wompi, Bold y proveedores futuros. Cada proveedor es un módulo/crate independiente; `gateway_credentials` posee el ciclo de vida y almacenamiento cifrado de credenciales tenant. Este backend no posee las reglas comerciales de tenant, planes, cuotas, facturación de Payvia ni transiciones de negocio de pagos.
+1. **Backend de plataforma:** tenant registry, identidad y permisos, API Keys, planes/precios/límites/cuotas, suscripciones, facturación de Payvia, reglas de negocio de payment intents/transacciones, auditoría, BFF tenant/admin, realtime y webhook delivery. También posee adapters externos propios para cobrar a los tenants (inicialmente Wompi), emitir sus facturas electrónicas (Factus) y enviar correos operativos (Resend); estos módulos no pertenecen al backend de pasarelas.
+2. **Backend de pasarelas:** adapters y protocolos técnicos usados para procesar pagos de compradores de los comercios mediante Wompi, Bold y proveedores futuros. Cada proveedor es un módulo/crate independiente; `gateway_credentials` posee el ciclo de vida y almacenamiento cifrado de credenciales tenant. Este backend no posee las reglas comerciales de tenant, planes, cuotas, facturación de Payvia ni transiciones de negocio de pagos. La integración Wompi de plataforma para recaudar sus propias facturas es distinta, usa la cuenta/credenciales de Payvia y vive exclusivamente en plataforma.
 
 Cada backend es un límite de despliegue. Dentro de cada uno:
 
@@ -71,7 +71,7 @@ La frontera de despliegue actual no es un único monolito para todo Payvia: es u
 3. **Módulos de cada monolito modular (Crates)**:
    - dueños de las reglas y casos de uso de su bounded context;
    - en plataforma residen las reglas comerciales y transiciones de negocio de pagos;
-   - en pasarelas residen exclusivamente protocolos, capacidades técnicas, firma/verificación y traducción por proveedor;
+   - en pasarelas residen los protocolos, capacidades técnicas, firma/verificación y traducción por proveedor para pagos de comercios; adapters de facturación/cobro de planes y correo propios de Payvia pertenecen a plataforma;
    - dueños de sus schemas, tablas y migraciones;
    - dueños de su persistencia;
    - exponen su `module_public_api` como servicio **gRPC** (`tonic`);
@@ -129,24 +129,36 @@ Este es el diagrama de referencia obligatorio. Cualquier código generado debe s
 Tenant/Admin Frontends
           │ HTTP/REST/WebSocket
           ▼
-┌──────────────────────────────┐       gRPC command + signed grant
-│ Platform · modular monolith │ ──────────────────────────────────┐
-│ BFF · tenant · billing      │                                   ▼
-│ payments · realtime         │       ┌───────────────────────────────┐
-└──────────────┬───────────────┘       │ Gateway · modular monolith   │
-               │                       │ gateway_wompi · gateway_bold │
-               │                       │ gateway_<provider>           │
-               │                       └───────────────┬───────────────┘
-               │                                       │ HTTPS API/callback
-               │                                       ▼
-               │                                Payment providers
-               │                                       │
-               └────────── NATS JetStream ◀── verified event + Outbox
-                              │
-                              └── realtime consumer owned by platform
+┌──────────────────────────────┐
+│ Platform · modular monolith │
+│ BFF · tenant · billing      │
+│ payments · realtime         │
+│ billing_wompi · Factus      │
+│ notification_resend         │
+└──────────────┬───────────────┘
+               │
+       ┌───────┴────────┐
+       │                ├──── HTTPS API/callback ───► Wompi (cuenta Payvia)
+       │                ├──── HTTPS API ─────────────► Factus (e-invoicing)
+       │                └──── HTTPS API ─────────────► Resend (email)
+       │
+       │ gRPC command + signed authorization grant
+       ▼
+┌───────────────────────────────┐
+│ Gateway · modular monolith   │
+│ gateway_wompi · gateway_bold │
+│ gateway_<provider>           │
+└───────────────┬───────────────┘
+                │ API/callbacks merchant payments
+                ▼
+          Tenant payment providers
 
- One physical PostgreSQL; each module owns its schema and migrations
+Platform modules ── Outbox ── NATS JetStream ── realtime consumers
+
+One physical PostgreSQL; each module owns its schema and migrations
 ```
+
+Los callbacks de pagos de compradores de comercios ingresan al backend de pasarelas. Los callbacks de cobros propios de Payvia ingresan únicamente al módulo/ruta de integración de plataforma correspondiente y se validan según el protocolo oficial del proveedor.
 
 ---
 
@@ -162,6 +174,9 @@ Tenant/Admin Frontends
 | **Redis** | Cache, proyecciones de lectura o estado técnico según corresponda — nunca fuente de verdad de negocio. | `redis` + `deadpool-redis` / `bb8-redis` |
 | **NATS JetStream** | Comunicación asíncrona entre módulos — eventos de dominio/integración. | `async-nats` (JetStream context) |
 | **`gateway_credentials`** | Ownership del ciphertext de credenciales tenant, cifrado envelope, rotación y entrega en memoria al adapter autorizado. No autoriza acciones comerciales ni publica secretos. | Crate del backend de pasarelas + PostgreSQL del módulo + KMS/secret manager |
+| **`platform_billing_wompi`** | Adapter del monolito plataforma para cobrar las suscripciones/facturas de Payvia y verificar sus callbacks; separado de pagos de compradores de comercios y de las credenciales tenant. | Crate de plataforma + secretos Payvia gestionados fuera de PostgreSQL + API oficial/sandbox Wompi |
+| **`invoice_factus`** | Adapter para emitir/consultar facturas electrónicas de Payvia a sus tenants; no sustituye el ownership del invoice/ledger del dominio `platform_billing`. | Crate de plataforma + API oficial/sandbox Factus |
+| **`notification_resend`** | Adapter para enviar correo operativo/transaccional de Payvia; el dominio `notifications` conserva reglas, destinatarios permitidos, plantillas y trazabilidad. | Crate de plataforma + API oficial Resend |
 | **Realtime gateway modular (plataforma)** | Contrato WebSocket público detrás del BFF de plataforma; suscripción autenticada a cambios, notificaciones y progreso; distribución a réplicas sin convertirse en fuente de verdad. Es un bounded context del monolito modular de plataforma, no un tercer backend ni parte de pasarelas. | API pública REST/WebSocket del BFF; contratos gRPC internos de plataforma; eventos durables por JetStream/Outbox; fan-out efímero Redis Pub/Sub cuando hay varias instancias |
 | **OpenTelemetry** | Tracing y métricas distribuidas de extremo a extremo, en todas las capas. | `tracing` + `opentelemetry` + `opentelemetry-otlp` |
 | **k6 & criterion** | Pruebas de rendimiento y carga sobre operaciones críticas y benchmarks internos. | `k6` (externo) + `criterion` (micro-benchmarks) |
@@ -450,8 +465,11 @@ Cargo.toml                         # único [workspace] del repositorio
 Cargo.lock                         # resolución reproducible compartida
 bacekend-plataform/
   apps/bff/                        # REST/OpenAPI/WebSocket tenant y administración
-  apps/worker/                     # Outbox, JetStream y webhook delivery
-  modules/<platform-context>/      # tenants, identity, catalog, payments, realtime, etc.
+  apps/worker/                     # Outbox, JetStream, billing, notifications y webhook delivery
+  modules/<platform-context>/      # tenants, identity, catalog, payments, platform billing, realtime, etc.
+  modules/platform_billing_wompi/  # adapter de recaudo SaaS de Payvia
+  modules/invoice_factus/          # adapter de facturación electrónica de Payvia
+  modules/notification_resend/     # adapter de correo de Payvia
 bacekend-pasarela/
   apps/gateway-runtime/            # gRPC interno y HTTP de callbacks de proveedores
   modules/gateway_credentials/     # storage cifrado, rotación y acceso mínimo a secretos
@@ -463,7 +481,7 @@ frontends/
 
 El `Cargo.toml` raíz es el único manifiesto `[workspace]` y registra ambos backends como miembros. Cada backend conserva un `Cargo.toml` de paquete que hereda `version` y `edition`, pero no declara un workspace propio; Cargo comparte resolución y `Cargo.lock` en la raíz. Ambos paquetes producen binarios y despliegues independientes. La Fase 0 debe completar crates/apps miembros de sus monolitos y sus límites de compilación sin introducir dependencias de implementación cruzadas.
 
-Plataforma contiene BFF, workers de negocio, `payments`, `realtime` y delivery. Pasarelas contiene runtime de gRPC/composición y módulos de proveedores; sus rutas HTTP se limitan a callbacks públicos. No duplica el BFF tenant/admin.
+Plataforma contiene BFF, workers de negocio, `payments`, `platform_billing`, `platform_billing_wompi`, `invoice_factus`, `notification_resend`, `realtime` y delivery. Pasarelas contiene runtime de gRPC/composición y módulos de proveedores para pagos de comercios. Plataforma acepta callbacks públicos solo para sus integraciones propias; pasarelas acepta callbacks de transacciones de comercios. No duplica el BFF tenant/admin.
 
 ```text
 Cargo.toml                             # manifiesto [workspace] único, en la raíz del repo
@@ -3166,26 +3184,37 @@ Payvia tiene dos despliegues independientes; cada uno conserva los límites de u
 Tenant/Admin Frontends
           │ REST / OpenAPI / WebSocket
           ▼
-┌─────────────────────────┐        gRPC command + signed grant
-│ Backend plataforma      │ ─────────────────────────────────┐
-│ BFF · tenant · payments │                                  ▼
-│ billing · realtime      │       ┌────────────────────────┐
-└────────────┬────────────┘       │ Backend pasarelas      │
-             │                    │ gateway_wompi          │
-             │                    │ gateway_bold           │
-             │                    │ gateway_<provider>     │
-             │                    └────────────┬───────────┘
-             │                                 │ API/callbacks
-             │                                 ▼
-             │                         External providers
-             └────── NATS JetStream ◀── verified events + Outbox
-                         │
-                         └── realtime consumer owned by platform
+┌─────────────────────────┐
+│ Backend plataforma      │
+│ BFF · tenant · payments │
+│ billing · realtime      │
+│ billing_wompi · Factus  │
+│ notification_resend     │
+└────────────┬────────────┘
+             ├──── HTTPS API/callback ─► Wompi (cuenta Payvia)
+             ├──── HTTPS API ──────────► Factus
+             ├──── HTTPS API ──────────► Resend
+             │
+             │ gRPC authorized command + signed grant (merchant payment)
+             ▼
+┌────────────────────────┐
+│ Backend pasarelas      │
+│ gateway_wompi          │
+│ gateway_bold           │
+│ gateway_<provider>     │
+└────────────┬───────────┘
+             │ API/callbacks merchant payments
+             ▼
+         Tenant providers
+
+Platform Outbox ── NATS JetStream ── realtime consumer owned by platform
 
 Shared physical PostgreSQL; isolated schema and migrations per module
 ```
 
-El repositorio tiene un Cargo workspace único; cada backend conserva composition root, configuración, CI/deploy targets y despliegue independientes. Los módulos internos se comunican mediante gRPC/NATS y no se extraen a procesos independientes sin decisión arquitectónica. Plataforma autoriza y posee las reglas de negocio; pasarelas valida concesiones y posee protocolos/adapters; realtime y las experiencias REST/tenant/admin pertenecen a plataforma. Los frontends viven en `frontends/frontend-pasarela` y `frontends/frontend-plataform`, se mantienen como aplicaciones independientes y ninguno accede a pasarelas, bases de datos o mensajería.
+Pasarelas procesa pagos para los comercios. Plataforma usa sus propios adapters de Wompi, Factus y Resend para cobrar/facturar su SaaS y comunicar sus operaciones; no comparte credenciales ni ownership con esos módulos de pasarelas.
+
+El repositorio tiene un Cargo workspace único; cada backend conserva composition root, configuración, CI/deploy targets y despliegue independientes. Los módulos internos se comunican mediante gRPC/NATS y no se extraen a procesos independientes sin decisión arquitectónica. Plataforma autoriza y posee las reglas de negocio y sus integraciones de billing/invoicing/notifications; pasarelas valida concesiones y posee protocolos/adapters para transacciones de comercios; realtime y las experiencias REST/tenant/admin pertenecen a plataforma. Los frontends viven en `frontends/frontend-pasarela` y `frontends/frontend-plataform`, se mantienen como aplicaciones independientes y ninguno accede a pasarelas, bases de datos o mensajería.
 
 La arquitectura permite evolucionar contratos y despliegues sin compartir código interno ni propiedad de datos entre backends. La base PostgreSQL física puede compartirse conforme a esta decisión de Payvia, pero cada módulo conserva propiedad exclusiva de su schema, tablas y migraciones.
 

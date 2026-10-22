@@ -12,7 +12,7 @@ No es dueño de tenants, identidades, API Keys de negocio, planes, precios, susc
 - Todo comando protegido trae una concesión firmada, breve, ligada a identidad de servicio, tenant, entorno, cuenta proveedor, scope/operación, capacidades, monto/moneda aplicable, `jti`, expiración e IDs de trazabilidad.
 - Validar autenticidad, audiencia, expiración, uso/idempotencia y coincidencia exacta con comando antes de cualquier llamada al proveedor.
 - Denegar de forma tipada si falta la concesión, está alterada, vencida, repetida o no coincide. No hay permiso implícito, bypass, ni cache local de plan/cuota.
-- La cobranza de facturas de plataforma requiere el scope restringido `platform_billing_collection`; no agregar privilegios genéricos.
+- La cobranza de Payvia a sus tenants no pertenece a este backend: la ejecuta el adapter propio `platform_billing_wompi` de `bacekend-plataform`. Este backend solo procesa pagos de compradores para comercios y no recibe credenciales, grants ni callbacks de la cuenta Payvia.
 
 ## Seguridad entre servicios
 

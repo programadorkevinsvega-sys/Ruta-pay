@@ -1,6 +1,6 @@
 # Roadmap del Backend de Plataforma Payvia
 
-> Este roadmap cubre únicamente el backend que gobierna tenants, planes, precios, límites, cuotas, suscripciones, facturación de Payvia, identidad y autorización. El backend de pasarelas tiene su propio [README](../bacekend-pasarela/README.md) y [roadmap](../bacekend-pasarela/ROADMAP.md).
+> Este roadmap cubre únicamente el backend que gobierna tenants, planes, precios, límites, cuotas, suscripciones, facturación de Payvia, identidad, autorización y sus adapters propios de Wompi, Factus y Resend. El backend de pasarelas tiene su propio [README](../bacekend-pasarela/README.md) y [roadmap](../bacekend-pasarela/ROADMAP.md) para los pagos que los comercios procesan a sus compradores.
 >
 > Estado: planificación. El código actual es un scaffold y no satisface fases funcionales.
 
@@ -25,6 +25,7 @@ Pruebas unitarias y de propiedades aplican a la lógica; integración/aceptació
 - [x] Diseñar bounded contexts: identity/access, tenant registry, catalog/pricing, entitlements/quotas, subscription billing, authorization, audit, BFF y realtime. Evidencia: [`docs/phase-0/bounded-contexts.md`](docs/phase-0/bounded-contexts.md).
 - [x] Fijar el acuerdo de `gateway_credentials`: plataforma autoriza y reenvía altas/rotaciones por gRPC/mTLS; pasarelas persiste ciphertext en su módulo dueño. Se prohíbe persistencia duplicada/eventos con secretos en plataforma. Evidencia: ADR-0002.
 - [x] Versionar el contrato conceptual `payment_method` como unión `card|pse|crypto`, incluyendo settlement cripto decimal string separado del importe comercial entero. Evidencia: ADR-0005.
+- [x] Separar el recaudo de Payvia a sus tenants de los pagos de compradores procesados por pasarelas; asignar adapters propios de plataforma: Wompi para recaudo, Factus para facturación electrónica y Resend para correo. Evidencia: ADR-0006.
 - [x] Definir threat model cross-backend: identidad/scopes y mTLS con rotación, grants ligados al request, replay, tamaño/rate limits, deadlines, retries y telemetría redactada. Evidencia: [`docs/phase-0/threat-model.md`](docs/phase-0/threat-model.md).
 - [ ] Completar crates/apps y contratos gRPC/eventos ejecutables de plataforma dentro del workspace raíz, respetando límites definidos. El workspace hoy contiene los dos paquetes/binarios iniciales; no se crean crates vacíos. Falta implementar el primer contrato técnico real para cumplir aceptación transversal.
 - [x] Definir las dos apps frontend separadas: `frontends/frontend-pasarela/` para tenant y `frontends/frontend-plataform/` para administración de plataforma. Evidencia: ADR-0001 y auditoría de sus documentos actuales.
@@ -75,12 +76,20 @@ El informe de auditoría registra los comandos ejecutados y el inventario real. 
 - [ ] Cobro a compradores de los tenants según el flujo configurado, separado del cobro que Payvia realiza a los tenants por usar la plataforma.
 - [ ] Ciclo de suscripción, periodos, prorrateo si se aprueba, facturas y partidas inmutables.
 - [ ] Cálculo de cobros de Payvia independiente de montos y fees de una transacción procesada para el tenant.
-- [ ] Cobro de invoice por el backend de pasarelas con scope de servicio `platform_billing_collection` limitado, auditado y autorizado sin bypass.
+- [ ] Cobro de invoices de Payvia por `platform_billing_wompi`, con cuenta/credenciales de Payvia y callbacks propios verificados; no atraviesa `bacekend-pasarela` ni comparte credenciales tenant.
+- [ ] Integración `invoice_factus` para emisión/consulta de documentos electrónicos de Payvia, manteniendo `platform_billing` como dueño de invoices, ledger y estados financieros.
+- [ ] Integración `notification_resend` para correo transaccional/operativo, despachada desde Outbox con idempotencia, reintentos clasificados y trazabilidad.
 - [ ] Estados de pago/reintentos y conciliación de la factura, sin duplicar efectos financieros.
 - [ ] Eventos Outbox de invoice, pago, mora, suspensión y cambios de suscripción.
 - [ ] Reglas de notificación y recuperación realtime a las apps pertinentes.
 
-**Salida:** aceptación integrada comprueba invoice persistida → autorización → comando al servicio pasarela → resultado verificado → ledger/Outbox, incluyendo timeout, redelivery y reconciliación. Sandbox real requerido para la pasarela.
+**Salida:** aceptación integrada comprueba invoice persistida → adapter Wompi de plataforma → callback oficial verificado → ledger/Outbox, incluyendo timeout, redelivery y reconciliación. También verifica emisión Factus y entrega Resend con claves de idempotencia, errores clasificados y estados recuperables. Los entornos sandbox/cuentas oficiales y credenciales reales apropiadas son requisito antes de declarar cada adapter validado. La capacidad de cobro recurrente automático se verifica antes de diseñar ese comportamiento.
+
+### Extensibilidad de proveedores propios
+
+Los módulos de dominio invocan contratos neutrales al proveedor y el composition root registra adapters por identidad y capacidades. `platform_billing_wompi`, `invoice_factus` y `notification_resend` son adapters iniciales separados. Incorporar o retirar un proveedor modifica su adapter y su registro/configuración, no las reglas generales de billing, facturación electrónica, notificaciones, ni adapters existentes. La baja conserva historial financiero, auditoría y referencias externas; solo bloquea nuevas operaciones según política de transición y reconciliación.
+
+Referencias oficiales para la implementación: [Wompi — ambientes y llaves](https://docs.wompi.co/docs/colombia/ambientes-y-llaves/), [Factus API](https://developers.factus.com.co/), [Resend — envío de correo](https://resend.com/docs/api-reference/emails/send-email). Revalidar contratos y capacidades durante cada adapter; no asumir una forma común de autenticación, firma o reintento.
 
 ## Fase 5 — Decisión de autorización y concesiones para el backend de pasarelas
 

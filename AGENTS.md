@@ -19,6 +19,8 @@ Los documentos de calidad, observabilidad y arquitectura deben mantenerse sincro
 
 El workspace Cargo de ambos backends debe tener un único manifiesto en `Cargo.toml` en la raíz del repositorio; no se crean workspaces Cargo anidados en `bacekend-plataform/` ni `bacekend-pasarela/`. El manifiesto raíz ya declara ambos backends como miembros y sus `Cargo.toml` de paquete heredan la configuración compartida. La Fase 0 debe completar y verificar los crates/apps miembros sin crear workspaces anidados. Esta resolución compartida no mezcla sus bins, identidades, composición, ownership ni despliegues. Los frontends son aplicaciones independientes en `frontends/frontend-pasarela/` y `frontends/frontend-plataform/`.
 
+En plataforma, `platform_billing_wompi` cobra a los tenants en la cuenta propia de Payvia; `invoice_factus` integra la facturación electrónica de Payvia y `notification_resend` envía sus correos. Son adapters reemplazables del backend de plataforma. No los confundas con `gateway_wompi`/otros adapters de `bacekend-pasarela`, que procesan pagos de compradores de comercios. Mantén credenciales, callbacks, auditoría e historial separados. Los dominios llaman contratos neutrales al proveedor y el composition root registra adapters; agregar o retirar uno no debe obligar a reescribir los otros módulos o las reglas de negocio.
+
 ## Documentos normativos
 
 Antes de planificar, crear o modificar código:

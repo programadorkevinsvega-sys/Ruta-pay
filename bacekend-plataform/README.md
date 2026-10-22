@@ -3,7 +3,7 @@
 # Ruta-pay
 
 **Orquestador de pagos multi-pasarela en Rust.**
-Backend de plataforma: tenants, planes, facturación, autorización y reglas de negocio de pagos.
+Backend de plataforma: tenants, planes, facturación, autorización y reglas de negocio de pagos. Incluye adapters propios para recaudar de tenants con Wompi, emitir documentos electrónicos con Factus y enviar correo con Resend.
 
 ![Rust](https://img.shields.io/badge/Rust-2021-orange?logo=rust)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-blue?logo=postgresql)
@@ -28,6 +28,8 @@ También es la autoridad de autorización para operaciones del backend de pasare
 - Identidad, sesiones, membresías, roles y permisos de comercios y operadores de plataforma.
 - Planes, precios versionados, periodos, límites, cuotas, uso medible y cambios efectivos.
 - Suscripciones, invoices, cobro de tarifas de Payvia, estado de cuenta, mora y auditoría.
+- Recaudo de facturas/suscripciones de Payvia mediante el adapter de plataforma `platform_billing_wompi`.
+- Facturación electrónica de Payvia mediante Factus y correo operativo/transaccional mediante Resend.
 - API Keys de tenant: creación, hash, entorno, scopes, revocación y exposición del secreto una sola vez.
 - API pública y reglas de negocio de payment intents, transacciones, idempotencia, fees de plataforma y transiciones de estado.
 - Decisiones de autorización para operaciones de pasarela, incluida la aplicación de plan, límites y cuotas.
@@ -43,6 +45,7 @@ También es la autoridad de autorización para operaciones del backend de pasare
 - Autorización por tenant, entorno, cuenta, operación, monto, plan y límites antes de contactar una pasarela.
 - BFF REST/OpenAPI y WebSocket para los dos frontends, con identidad y permisos separados para comercio y administración.
 - Eventos de dominio durables mediante Outbox/NATS JetStream y entrega de webhooks salientes con firma, reintentos y auditoría.
+- Integraciones de proveedores reemplazables mediante contratos neutrales al proveedor y registro en el composition root.
 
 ## Arquitectura y flujo de pago
 
@@ -53,6 +56,14 @@ También es la autoridad de autorización para operaciones del backend de pasare
 5. Plataforma valida asociación, duplicado y transición de negocio, actualiza PostgreSQL y emite el evento para realtime y webhook delivery.
 
 Los módulos de plataforma son crates con ownership propio. El BFF no contiene negocio ni accede directamente a PostgreSQL, Redis o NATS. La base PostgreSQL física es compartida por decisión del proyecto, pero cada módulo controla únicamente su schema, tablas y migraciones.
+
+### Integraciones propias de plataforma
+
+`platform_billing_wompi` cobra a tenants usando la cuenta y credenciales de Payvia. Es distinto de `gateway_wompi` en `bacekend-pasarela`, que procesa los pagos de compradores de comercios. Los callbacks de Payvia llegan a su integración de plataforma y se verifican con el protocolo oficial vigente; no se comparten cuentas, credenciales ni ownership.
+
+`invoice_factus` integra la emisión/consulta de facturas electrónicas de Payvia; `platform_billing` sigue siendo dueño de la obligación financiera, invoice y ledger. `notification_resend` entrega correos originados por el dominio `notifications`. Los dominios invocan contratos neutrales al proveedor; cada adapter queda registrado en el composition root, por lo que añadir o retirar un proveedor no requiere reescribir la lógica de dominio. Al desactivar un adapter se conservan invoices, ledger, auditoría y referencias externas.
+
+Las API keys, secretos OAuth y credenciales de estos proveedores se suministran mediante configuración protegida del despliegue, fuera del repositorio, PostgreSQL, eventos y logs. Los contratos y capacidades concretos aún no están implementados; deben verificarse contra los entornos oficiales al desarrollar cada adapter. Referencias: [Wompi — ambientes y llaves](https://docs.wompi.co/docs/colombia/ambientes-y-llaves/), [Factus API](https://developers.factus.com.co/), [Resend — enviar correo](https://resend.com/docs/api-reference/emails/send-email).
 
 ## Stack y requisitos
 
@@ -159,7 +170,7 @@ No hay instalación funcional integral verificada. El workspace Cargo raíz y lo
 
 ## Fuera de responsabilidad
 
-Este backend no implementa SDKs, firma de solicitudes de proveedor, verificación criptográfica específica de webhooks entrantes ni mapeos particulares de Wompi, Bold u otras pasarelas. Esos adapters pertenecen exclusivamente a [`bacekend-pasarela`](../bacekend-pasarela/README.md). La plataforma define si una operación está permitida; el backend de pasarela ejecuta el protocolo autorizado.
+Para pagos iniciados por los compradores de comercios, este backend no implementa los SDKs, firma de solicitudes de proveedor, verificación de callbacks entrantes ni mapeos particulares: esos adapters pertenecen a [`bacekend-pasarela`](../bacekend-pasarela/README.md). Las integraciones de cuenta Payvia para cobrar el SaaS, Factus y Resend pertenecen a los adapters propios de plataforma descritos arriba.
 
 ## Arquitectura
 
@@ -169,7 +180,7 @@ La autorización del servicio de pasarelas se realiza mediante gRPC interno aute
 
 Para registrar/rotar credenciales, el usuario las envía al BFF de plataforma; plataforma comprueba el permiso y las reenvía en un comando gRPC sobre mTLS al módulo `gateway_credentials` de pasarelas. Plataforma no persiste el valor ni lo publica en Outbox/NATS. El vault lo cifra y solo entrega el secreto en memoria al adapter correcto para una operación autorizada. El navegador nunca puede volver a leerlo.
 
-El backend de pasarelas no recibe autoridad permanente ni puede modificar planes, cuotas o estados de suscripción. Las llamadas técnicas de plataforma para cobrar sus propias facturas usan una identidad de servicio y un scope explícito de `platform_billing_collection`, con límites/auditoría; no existe bypass administrativo implícito.
+El backend de pasarelas no recibe autoridad permanente ni puede modificar planes, cuotas o estados de suscripción. El cobro que Payvia realiza a sus tenants pertenece a `platform_billing_wompi` y no pasa por el backend de pasarelas. Las credenciales de Payvia se separan de las credenciales tenant.
 
 En cada cruce plataforma↔pasarelas se validan autenticación mutua, certificado y rotación, autorización por servicio/método/scope, claims ligados al request, versión/tipos/tamaño/rangos, deadline, rate limit, idempotencia y contexto de trazabilidad. Requests con caller/certificado no permitido, replay o grant alterado se rechazan cerradamente. Timeouts/reintentos son acotados y no repiten operaciones financieras inciertas sin reconciliación. gRPC da resultado síncrono aunque un comando persista; Outbox/JetStream se reserva para cambios durables y no lleva secretos. Ambos servicios registran eventos de diagnóstico correlacionados con redacción.
 

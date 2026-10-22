@@ -20,7 +20,7 @@ Una sola API para Wompi, Bold y proveedores habilitados, con webhooks verificado
 
 Payvia es una plataforma SaaS multi-tenant que ofrece a cada comercio una API unificada para crear intenciones de pago, conectar sus cuentas de pasarela, recibir estados normalizados y conocer el resultado sin consultar manualmente cada proveedor. Payvia administra también los tenants, planes, precios, límites, suscripciones y facturación que cobra por el uso de la plataforma.
 
-El producto se compone de dos aplicaciones backend independientes —plataforma y pasarelas— y dos frontends independientes —comercios y administración—. Cada backend es internamente un monolito modular Rust. Plataforma es la autoridad de negocio y autorización. Pasarelas implementa los protocolos técnicos de Wompi, Bold y proveedores que se incorporen.
+El producto se compone de dos aplicaciones backend independientes —plataforma y pasarelas— y dos frontends independientes —comercios y administración—. Cada backend es internamente un monolito modular Rust. Plataforma es la autoridad de negocio y autorización, y tiene adapters propios para cobrar sus tenants con Wompi, emitir facturas electrónicas con Factus y enviar correo con Resend. Pasarelas implementa los protocolos técnicos que los comercios usan para cobrar a sus compradores.
 
 ## Características
 
@@ -31,6 +31,7 @@ El producto se compone de dos aplicaciones backend independientes —plataforma 
 - Webhooks salientes firmados, persistentes, con historial de intentos y reintentos programados.
 - Actualización de transacciones en tiempo real por WebSocket autenticado y recuperación mediante REST.
 - Gestión de tenants, planes, límites, suscripciones, facturación y auditoría desde la plataforma.
+- Recaudo de Payvia a sus tenants con un adapter Wompi propio, facturación electrónica mediante Factus y correo mediante Resend, separados de las credenciales y pagos de comercios.
 - Separación de sesiones, permisos y experiencias entre usuarios de comercio y administradores de Payvia.
 
 Wompi y Bold son las primeras integraciones planeadas. Mercado Pago, Stripe, PayPal u otros proveedores solo se habilitan después de verificar su documentación, capacidades por país/cuenta y sandbox oficial.
@@ -43,6 +44,7 @@ flowchart LR
     Admin[Frontend de administración]
     BFF[BFF plataforma<br/>REST OpenAPI y WebSocket]
     Platform[Backend plataforma<br/>monolito modular Rust]
+    PlatformProviders[Adapters propios<br/>Wompi · Factus · Resend]
     Gateway[Backend pasarelas<br/>monolito modular Rust]
     Vault[gateway_credentials<br/>vault de credenciales]
     Provider[Wompi / Bold / otros]
@@ -53,6 +55,8 @@ flowchart LR
     Admin --> BFF
     BFF --> Platform
     Platform -->|gRPC autenticado + concesión| Gateway
+    Platform -->|HTTPS API/callback de cuenta Payvia| PlatformProviders
+    PlatformProviders -->|Wompi · Factus · Resend| Provider
     Gateway -->|gRPC interno autenticado| Vault
     Gateway -->|API y callbacks| Provider
     Platform --> PG
@@ -63,7 +67,7 @@ flowchart LR
     Platform --> Redis
 ```
 
-La plataforma posee tenants, autorización, payment intents, transacciones, cobros de Payvia, BFF y realtime. Pasarelas posee únicamente adapters y protocolos de proveedores. Los módulos se comunican por gRPC síncrono o eventos durables JetStream/Outbox; no comparten código interno ni acceden a datos ajenos. Hay una base física PostgreSQL compartida, con schema, tablas y migraciones bajo ownership exclusivo de cada módulo. Redis se usa solo para estado efímero con TTL, nunca como autoridad financiera.
+La plataforma posee tenants, autorización, payment intents, transacciones, cobros de Payvia, BFF y realtime. Su módulo `platform_billing_wompi` cobra las facturas de Payvia en la cuenta de Payvia; `invoice_factus` emite sus documentos electrónicos y `notification_resend` envía correos. Pasarelas posee únicamente los adapters para que los comercios cobren a sus compradores. Aunque ambos usen Wompi, son módulos separados, con cuentas, credenciales, callbacks y ownership distintos. Los módulos se comunican por gRPC síncrono o eventos durables JetStream/Outbox; no comparten código interno ni acceden a datos ajenos. Hay una base física PostgreSQL compartida, con schema, tablas y migraciones bajo ownership exclusivo de cada módulo. Redis se usa solo para estado efímero con TTL, nunca como autoridad financiera.
 
 Los navegadores consumen exclusivamente el BFF de plataforma mediante REST/OpenAPI y WebSocket autenticado. Nunca llaman al backend de pasarelas, a un proveedor, a gRPC, PostgreSQL, Redis o NATS.
 

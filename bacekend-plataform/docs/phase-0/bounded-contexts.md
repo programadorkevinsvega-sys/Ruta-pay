@@ -9,6 +9,9 @@ Los siguientes límites son decisiones de dominio para organizar crates independ
 | `catalog_pricing` | Planes, versiones de precios, moneda y vigencias | Asignación de consumo e invoices | API administrativa vía BFF/gRPC; eventos versionados. |
 | `entitlements_quotas` | Capacidades, evaluación de límites y ledger de consumo | Definición del catálogo o cobro | Llamadas request-response gRPC; ledger durable en PostgreSQL. Redis solo puede acelerar estado efímero con TTL y nunca decidir autorización por sí solo. |
 | `subscriptions_billing` | Suscripción, periodo, facturas/partidas y cobro de Payvia al tenant | Cargos del comprador del comercio procesados por pasarelas | gRPC para comandos inmediatos; Outbox/JetStream para cambios durables. |
+| `platform_billing_wompi` | Adapter Wompi que ejecuta el recaudo de Payvia en la cuenta de Payvia y procesa sus callbacks | Pagos de compradores de comercios, credenciales tenant, reglas de suscripción/ledger | Contrato proveedor-neutral desde billing; HTTPS oficial y callback verificado; cambios persistidos por Outbox/JetStream. |
+| `electronic_invoicing` / `invoice_factus` | Dominio dueño del estado fiscal/documental y adapter de API Factus para facturas electrónicas de Payvia | Facturas financieras/ledger de `subscriptions_billing`; secretos Factus en tablas de dominio | Contrato gRPC interno; API Factus; idempotencia/reconciliación y Outbox para cambios visibles. |
+| `notifications` / `notification_resend` | Políticas, destinatarios, plantillas/estado de entrega y adapter Resend | Ownership de facturas/suscripciones; envío sin autorización de dominio | Outbox durable → worker/adaptador Resend; clave de idempotencia y estado recuperable. |
 | `payments` | Payment intents, transacciones y transiciones de negocio del comercio | Protocolo HTTP del proveedor o almacenamiento de sus credenciales | Autorización previa + RPC gRPC a pasarelas; eventos verificados entran por JetStream. |
 | `authorization` | Decisión allow/deny, emisión y auditoría de concesiones cortas | Ejecución del protocolo del proveedor | RPC gRPC de respuesta inmediata; no se cachea decisión como autoridad. |
 | `audit` | Historial durable de acciones administrativas y de seguridad | Logs técnicos efímeros o payloads secretos | Eventos/cambios append-only; consulta autorizada vía gRPC. |
@@ -22,6 +25,8 @@ Los siguientes límites son decisiones de dominio para organizar crates independ
 - Cada bounded context se materializa como crate cuando se inicia su implementación funcional; solo expone `module_public_api`/contratos gRPC tipados.
 - BFF es una aplicación separada dentro del mismo backend desplegable; no constituye un módulo con acceso directo a persistencia.
 - `gateway_credentials` pertenece exclusivamente a backend-pasarela. Plataforma autoriza y reenvía la credencial por mTLS/gRPC sin guardarla ni ponerla en eventos.
+- Las credenciales de los adapters propios Wompi/Factus/Resend pertenecen a la configuración protegida del despliegue de plataforma, separadas de las credenciales tenant administradas en pasarelas.
+- Billing, facturación electrónica y notificaciones consumen contratos neutrales al proveedor. El composition root registra cada adapter; retirar uno no borra historial ni obliga a modificar reglas de dominio.
 - BFF, módulos, workers y realtime conservan configuración, identidad y permisos explícitos. Ningún crate genérico se convierte en dueño de reglas de un dominio.
 
 ## Ownership de datos

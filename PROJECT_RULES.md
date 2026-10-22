@@ -26,7 +26,7 @@ Se aplican conjuntamente con `ARCHITECTURE_RULES.md`, los `AGENTS.md` aplicables
 
 El sistema tiene dos backends desplegables independientes y cada uno es internamente un monolito modular Rust:
 
-- [`bacekend-plataform`](bacekend-plataform/README.md) es autoridad de tenant registry, identidad, planes, precios, límites, cuotas, suscripciones, facturación por uso de Payvia y reglas de negocio de payment intents/transacciones. Expone BFF REST/OpenAPI y decide la autorización que se adjunta como concesión firmada a comandos gRPC de pasarelas.
+- [`bacekend-plataform`](bacekend-plataform/README.md) es autoridad de tenant registry, identidad, planes, precios, límites, cuotas, suscripciones, facturación por uso de Payvia y reglas de negocio de payment intents/transacciones. Expone BFF REST/OpenAPI y decide la autorización que se adjunta como concesión firmada a comandos gRPC de pasarelas. También usa adapters propios en ese backend para cobrar a los tenants (Wompi), emitir facturas electrónicas de Payvia (Factus) y enviar correos operativos (Resend).
 - [`bacekend-pasarela`](bacekend-pasarela/README.md) implementa únicamente integración/protocolo técnico de Wompi, Bold y proveedores futuros, un módulo/crate por proveedor. No posee política comercial, planes, cuotas ni transiciones de negocio de pagos.
 
 Plataforma decide antes de operar y envía un comando gRPC autenticado con una concesión firmada, breve y ligada a tenant, entorno, cuenta, acción e importe. Pasarelas verifica concesión y claims; una concesión ausente, alterada, expirada o incompatible significa fail closed. Los eventos verificados de proveedor se entregan de forma durable a plataforma, que decide y persiste el resultado de negocio. Los detalles, fases y aceptación pertenecen a los [roadmaps separados](bacekend-plataform/ROADMAP.md) y [roadmap de pasarelas](bacekend-pasarela/ROADMAP.md).
@@ -51,6 +51,7 @@ La primera versión contempla Wompi y Bold como integraciones prioritarias. Merc
 | Persistencia | Una base física PostgreSQL compartida por ambos monolitos; schema y migraciones propiedad de cada módulo, sin acceso SQL cruzado; migraciones coordinadas |
 | Redis | Cache, rate-limit o coordinación técnica efímera con TTL; nunca autoridad del estado de pago |
 | Pasarelas | Un crate/módulo independiente por proveedor y un módulo `gateway_credentials` dueño del ciclo de vida/cifrado de credenciales; contratos gRPC comunes y versionados; secretos nunca entregados al navegador |
+| Integraciones propias de plataforma | Módulos/adapters independientes `platform_billing_wompi`, `invoice_factus` y `notification_resend`; cuentas/credenciales de Payvia separadas de las credenciales de tenants; cada adapter implementa el contrato de su dominio dueño |
 | Frontends | Aplicaciones React + TypeScript independientes para comercio y administración de plataforma; ambas consumen solo REST/OpenAPI y WebSocket autenticado del BFF |
 | Dinero | Enteros en unidades menores de la moneda; no usar punto flotante para importes |
 | Observabilidad | `tracing`, OpenTelemetry, Sentry, métricas y logs estructurados con redacción segura |
@@ -69,6 +70,10 @@ El conjunto se ajusta si el análisis de dominio encuentra un límite mejor; no 
 | `tenant_registry` (plataforma) | Registro, verificación, estado y ciclo de vida del tenant | tenants y cambios auditados |
 | `plan_catalog` (plataforma) | Planes, precios versionados, límites, cuotas y entitlement | catálogo/versions/consumo |
 | `platform_billing` (plataforma) | Suscripción e invoices por uso de Payvia | suscripciones, cargos e invoices |
+| `platform_billing_wompi` (plataforma) | Adapter técnico de Wompi para cobrar facturas/suscripciones propias de Payvia y validar sus callbacks | referencias de cobro Wompi; secretos Payvia solo mediante configuración protegida |
+| `electronic_invoicing` (plataforma) | Estado de emisión y referencias de facturas electrónicas que Payvia emite a tenants | documentos electrónicos, estados, referencia externa y auditoría |
+| `invoice_factus` (plataforma) | Adapter API de Factus tras el contrato dueño de facturación electrónica | sin ownership de la factura de negocio ni secretos persistidos en tablas de dominio |
+| `notifications` / `notification_resend` (plataforma) | Reglas, plantillas y registro de notificaciones, con Resend como adapter inicial de envío | estado/outbox de notificación; credenciales fuera de PostgreSQL |
 | `payments` (plataforma) | Payment intents, transacciones, idempotencia y transiciones de negocio | intents, transacciones, ledger/outbox |
 | `gateway_credentials` (pasarelas) | Ingreso autorizado, cifrado, rotación, estado y entrega en memoria de secretos a adapters autorizados | schema/ciphertext/versiones de clave y metadata mínima |
 | `gateway_wompi` (pasarelas) | Protocolo/API, contrato de credenciales requerido, callback y verificación oficial Wompi | schema Wompi no secreto |
@@ -83,6 +88,14 @@ Las credenciales enviadas por un tenant se guardan exclusivamente en `gateway_cr
 Cada pasarela es un bounded context/crate independiente que implementa el contrato público gRPC de gateway y expone su identificador, versión y capacidades reales (métodos, monedas, operaciones, ambientes y parámetros configurables). El módulo `payments` selecciona y llama al módulo proveedor por descriptor/registro de runtime; no contiene `match` por proveedor, SDK del proveedor ni ramas de negocio específicas. El contrato compartido define operaciones normalizadas, errores tipados, contexto tenant/entorno/traza y compatibilidad de versiones.
 
 Para incorporar un proveedor se añade su crate/módulo, su schema y migraciones propias, el adapter/validación de webhook, su registro en el workspace/runtime y sus pruebas de conformidad en sandbox. No se modifica la lógica de `payments` ni los módulos de pasarela existentes para agregar una implementación compatible. La composición debe permitir habilitarlo por configuración y el dashboard debe leer su descriptor para exponer solo sus capacidades. Las extensiones incompatibles del contrato requieren versionado compatible y no pueden romper adapters existentes.
+
+## Integraciones propias de plataforma
+
+El recaudo de las suscripciones/facturas de Payvia no pasa por [`bacekend-pasarela`](bacekend-pasarela/README.md): `platform_billing` mantiene la obligación y el estado financiero, y un módulo proveedor independiente (`platform_billing_wompi` inicialmente) ejecuta el protocolo de la cuenta de Payvia. El Wompi de plataforma y el `gateway_wompi` de pasarelas son módulos distintos, con identidades, credenciales, callbacks, auditoría y ciclo de despliegue del backend propietario. No se comparten credenciales tenant ni se mezclan pagos de consumidores.
+
+`electronic_invoicing` conserva el estado de las facturas electrónicas de Payvia emitidas a sus tenants; `invoice_factus` implementa la integración Factus. `notifications` conserva reglas y mensajes; `notification_resend` implementa el envío por Resend. Las claves/API secrets de Wompi, Factus y Resend se inyectan desde configuración protegida del entorno, no se guardan en PostgreSQL, repositorios, eventos ni logs.
+
+Cada integración se consume por el contrato gRPC del módulo dueño. Se registra en el composition root mediante descriptor y configuración, no con `match` por proveedor dentro de la lógica comercial. Para agregar o retirar un proveedor se añade/retira su adapter y su registro, se revisan credenciales/contratos y datos externos; no se reescribe `platform_billing`, el dominio fiscal ni `notifications`. Ningún cambio elimina los documentos contables/fiscales o el historial durable que el proveedor anterior ya generó.
 
 ## Multitenancy y aislamiento
 

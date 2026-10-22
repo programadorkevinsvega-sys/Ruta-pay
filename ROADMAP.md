@@ -5,6 +5,8 @@
 
 Payvia se compone de dos backends desplegables, cada uno un monolito modular Rust: [backend de plataforma](bacekend-plataform/README.md) y [backend de pasarelas](bacekend-pasarela/README.md). Sus roadmaps detallados son [plataforma](bacekend-plataform/ROADMAP.md) y [pasarelas](bacekend-pasarela/ROADMAP.md); este documento coordina la entrega integral y sus fronteras.
 
+Plataforma también integra, en módulos propios, Wompi para cobrar a los tenants de Payvia, Factus para facturación electrónica de Payvia y Resend para correo. Estas integraciones no pertenecen a `bacekend-pasarela`, que procesa exclusivamente pagos de compradores de los comercios.
+
 La topología de dos backends ya está fijada en `ARCHITECTURE_RULES.md`. La Fase 0 formaliza mediante ADR los contratos de servicio, concesiones de autorización, migraciones coordinadas y operación; no posterga ni reabre la decisión de tener dos backends.
 
 Este documento describe el plan de construcción de Payvia desde el primer commit hasta la versión 1.0 y más allá. Las duraciones son **estimaciones de referencia** para un desarrollador con apoyo de IA a tiempo completo; ajústalas según tu disponibilidad real.

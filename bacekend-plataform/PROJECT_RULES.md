@@ -4,6 +4,8 @@
 
 Este monolito modular es la autoridad de negocio para tenants, identidad y permisos, API Keys, planes, precios versionados, límites/cuotas, entitlement, suscripciones, facturación que Payvia cobra por el uso, payment intents, transacciones, fees, idempotencia comercial, transiciones de pago, auditoría, webhooks salientes y APIs de recuperación.
 
+También es dueño de sus propias integraciones para facturar el servicio Payvia: `platform_billing_wompi` recauda a los tenants en la cuenta de Payvia, `invoice_factus` integra la facturación electrónica propia y `notification_resend` entrega correos. Son distintas de las pasarelas de pago que los comercios usan para cobrar a sus compradores.
+
 Ningún módulo de pasarelas puede cambiar estos datos ni aplicar reglas de negocio de Payvia. Los schemas son propiedad de cada módulo; no se permiten consultas, JOINs ni escrituras cruzadas con schemas de pasarelas.
 
 ## Interacción con el backend de pasarelas
@@ -12,11 +14,19 @@ Ningún módulo de pasarelas puede cambiar estos datos ni aplicar reglas de nego
 - El comando gRPC autenticado contiene una concesión firmada y breve ligada a identidad del servicio, tenant, entorno, cuenta, scope/operación, capacidades, monto/moneda pertinente, `jti`, expiración e IDs de trazabilidad.
 - Se deniega por defecto si tenant está suspendido, plan/cuota no habilita la acción, límite excedido, concesión no válida o cualquier decisión está incompleta.
 - No se hace una llamada RPC circular de vuelta a plataforma durante la ejecución del mismo comando.
-- La facturación de uso de plataforma utiliza scope explícito `platform_billing_collection`, con límites y auditoría propios.
+- El cobro de suscripciones/facturas de Payvia se ejecuta mediante `platform_billing_wompi`, un adapter propio de este backend. No se delega al backend de pasarelas ni usa sus grants.
 - Los callbacks verificados llegan por eventos versionados y durables. Plataforma verifica productor, enlace tenant/cuenta/entorno, duplicados y transición válida antes de modificar estado de negocio.
 - El alta/rotación de credenciales de proveedor se autoriza en plataforma y se envía como comando gRPC síncrono cifrado al módulo `gateway_credentials` de pasarelas. El servicio de plataforma no persiste ni publica el secreto en Outbox/NATS; solo recibe resultado seguro y referencia/versionado opacos.
 
 La conexión inter-backend usa identidad criptográfica de servicio con TLS/mTLS y certificados rotables. Plataforma verifica autenticación del servicio receptor y Pasarelas verifica caller, método, scope y concesión ligada exactamente a tenant, proveedor/cuenta, ambiente y operación. Cada lado valida tipos, versión, tamaños/rangos, deadlines e idempotencia; aplica rate limits y retries limitados con backoff+jitter solo para fallos recuperables. Una operación gRPC puede tener efecto persistente en el módulo dueño; se usa Outbox/JetStream cuando ese efecto requiera distribución durable o procesamiento asíncrono. Nunca se publican credenciales en eventos. Pruebas de aceptación cubren caller no autorizado, certificado inválido/expirado y rotación, payload inválido/grande, replay, rate limit, timeout/desconexión, recuperación y no duplicación, con eventos correlacionados y secretos redactados.
+
+## Integraciones propias de plataforma
+
+- `platform_billing` conserva el ownership de suscripciones, invoices, partidas, ledger y estados financieros. `platform_billing_wompi` ejecuta los cobros de Payvia con una cuenta y credenciales propias de Payvia, y recibe únicamente sus callbacks verificados en una ruta de plataforma. No se reutilizan las credenciales tenant ni el módulo `gateway_wompi` de pasarelas.
+- `electronic_invoicing` conserva el estado de los documentos fiscales de Payvia y `invoice_factus` implementa el adapter a Factus. `notifications` conserva políticas, destinatarios y estado de entrega; `notification_resend` implementa el adapter de correo Resend.
+- Los dominios dependen de contratos neutrales al proveedor. El composition root registra adapters por identificador/capacidad; agregar o retirar un proveedor no debe requerir cambios a reglas del dominio ni a otros adapters. Desactivar un adapter no elimina invoices, ledger, auditoría ni referencias externas históricas.
+- Las credenciales de Wompi, Factus y Resend se inyectan desde configuración protegida/secretos de despliegue; no se guardan en tablas de dominio, repositorios, eventos, logs ni respuestas. Tokens temporales de Factus se manejan con expiración y renovación seguras.
+- Cada adapter verifica documentación oficial vigente, autenticación, sandbox, idempotencia, límites, callbacks y errores antes de implementarse. No se afirma que cobros recurrentes automáticos estén disponibles hasta validar la capacidad concreta de la cuenta/API Wompi seleccionada.
 
 ## Fronteras y datos
 
