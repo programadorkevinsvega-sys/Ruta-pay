@@ -14,16 +14,16 @@ La configuración está fijada a tags de imagen versionados. El archivo de prepa
 | Node Exporter | solo red interna Compose | métricas del host local de desarrollo |
 | Prometheus | `127.0.0.1:9091` | volumen `prometheus_data`, 15 días |
 | Grafana | `127.0.0.1:3000` | volumen `grafana_data` |
-| OTLP gRPC/HTTP Collector | `127.0.0.1:4317` / `127.0.0.1:4318` | exporta a Tempo, Loki y Prometheus |
-| Tempo | solo red interna Compose, HTTP `3200` | volumen `tempo_data`, 7 días |
-| Loki | solo red interna Compose, HTTP `3100` | volumen `loki_data`, 7 días |
+| OTLP gRPC/HTTP Collector | `127.0.0.1:4317` / `127.0.0.1:4318` | imagen oficial Contrib 0.162.0 fijada en GHCR; exporta a Tempo, Loki y Prometheus |
+| Tempo | `127.0.0.1:3200` (HTTP API solo local) | volumen `tempo_data`, 7 días |
+| Loki | `127.0.0.1:3100` (HTTP API solo local) | volumen `loki_data`, 7 días |
 | Exporters de PostgreSQL, Redis y NATS | solo red interna Compose | sin estado propio |
 
 Las credenciales iniciales están en el `.env` local ignorado por Git. Grafana utiliza `GRAFANA_ADMIN_USER` y `GRAFANA_ADMIN_PASSWORD`; las aplicaciones leen sus DSN/credenciales de PostgreSQL, Redis y NATS desde el mismo archivo durante desarrollo. No copies ese archivo a producción: crea secretos independientes para cada servicio y entorno.
 
-Los paneles de Grafana cubren aplicaciones (RPS, p50/p95/p99, 5xx, solicitudes en curso), PostgreSQL, dependencias compartidas (Redis/NATS), recursos del host y pipeline de observabilidad (scrapes, logs y trazas). Las reglas Prometheus cubren disponibilidad, proporción de errores, latencia HTTP p95, saturación HTTP, recursos del host y disponibilidad de Collector/Loki/Tempo. Los targets de backend se dejan vacíos deliberadamente hasta que cada operador configure su dirección local/privada.
+Los paneles de Grafana cubren aplicaciones (RPS, p50/p95/p99, 5xx, solicitudes en curso), PostgreSQL, dependencias compartidas (Redis/NATS), recursos del host y pipeline de observabilidad (scrapes, logs y trazas). Las reglas Prometheus cubren disponibilidad, proporción de errores, latencia HTTP p95, saturación HTTP, recursos del host y disponibilidad de Collector/Loki/Tempo. `platform.yml` apunta por defecto al listener nativo local en `host.docker.internal:9090`; para usarlo, enlaza el listener a `0.0.0.0:9090`, configura el token local y limita el acceso al host de desarrollo. `pasarela.yml` queda sin target hasta que su operador configure una dirección local/privada.
 
-Loki y Tempo no publican puertos en el host. Loki queda sin autenticación solo dentro de la red aislada de desarrollo; no expongas esa red ni uses esta configuración en producción. Todos los puertos publicados se limitan a loopback.
+Loki queda sin autenticación y sus APIs de consulta, junto con Tempo, se publican únicamente en `127.0.0.1` para permitir verificaciones locales de ingestión. No expongas esos puertos ni uses esta configuración en producción. Todos los puertos publicados se limitan a loopback.
 
 ## Preparar y validar
 
@@ -47,15 +47,13 @@ El script genera `PLATFORM_METRICS_TOKEN` y `PASARELA_METRICS_TOKEN`; entrégalo
 
 Para validar configuración Compose sin iniciar contenedores, ejecuta `docker compose config --quiet`. La verificación completa de ingestión, reglas, dashboards, alertas y degradación requiere levantar la infraestructura y ejecutar pruebas de integración en un entorno aislado.
 
-## Sentry autohospedado
+Tras editar una configuración montada de Collector o Tempo, `docker compose restart otel-collector tempo` reinicia únicamente esos dos servicios para que relean sus archivos, sin borrar sus volúmenes ni reiniciar PostgreSQL, Redis o NATS. La configuración actual usa el esquema de Collector 0.162 (`telemetry.metrics.readers`) y la ruta de retención de Tempo 3 (`backend_scheduler.provider.compaction`).
 
-Sentry conserva su distribución upstream y su Compose separado porque incluye su propia base de datos, Redis, workers y servicios auxiliares. Para instalar la release fijada:
+Para comprobar degradación del exportador OTLP exclusivamente en desarrollo: `docker compose stop otel-collector`, hacer una solicitud a la aplicación local y confirmar su respuesta, luego `docker compose start otel-collector` y comprobar que vuelve a recibir telemetría. El experimento detiene y arranca solo el Collector; no borra datos ni detiene PostgreSQL, Redis o NATS. No ejecutar contra producción.
 
-```bash
-./infra/install-sentry-self-hosted.sh
-```
+## Sentry Cloud
 
-El script clona la release oficial `26.10.0` dentro de `infra/.local/`, ejecuta el instalador upstream y luego inicia ese Compose independiente. Requiere Docker, Git, espacio y memoria suficientes. Consulta la [guía oficial de instalación](https://github.com/getsentry/develop/blob/master/src/docs/self-hosted/index.mdx) y la [release fijada](https://github.com/getsentry/self-hosted/releases/tag/26.10.0) para revisar requisitos de recursos, actualizaciones, backups y correo. El DSN de Sentry se configura de forma independiente como secreto en cada backend; que Sentry arranque no valida que una aplicación envíe eventos ni que estos estén redactados correctamente.
+Sentry es un destino externo y no forma parte de este Compose local. Cada backend recibe su `SENTRY_DSN` como secreto desde `.env` ignorado en desarrollo y desde el gestor de secretos del entorno desplegado. La política de selección del proyecto, redacción y evidencia de recepción de plataforma está en [ADR-0007](../bacekend-plataform/docs/adr/ADR-0007-destino-sentry.md); el estado de aceptación de la Fase 1 está en [su documento de cierre](../bacekend-plataform/docs/phase-1/acceptance.md). No pongas el DSN en archivos versionados ni en esta guía.
 
 ## Requisitos de producción
 
@@ -63,4 +61,4 @@ Esta pila es una base reproducible de desarrollo, no una receta de producción. 
 
 ## Límites actuales
 
-El Collector acepta OTLP traces/metrics/logs. La biblioteca `crates/observability` usa el [appender oficial de OpenTelemetry para `tracing`](https://docs.rs/opentelemetry-appender-tracing/0.33.0/opentelemetry_appender_tracing/) y exporta spans/logs por lotes OTLP cuando `APP_OTLP_ENDPOINT` está configurado; los logs JSON en stdout siguen activos como destino local de respaldo. La aplicación no está agregada como contenedor ni hay target Prometheus hasta completar su target/token. Sentry no se instaló ni probó desde esta configuración. La recepción real por Loki, Tempo, Prometheus y Sentry requiere ejecutar los servicios y pruebas de aceptación; una configuración versionada por sí sola no acredita ingestión.
+El Collector acepta OTLP traces/metrics/logs. La biblioteca `crates/observability` usa el [appender oficial de OpenTelemetry para `tracing`](https://docs.rs/opentelemetry-appender-tracing/0.33.0/opentelemetry_appender_tracing/) y exporta spans/logs por lotes OTLP cuando `OTEL_EXPORTER_OTLP_ENDPOINT` está configurado; los logs JSON en stdout siguen activos como destino local de respaldo. La aplicación no está agregada como contenedor; su target Prometheus local usa `platform.yml`. La imagen del Collector usa la distribución oficial publicada en [GHCR](https://opentelemetry.io/docs/collector/install/docker/), ya que el tag fijado no estaba disponible en Docker Hub. La recepción real por Loki, Tempo y Prometheus se valida en [la aceptación de Fase 1](../bacekend-plataform/docs/phase-1/acceptance.md); Sentry Cloud requiere un DSN de proyecto separado y no forma parte de este Compose.

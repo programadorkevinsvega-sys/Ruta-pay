@@ -8,7 +8,7 @@
 >
 > Los backends comparten el workspace Cargo raíz solo para resolución/build. Cada uno tiene binario, imagen, configuración, secretos, red, artefactos operativos y despliegue independiente en su propia VM/VPS; los dos frontends también tienen despliegues separados. Los artefactos de esta aplicación pertenecen a `bacekend-plataform/deploy/`.
 >
-> Estado: Fase 0 cerrada; Fase 1 en implementación y validación. Las fases comerciales siguen pendientes.
+> Estado: Fase 0 cerrada; Fase 1 en validación. La evidencia, matriz y bloqueos de Fase 1 se mantienen en [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md). Las fases comerciales siguen pendientes.
 
 ## Autoridad de dominio
 
@@ -171,4 +171,4 @@ Referencias oficiales para la implementación: [Wompi — ambientes y llaves](ht
 
 ## Estado
 
-Fase 0 está cerrada. Fase 1 tiene implementación y verificaciones parciales registradas en [`docs/phase-0/integration-matrix.md`](docs/phase-0/integration-matrix.md), pero continúa abierta mientras no se valide la recepción externa de telemetría y el cierre completo de sus criterios. Las fases comerciales posteriores están pendientes. Cuentas sandbox, credenciales o decisiones legales faltantes se documentan como bloqueos concretos; no se reemplazan por simulaciones.
+Fase 0 está cerrada. Fase 1 está implementada y continúa abierta mientras no se complete la aceptación Sentry Cloud y se verifiquen todos sus criterios; consultar [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md). Las fases comerciales posteriores están pendientes. Cuentas sandbox, credenciales o decisiones legales faltantes se documentan como bloqueos concretos; no se reemplazan por simulaciones.

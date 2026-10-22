@@ -113,6 +113,8 @@ services:
     image: grafana/loki:3.7.7
     restart: unless-stopped
     command: ["-config.file=/etc/loki/local-config.yaml"]
+    ports:
+      - "127.0.0.1:3100:3100"
     volumes:
       - ./infra/loki/config.yaml:/etc/loki/local-config.yaml:ro
       - loki_data:/loki
@@ -122,13 +124,15 @@ services:
     image: grafana/tempo:3.1.0
     restart: unless-stopped
     command: ["-config.file=/etc/tempo/config.yaml"]
+    ports:
+      - "127.0.0.1:3200:3200"
     volumes:
       - ./infra/tempo/config.yaml:/etc/tempo/config.yaml:ro
       - tempo_data:/var/tempo
     networks: [monitoring]
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.163.0
+    image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.162.0
     restart: unless-stopped
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
     ports:
