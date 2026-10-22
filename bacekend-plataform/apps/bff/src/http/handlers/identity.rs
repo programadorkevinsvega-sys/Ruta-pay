@@ -46,6 +46,11 @@ pub struct SessionStarted {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct TenantSessionResponse {
+    user_id: String,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct OperatorSessionResponse {
     operator_id: String,
 }
@@ -186,6 +191,52 @@ pub async fn login(
         Err(status) => grpc_error(
             status,
             "create_tenant_session",
+            &correlation,
+            started.elapsed().as_millis() as u64,
+        ),
+    }
+}
+
+#[utoipa::path(get, path = "/v1/identity/session", responses((status = 200, body = TenantSessionResponse), (status = 401, body = ErrorEnvelope)))]
+pub async fn tenant_session(
+    State(state): State<std::sync::Arc<AppState>>,
+    headers: HeaderMap,
+) -> Response {
+    let correlation = correlation_id(&headers);
+    let Some(session_token) = cookie_value(&headers, SESSION_COOKIE) else {
+        return error(
+            StatusCode::UNAUTHORIZED,
+            "authentication_failed",
+            "authentication",
+            false,
+            correlation,
+        );
+    };
+    let Some(csrf_token) = cookie_value(&headers, CSRF_COOKIE) else {
+        return error(
+            StatusCode::UNAUTHORIZED,
+            "authentication_failed",
+            "authentication",
+            false,
+            correlation,
+        );
+    };
+    let started = std::time::Instant::now();
+    match IdentityAccessClient::validate_session(
+        &state.identity_client,
+        session_token,
+        csrf_token,
+        &correlation,
+    )
+    .await
+    {
+        Ok(session) => Json(TenantSessionResponse {
+            user_id: session.user_id,
+        })
+        .into_response(),
+        Err(status) => grpc_error(
+            status,
+            "validate_tenant_session",
             &correlation,
             started.elapsed().as_millis() as u64,
         ),

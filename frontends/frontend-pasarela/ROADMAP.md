@@ -99,4 +99,4 @@ No se introducen accesos directos del navegador a PostgreSQL, Redis, NATS, gRPC,
 
 ## Estado de fases
 
-Todas las fases están pendientes. Registrar evidencia real por criterio antes de avanzar; el documento de diseño o una pantalla sin API, autorización y recuperación no completa una fase.
+Fase 0 tiene auditoría en `docs/phase-0/audit.md`. Fase 1 está en implementación: login/logout y recuperación de sesión compilan y tienen pruebas unitarias. Onboarding/membresías, aceptación integrada de browser y realtime con recuperación REST/cursor siguen pendientes.

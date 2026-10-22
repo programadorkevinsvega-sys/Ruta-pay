@@ -393,6 +393,25 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             .any(|value| value.starts_with("payvia_tenant_csrf=") && value.contains("Secure"))
     );
 
+    let tenant_session = client
+        .get(format!("http://{http_addr}/v1/identity/session"))
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("tenant session can be recovered after app reload");
+    assert_eq!(tenant_session.status(), StatusCode::OK);
+    let tenant_session_body: serde_json::Value = tenant_session
+        .json()
+        .await
+        .expect("tenant session response contains authorized identity metadata");
+    assert_eq!(
+        tenant_session_body["user_id"],
+        registered_user_id.to_string()
+    );
+
     let tenant_session_used_for_operator = client
         .get(format!("http://{http_addr}/v1/platform/identity/session"))
         .header(

@@ -101,4 +101,4 @@ La administración es una app independiente de `frontend-pasarela`, con sesión,
 
 ## Estado de fases
 
-Todas las fases permanecen pendientes hasta que sus criterios se implementen y validen con evidencia. Una pantalla o navegación visual no sustituye operación autorizada, persistencia, auditoría, realtime ni pruebas de backend.
+Fase 0 tiene auditoría en `docs/phase-0/audit.md`. Fase 1 está en implementación: login/logout de operador y recuperación de sesión compilan y tienen pruebas unitarias. La aceptación integrada de browser, las operaciones administrativas, auditoría UI y realtime con recuperación REST/cursor siguen pendientes.

@@ -41,9 +41,16 @@ La app presenta la interfaz del comercio y consume solo el BFF REST/OpenAPI/WebS
 
 ## Requisitos e instalación
 
-Stack objetivo: Node.js con versión fijada, gestor de paquetes declarado por el frontend, React, TypeScript, Vite y TanStack Query. Se requiere acceso a un BFF de desarrollo y una sesión/API Key de prueba provisionada por los flujos oficiales.
+Requisitos verificados: Node.js 22.12 o superior y npm. La primera app ejecutable implementa login/logout de usuario de comercio y recuperación de sesión usando REST del BFF. Aún no ofrece onboarding de tenant, selección de tenant ni API Keys porque sus contratos backend no están disponibles.
 
-La app aún no tiene `package.json`, lockfile ni servidor implementado; no existe un comando de instalación o desarrollo que pueda ejecutarse en esta revisión. Cuando se cree la aplicación, esta sección debe reemplazarse con versiones y comandos verificados. No hay URLs ni credenciales de API para configurar por ahora.
+```bash
+npm ci
+npm test
+npm run build
+npm run dev
+```
+
+En desarrollo, Vite reenvía `/v1` al BFF `http://127.0.0.1:8080`; configura `VITE_PLATFORM_BFF_URL` localmente si hace falta. Producción requiere enrutar `/v1` por HTTPS al BFF de plataforma.
 
 ## Uso de la API
 
@@ -79,13 +86,11 @@ La plataforma usa identidad de servicio y mTLS para comunicar el comando al back
 
 ## Stack de interfaz objetivo
 
-React, TypeScript y Vite; cliente REST generado o tipado desde OpenAPI; TanStack Query para datos de servidor; coordinador central realtime; componentes accesibles y pruebas automatizadas de UI, contratos y seguridad del cliente.
-
-Las versiones, comandos, variables y procesos de build se documentarán cuando exista una aplicación ejecutable verificada. Este documento no anuncia un scaffold como funcionalidad implementada.
+React 19, TypeScript 7, Vite 8 y TanStack Query 5 con versiones fijadas en `package-lock.json`. Vitest cubre la forma segura de los mensajes de error. La UI actual se limita al primer flujo de identidad.
 
 ## Estado
 
-Planificación. No se declara disponible una pantalla o flujo hasta que su contrato de API, autorización, estados de error, pruebas y recuperación estén implementados y verificados.
+En implementación. Login/logout y recuperación de sesión compilan y tienen pruebas unitarias. Onboarding/membresías, WebSocket realtime y recuperación REST por cursor siguen pendientes y no se presentan como funcionalidad disponible.
 
 ## Documentación relacionada
 

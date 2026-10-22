@@ -29,7 +29,9 @@ pub fn router(
         .route("/v1/identity/register", post(identity::register))
         .route(
             "/v1/identity/session",
-            post(identity::login).delete(identity::logout),
+            get(identity::tenant_session)
+                .post(identity::login)
+                .delete(identity::logout),
         )
         .route(
             "/v1/platform/identity/session",
