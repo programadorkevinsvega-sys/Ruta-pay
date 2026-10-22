@@ -3,7 +3,7 @@ set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 secret_dir="${root_dir}/infra/.local/secrets"
-env_file="${root_dir}/.env"
+env_file="${root_dir}/bacekend-plataform/.env"
 
 umask 077
 mkdir -p "${secret_dir}"
@@ -27,7 +27,7 @@ if [[ -e "${env_file}" ]]; then
   pasarela_metrics_token="$(read_secret PASARELA_METRICS_TOKEN)"
   for secret_value in "${pg_password}" "${pg_exporter_password}" "${redis_password}" "${nats_password}" "${grafana_password}" "${platform_metrics_token}" "${pasarela_metrics_token}"; do
     if [[ ! "${secret_value}" =~ ^[a-f0-9]{64}$ ]]; then
-      printf '%s\n' '.env existe, pero falta un secreto generado válido; no se modificó.' >&2
+      printf '%s\n' 'bacekend-plataform/.env existe, pero falta un secreto generado válido; no se modificó.' >&2
       exit 1
     fi
   done
@@ -74,4 +74,4 @@ jetstream {
 EOF
 chmod 600 "${env_file}"
 chmod 644 "${secret_dir}"/*
-printf '%s\n' 'Secretos locales generados en .env e infra/.local/secrets/. No se imprimieron en pantalla.'
+printf '%s\n' 'Secretos locales preparados en bacekend-plataform/.env e infra/.local/secrets/. No se imprimieron en pantalla.'

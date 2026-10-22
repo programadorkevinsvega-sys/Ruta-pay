@@ -2,7 +2,7 @@
 
 El `compose.yaml` raíz provisiona PostgreSQL, Redis, NATS JetStream y la pila compartida de observabilidad para desarrollo local. No construye ni ejecuta `bacekend-plataform`, `bacekend-pasarela` ni los frontends: cada aplicación conserva su binario/imagen, Dockerfile, configuración, secretos y despliegue de VM/VPS independiente.
 
-La configuración está fijada a tags de imagen versionados. El archivo de preparación genera credenciales aleatorias locales, no las imprime y no sobrescribe un `.env` existente; si `.env` ya existe y contiene los valores generados, puede reconstruir los archivos de servicio. La carpeta `infra/.local/` está ignorada por Git y mantiene los secretos locales con permisos restrictivos. También está excluida del contexto Docker para que nunca entre en imágenes de aplicación.
+La configuración está fijada a tags de imagen versionados. El archivo de preparación genera credenciales aleatorias locales, no las imprime y no sobrescribe `bacekend-plataform/.env`; si el archivo ya existe y contiene los valores generados, puede reconstruir los archivos de servicio. La carpeta `infra/.local/` está ignorada por Git y mantiene los secretos locales con permisos restrictivos. También está excluida del contexto Docker para que nunca entre en imágenes de aplicación. No se crea ni se usa un `.env` en la raíz.
 
 ## Servicios locales
 
@@ -19,7 +19,7 @@ La configuración está fijada a tags de imagen versionados. El archivo de prepa
 | Loki | `127.0.0.1:3100` (HTTP API solo local) | volumen `loki_data`, 7 días |
 | Exporters de PostgreSQL, Redis y NATS | solo red interna Compose | sin estado propio |
 
-Las credenciales iniciales están en el `.env` local ignorado por Git. Grafana utiliza `GRAFANA_ADMIN_USER` y `GRAFANA_ADMIN_PASSWORD`; las aplicaciones leen sus DSN/credenciales de PostgreSQL, Redis y NATS desde el mismo archivo durante desarrollo. No copies ese archivo a producción: crea secretos independientes para cada servicio y entorno.
+Las credenciales locales de la infraestructura están en `bacekend-plataform/.env`, ignorado por Git. Grafana utiliza `GRAFANA_ADMIN_USER` y `GRAFANA_ADMIN_PASSWORD`. `docker compose --env-file bacekend-plataform/.env` usa ese archivo solo para interpolar la configuración del stack local. Cada backend debe mantener un `.env` independiente con todas las variables que necesita; si ambos usan PostgreSQL, Redis o NATS, sus archivos contienen las mismas variables y valores compartidos, en copias separadas. Un cambio a esas credenciales requiere actualizar cada archivo correspondiente. En producción, inyecta secretos independientes por servicio y entorno.
 
 Los paneles de Grafana cubren aplicaciones (RPS, p50/p95/p99, 5xx, solicitudes en curso), PostgreSQL, dependencias compartidas (Redis/NATS), recursos del host y pipeline de observabilidad (scrapes, logs y trazas). Las reglas Prometheus cubren disponibilidad, proporción de errores, latencia HTTP p95, saturación HTTP, recursos del host y disponibilidad de Collector/Loki/Tempo. `platform.yml` apunta por defecto al listener nativo local en `host.docker.internal:9090`; para usarlo, enlaza el listener a `0.0.0.0:9090`, configura el token local y limita el acceso al host de desarrollo. `pasarela.yml` queda sin target hasta que su operador configure una dirección local/privada.
 
@@ -31,21 +31,21 @@ Requisitos: Docker Engine con el plugin Compose, Bash y OpenSSL. Para el backend
 
 ```bash
 ./infra/prepare-dev-secrets.sh
-docker compose config --quiet
-docker compose up -d
+docker compose --env-file bacekend-plataform/.env config --quiet
+docker compose --env-file bacekend-plataform/.env up -d
 ```
 
 El último comando inicia servicios persistentes de desarrollo. No se ejecuta automáticamente como parte de los cambios de código. Para detener servicios sin borrar datos:
 
 ```bash
-docker compose down
+docker compose --env-file bacekend-plataform/.env down
 ```
 
 No uses `docker compose down -v` salvo que quieras borrar todos los datos locales. Las pruebas de reinicio deben documentar antes el servicio afectado y solo apuntar a esta composición de desarrollo, nunca a producción.
 
 El script genera `PLATFORM_METRICS_TOKEN` y `PASARELA_METRICS_TOKEN`; entrégalos por el mecanismo de secretos de cada aplicación como `APP_METRICS_BEARER_TOKEN`. La dirección de métricas remota debe quedar accesible solo por red privada y el token tener al menos 32 caracteres. Añade targets en `infra/prometheus/targets/platform.yml` y `pasarela.yml` usando direcciones alcanzables desde Docker; nunca pongas tokens en esos archivos. Para ejecución nativa local, una opción es enlazar el listener de métricas a `0.0.0.0` con token y restringir el firewall al host de desarrollo.
 
-Para validar configuración Compose sin iniciar contenedores, ejecuta `docker compose config --quiet`. La verificación completa de ingestión, reglas, dashboards, alertas y degradación requiere levantar la infraestructura y ejecutar pruebas de integración en un entorno aislado.
+Para validar configuración Compose sin iniciar contenedores, ejecuta `docker compose --env-file bacekend-plataform/.env config --quiet`. La verificación completa de ingestión, reglas, dashboards, alertas y degradación requiere levantar la infraestructura y ejecutar pruebas de integración en un entorno aislado.
 
 Tras editar una configuración montada de Collector o Tempo, `docker compose restart otel-collector tempo` reinicia únicamente esos dos servicios para que relean sus archivos, sin borrar sus volúmenes ni reiniciar PostgreSQL, Redis o NATS. La configuración actual usa el esquema de Collector 0.162 (`telemetry.metrics.readers`) y la ruta de retención de Tempo 3 (`backend_scheduler.provider.compaction`).
 
@@ -53,7 +53,7 @@ Para comprobar degradación del exportador OTLP exclusivamente en desarrollo: `d
 
 ## Sentry Cloud
 
-Sentry es un destino externo y no forma parte de este Compose local. Cada backend recibe su `SENTRY_DSN` como secreto desde `.env` ignorado en desarrollo y desde el gestor de secretos del entorno desplegado. La política de selección del proyecto, redacción y evidencia de recepción de plataforma está en [ADR-0007](../bacekend-plataform/docs/adr/ADR-0007-destino-sentry.md); el estado de aceptación de la Fase 1 está en [su documento de cierre](../bacekend-plataform/docs/phase-1/acceptance.md). No pongas el DSN en archivos versionados ni en esta guía.
+Sentry es un destino externo y no forma parte de este Compose local. Cada backend recibe su `SENTRY_DSN` desde su propio `.env` ignorado en desarrollo y desde el gestor de secretos del entorno desplegado. No copies el DSN de un backend al otro: cada uno puede usar su proyecto Sentry. La política de selección del proyecto, redacción y evidencia de recepción de plataforma está en [ADR-0007](../bacekend-plataform/docs/adr/ADR-0007-destino-sentry.md); el estado de aceptación de la Fase 1 está en [su documento de cierre](../bacekend-plataform/docs/phase-1/acceptance.md). No pongas el DSN en archivos versionados ni en esta guía.
 
 ## Requisitos de producción
 
