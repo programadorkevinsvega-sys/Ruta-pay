@@ -50,7 +50,7 @@ npm run build
 npm run dev
 ```
 
-En desarrollo, Vite reenvía `/v1` al BFF `http://127.0.0.1:8080`; configura `VITE_PLATFORM_BFF_URL` localmente si hace falta. Producción requiere enrutar `/v1` por HTTPS al BFF de plataforma.
+En desarrollo, Vite reenvía `/v1` al BFF `http://localhost:8080` y adapta `Origin` únicamente en el proxy local para cumplir la validación same-origin del BFF. Configura `VITE_PLATFORM_BFF_URL` localmente si hace falta. Producción requiere enrutar `/v1` por HTTPS al BFF sin alterar `Origin`.
 
 ## Uso de la API
 

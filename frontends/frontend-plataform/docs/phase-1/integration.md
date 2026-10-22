@@ -16,7 +16,7 @@ La app consume solo `GET|POST|DELETE /v1/platform/identity/session` del BFF. `GE
 
 ## Estructura de frontend
 
-`src/api` contiene el cliente REST sin persistencia; `src/auth` será dueño del estado de sesión; TanStack Query es el cache de servidor; `src/app` compone vistas accesibles de login y sesión. Los componentes no poseen decisiones de autorización ni APIs de dominio.
+`src/api.ts` contiene el cliente REST sin persistencia; `App.tsx` consulta/actualiza la sesión con TanStack Query y contiene vistas accesibles de login y sesión. Los componentes no poseen decisiones de autorización ni APIs de dominio. En desarrollo Vite adapta `Origin` solo en el proxy local y usa `http://localhost:8080` por defecto; producción conserva Origin sobre HTTPS.
 
 ## Criterios de aceptación
 

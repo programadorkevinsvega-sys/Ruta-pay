@@ -18,7 +18,7 @@ La app consume `POST /v1/identity/register`, `POST|GET|DELETE /v1/identity/sessi
 
 `src/api` posee el cliente HTTP; `src/auth` consulta/actualiza la sesión en TanStack Query; `src/app` contiene vistas accesibles de registro/login y el estado de cuenta autenticada. El frontend no decide permisos ni crea un tenant que el backend no haya autorizado.
 
-La primera entrega ejecutable cubre inicio de sesión, recuperación de sesión y cierre con CSRF mediante `/v1/identity/session`. No habilita registro de comercio, selección de tenant ni API Keys mientras el backend no exponga el contrato real de onboarding y membresías. La verificación del paquete será `npm test` y `npm run build` desde este directorio. La matriz no considera cumplida la sincronización realtime: continúa bloqueada por gateway WebSocket y recuperación REST por cursor aún no implementados.
+La primera entrega ejecutable cubre inicio de sesión, recuperación de sesión y cierre con CSRF mediante `/v1/identity/session`. No habilita registro de comercio, selección de tenant ni API Keys mientras el backend no exponga el contrato real de onboarding y membresías. En desarrollo Vite adapta `Origin` solo en el proxy local y usa `http://localhost:8080`, acorde con la validación del BFF; producción conserva el Origin del navegador sobre HTTPS. La verificación del paquete será `npm test` y `npm run build` desde este directorio. La sincronización realtime sigue bloqueada por gateway WebSocket y recuperación REST por cursor aún no implementados.
 
 ## Criterios de aceptación
 
