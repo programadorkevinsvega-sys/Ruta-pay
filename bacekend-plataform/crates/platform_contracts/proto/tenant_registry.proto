@@ -14,6 +14,8 @@ message RegisterTenantRequest {
   string slug = 3;
   string correlation_id = 4;
   string csrf_token = 5;
+  string legal_identification_type = 6;
+  string legal_identification_number = 7;
 }
 
 message ChangeTenantStatusRequest {

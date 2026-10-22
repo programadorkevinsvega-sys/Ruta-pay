@@ -377,6 +377,27 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .expect("HTTP acceptance client builds");
     let email = format!("acceptance_{}@example.test", Uuid::new_v4().simple());
     let password = format!("A-valid-password-{}!", Uuid::new_v4().simple());
+    let weak_password_email = format!("weak_password_{}@example.test", Uuid::new_v4().simple());
+    let weak_password_response = client
+        .post(format!("http://{http_addr}/v1/identity/register"))
+        .header(header::ORIGIN, &origin)
+        .header("x-correlation-id", "corr_identity_weak_password")
+        .json(&serde_json::json!({
+            "email": weak_password_email,
+            "password": "long-lowercase-password"
+        }))
+        .send()
+        .await
+        .expect("backend validates password complexity during account registration");
+    assert_eq!(weak_password_response.status(), StatusCode::BAD_REQUEST);
+    let weak_password_envelope: serde_json::Value = weak_password_response
+        .json()
+        .await
+        .expect("invalid password returns a safe error envelope");
+    assert_eq!(
+        weak_password_envelope["error"]["correlation_id"],
+        "corr_identity_weak_password"
+    );
     let register_response = client
         .post(format!("http://{http_addr}/v1/identity/register"))
         .header(header::ORIGIN, &origin)
@@ -637,6 +658,10 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         operator_session_used_for_tenant.status(),
         StatusCode::UNAUTHORIZED
     );
+    let legal_identification_number = format!(
+        "9{:018}",
+        Uuid::new_v4().as_u128() % 1_000_000_000_000_000_000
+    );
     let tenant_create = client
         .post(format!("http://{http_addr}/v1/tenants"))
         .header(header::ORIGIN, &origin)
@@ -648,7 +673,9 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .header("x-correlation-id", "corr_tenant_onboarding")
         .json(&serde_json::json!({
             "display_name": "Acceptance tenant",
-            "slug": format!("acceptance-{}", Uuid::new_v4().simple())
+            "slug": format!("acceptance-{}", Uuid::new_v4().simple()),
+            "legal_identification_type": "nit",
+            "legal_identification_number": legal_identification_number.clone()
         }))
         .send()
         .await
@@ -658,6 +685,8 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .json()
         .await
         .expect("tenant onboarding returns a safe tenant representation");
+    assert!(tenant_body.get("legal_identification_number").is_none());
+    assert!(tenant_body.get("legal_identification_type").is_none());
     let created_tenant_id = Uuid::parse_str(
         tenant_body["tenant_id"]
             .as_str()
@@ -665,6 +694,22 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     )
     .expect("created tenant identifier is a UUID");
     assert_eq!(tenant_body["status"], "pending_verification");
+    let stored_identification: String = sqlx::query_scalar(
+        "SELECT legal_identification_number FROM tenant_registry.tenants WHERE id=$1",
+    )
+    .bind(created_tenant_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("tenant registry persists the submitted legal identification");
+    assert_eq!(stored_identification, legal_identification_number);
+    let tenant_event_payload: String = sqlx::query_scalar(
+        "SELECT payload::text FROM tenant_registry.outbox_events WHERE aggregate_id=$1 AND event_type='tenant.registered'",
+    )
+    .bind(created_tenant_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("tenant registration outbox event exists");
+    assert!(!tenant_event_payload.contains(&legal_identification_number));
     let owner_membership_event: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM tenant_registry.outbox_events WHERE aggregate_id=$1 AND event_type='tenant.registered' AND correlation_id='corr_tenant_onboarding')",
     )
@@ -673,6 +718,38 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .await
     .expect("tenant onboarding is durably queued for owner membership provisioning");
     assert!(owner_membership_event);
+    let conflicting_document = client
+        .post(format!("http://{http_addr}/v1/tenants"))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .header("x-csrf-token", &csrf_cookie)
+        .header("x-correlation-id", "corr_duplicate_tenant_document")
+        .json(&serde_json::json!({
+            "display_name": "Another acceptance tenant",
+            "slug": format!("another-acceptance-{}", Uuid::new_v4().simple()),
+            "legal_identification_type": "nit",
+            "legal_identification_number": legal_identification_number.clone()
+        }))
+        .send()
+        .await
+        .expect("duplicate legal identification returns a conflict");
+    assert_eq!(conflicting_document.status(), StatusCode::CONFLICT);
+    let conflict_envelope: serde_json::Value = conflicting_document
+        .json()
+        .await
+        .expect("duplicate legal identification returns a safe error envelope");
+    assert_eq!(
+        conflict_envelope["error"]["correlation_id"],
+        "corr_duplicate_tenant_document"
+    );
+    assert!(
+        !conflict_envelope
+            .to_string()
+            .contains(&legal_identification_number)
+    );
     let tenant_list = client
         .get(format!("http://{http_addr}/v1/platform/tenants?query=Acceptance&limit=10&offset=0"))
         .header(
@@ -827,6 +904,9 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     assert_eq!(
         event_envelope["event_id"],
         registration_event_id.to_string()
+    );
+    assert!(
+        !String::from_utf8_lossy(&event_message.payload).contains(&legal_identification_number)
     );
     let membership_created = platform_identity_access::infrastructure::tenant_membership_consumer::consume_tenant_registered(
         &runtime_pool,
@@ -1023,6 +1103,10 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .collect();
     let second_session_cookie = cookie_value(&second_cookies, "payvia_tenant_session");
     let second_csrf_cookie = cookie_value(&second_cookies, "payvia_tenant_csrf");
+    let second_legal_identification_number = format!(
+        "8{:018}",
+        Uuid::new_v4().as_u128() % 1_000_000_000_000_000_000
+    );
     let second_tenant_create = client
         .post(format!("http://{http_addr}/v1/tenants"))
         .header(header::ORIGIN, &origin)
@@ -1034,7 +1118,9 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .header("x-correlation-id", "corr_second_tenant_onboarding")
         .json(&serde_json::json!({
             "display_name": "Second acceptance tenant",
-            "slug": format!("second-acceptance-{}", Uuid::new_v4().simple())
+            "slug": format!("second-acceptance-{}", Uuid::new_v4().simple()),
+            "legal_identification_type": "cc",
+            "legal_identification_number": second_legal_identification_number.clone()
         }))
         .send()
         .await
@@ -1050,6 +1136,15 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             .expect("second tenant identifier is present"),
     )
     .expect("second tenant identifier is a UUID");
+    let second_document: (String, String) = sqlx::query_as(
+        "SELECT legal_identification_type, legal_identification_number FROM tenant_registry.tenants WHERE id=$1",
+    )
+    .bind(second_tenant_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("tenant registry persists the CC document");
+    assert_eq!(second_document.0, "cc");
+    assert_eq!(second_document.1, second_legal_identification_number);
     platform_tenant_registry::infrastructure::outbox_relay::relay_batch(
         &runtime_pool,
         &jetstream,
@@ -1127,6 +1222,13 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("realtime consumer persists the event journal and publishes its Redis signal");
     assert!(first_journal_insert);
+    let journal_payload: String =
+        sqlx::query_scalar("SELECT payload::text FROM realtime.event_journal WHERE event_id=$1")
+            .bind(registration_event_id)
+            .fetch_one(&migration_pool)
+            .await
+            .expect("realtime journal contains the registered tenant event");
+    assert!(!journal_payload.contains(&legal_identification_number));
     let duplicate_journal_insert =
         platform_realtime::infrastructure::grpc::realtime_gateway_api::persist_and_publish(
             &runtime_pool,
@@ -1486,6 +1588,16 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         !event_values
             .iter()
             .any(|value| value.contains(&operator_csrf_cookie))
+    );
+    assert!(
+        !event_values
+            .iter()
+            .any(|value| value.contains(&legal_identification_number))
+    );
+    assert!(
+        !event_values
+            .iter()
+            .any(|value| value.contains(&second_legal_identification_number))
     );
 
     let mut isolated_stream_cleanup = isolated_stream_cleanup;

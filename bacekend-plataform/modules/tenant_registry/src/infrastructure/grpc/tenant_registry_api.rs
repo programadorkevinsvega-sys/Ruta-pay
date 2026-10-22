@@ -1,5 +1,5 @@
 use crate::{
-    application::tenant_service::{TenantService, TenantServiceError},
+    application::tenant_service::{RegisterTenantCommand, TenantService, TenantServiceError},
     domain::tenant::TenantStatus,
 };
 use payvia_observability::{current_span_id, current_trace_id};
@@ -37,13 +37,15 @@ impl TenantRegistry for TenantRegistryApi {
         );
         async move {
             let started = std::time::Instant::now();
-            match self.service.register(
-                &body.session_token,
-                &body.csrf_token,
-                &body.display_name,
-                &body.slug,
-                &correlation_id,
-            ).await {
+            match self.service.register(RegisterTenantCommand {
+                session_token: &body.session_token,
+                csrf_token: &body.csrf_token,
+                display_name: &body.display_name,
+                slug: &body.slug,
+                identification_type: &body.legal_identification_type,
+                identification_number: &body.legal_identification_number,
+                correlation_id: &correlation_id,
+            }).await {
                 Ok(tenant) => {
                     tracing::info!(event.name = "grpc.module.response", component = "tenant_registry", operation = "register_tenant", result = "success", tenant_id = %tenant.id, duration_total_ms = started.elapsed().as_millis() as u64, correlation_id, trace_id = %current_trace_id(), span_id = %current_span_id());
                     Ok(Response::new(tenant_response(tenant)))

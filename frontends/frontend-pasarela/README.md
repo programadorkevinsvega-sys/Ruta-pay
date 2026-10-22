@@ -25,6 +25,7 @@ El backend de plataforma autentica al usuario, autoriza cada acción y aplica la
 ## Funcionalidades objetivo
 
 - Inicio de sesión, contexto de comercio y selección segura del entorno de prueba o producción.
+- Registro de comercio con nombre visible, slug derivado automáticamente, NIT/CC y validación de contraseña.
 - Resumen de actividad, consultas y detalle de payment intents y transacciones.
 - Creación de links de pago con monto, moneda soportada, descripción y metadata permitida; presentación del QR generado por el backend.
 - Administración de API Keys de prueba y producción: creación con visualización única, scopes y revocación, sin recuperar ni persistir el secreto en el navegador.
@@ -41,7 +42,7 @@ La app presenta la interfaz del comercio y consume solo el BFF REST/OpenAPI/WebS
 
 ## Requisitos e instalación
 
-Requisitos verificados: Node.js 22.12 o superior y npm. La primera app ejecutable implementa login/logout de usuario de comercio y recuperación de sesión usando REST del BFF. Aún no ofrece onboarding de tenant, selección de tenant ni API Keys porque sus contratos backend no están disponibles.
+Requisitos verificados: Node.js 22.12 o superior y npm. El registro está en `/register`, el inicio de sesión en `/login` y `/` redirige al inicio de sesión. El alta crea una cuenta y comercio por REST del BFF; el slug se genera desde el nombre, y el backend guarda NIT/CC sin exponerlo en la respuesta o realtime. Las contraseñas requieren entre 12 y 128 caracteres, mayúscula, minúscula, número, símbolo y confirmación coincidente. La aplicación también presenta memberships y realtime de sesión; pagos y credenciales de pasarela siguen pendientes.
 
 ```bash
 npm ci
@@ -60,7 +61,7 @@ El resultado usa un `payment_method` normalizado discriminado: `card`, `pse` o `
 
 ## Escuchar el estado en tiempo real
 
-Un coordinador central mantendrá el WebSocket autenticado del BFF para la sesión y tenant activos. Los eventos autorizados por transacción actualizan TanStack Query; el cliente deduplica por `event_id`, controla cursor/versión, reconecta con backoff y pide snapshot REST para reparar eventos perdidos. La ruta y contrato de suscripción se documentarán cuando estén publicados. La app aún no abre una conexión real.
+El coordinador central mantiene el WebSocket autenticado del BFF para la sesión y tenants activos. Los eventos autorizados actualizan TanStack Query; el cliente deduplica por `event_id`, controla cursor/versión, reconecta con backoff y recupera eventos por REST/cursor. La UI muestra estado de conexión y permite sincronización manual. Pagos todavía no están disponibles; la aceptación de identidad/realtime está registrada en el [acta de Fase 2](../../bacekend-plataform/docs/phase-2/acceptance.md).
 
 ## Webhooks hacia tu servidor
 
@@ -86,15 +87,17 @@ La plataforma usa identidad de servicio y mTLS para comunicar el comando al back
 
 ## Stack de interfaz objetivo
 
-React 19, TypeScript 7, Vite 8 y TanStack Query 5 con versiones fijadas en `package-lock.json`. Vitest cubre la forma segura de los mensajes de error. La UI actual se limita al primer flujo de identidad.
+React 19, TypeScript 7, Vite 8 y TanStack Query 5 con versiones fijadas en `package-lock.json`. Vitest cubre mensajes de error seguros, generación de slug, documento legal y política de contraseña; Playwright recorre registro/realtime contra el BFF real.
 
 ## Estado
 
-En implementación. Login/logout y recuperación de sesión compilan y tienen pruebas unitarias. Onboarding/membresías, WebSocket realtime y recuperación REST por cursor siguen pendientes y no se presentan como funcionalidad disponible.
+Identidad, alta de comercio/membresía y realtime recuperable están integrados con el BFF real y documentados en la Fase 2. La operación de pagos, links/QR, API Keys y configuración de pasarelas permanece pendiente en fases posteriores.
 
 ## Documentación relacionada
 
 - [Roadmap de frontend-pasarela](ROADMAP.md)
+- [ADR de rutas y flujo de registro](docs/adr/ADR-0001-flujo-y-rutas-de-registro.md)
+- [Integración de identidad tenant](docs/phase-1/integration.md)
 - [Backend de plataforma y su API](../../bacekend-plataform/README.md)
 - [Backend técnico de pasarelas](../../bacekend-pasarela/README.md)
 - [Arquitectura del producto](../../ARCHITECTURE_RULES.md)

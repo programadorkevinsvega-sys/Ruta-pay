@@ -34,10 +34,10 @@ mod tests {
 
     #[test]
     fn stores_argon2id_hash_and_verifies_only_matching_password() {
-        let hash = hash_password("correct horse battery staple").expect("valid password hashes");
+        let hash = hash_password("Correct horse battery staple1!").expect("valid password hashes");
         assert!(hash.starts_with("$argon2id$"));
-        assert!(verify_password("correct horse battery staple", &hash));
-        assert!(!verify_password("different password", &hash));
+        assert!(verify_password("Correct horse battery staple1!", &hash));
+        assert!(!verify_password("Different password1!", &hash));
     }
 
     #[test]

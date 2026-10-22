@@ -56,6 +56,8 @@ struct RealtimeReplayView {
 pub struct NewTenant {
     display_name: String,
     slug: String,
+    legal_identification_type: String,
+    legal_identification_number: String,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -106,6 +108,8 @@ pub async fn register(
         slug: body.slug,
         correlation_id: correlation.clone(),
         csrf_token: csrf,
+        legal_identification_type: body.legal_identification_type,
+        legal_identification_number: body.legal_identification_number,
     };
     let started = std::time::Instant::now();
     match TenantRegistryClient::register(&state.tenant_client, request, &correlation).await {

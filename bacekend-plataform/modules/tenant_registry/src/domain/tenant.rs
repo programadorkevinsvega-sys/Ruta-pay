@@ -67,6 +67,8 @@ pub enum TenantError {
     InvalidDisplayName,
     #[error("tenant slug is invalid")]
     InvalidSlug,
+    #[error("tenant legal identification is invalid")]
+    InvalidLegalIdentification,
     #[error("tenant status is invalid")]
     InvalidStatus,
     #[error("tenant status transition is not allowed")]
@@ -78,7 +80,12 @@ pub enum TenantError {
 }
 
 impl Tenant {
-    pub fn validate_registration(display_name: &str, slug: &str) -> Result<(), TenantError> {
+    pub fn validate_registration(
+        display_name: &str,
+        slug: &str,
+        identification_type: &str,
+        identification_number: &str,
+    ) -> Result<String, TenantError> {
         let name = display_name.trim();
         if !(2..=120).contains(&name.chars().count()) {
             return Err(TenantError::InvalidDisplayName);
@@ -93,7 +100,25 @@ impl Tenant {
         {
             return Err(TenantError::InvalidSlug);
         }
-        Ok(())
+        if !matches!(identification_type, "nit" | "cc") {
+            return Err(TenantError::InvalidLegalIdentification);
+        }
+        Self::normalize_identification_number(identification_number)
+    }
+
+    pub fn normalize_identification_number(value: &str) -> Result<String, TenantError> {
+        let mut digits = String::with_capacity(value.len());
+        for character in value.trim().chars() {
+            if character.is_ascii_digit() {
+                digits.push(character);
+            } else if !matches!(character, ' ' | '.' | '-') {
+                return Err(TenantError::InvalidLegalIdentification);
+            }
+        }
+        if !(5..=20).contains(&digits.len()) {
+            return Err(TenantError::InvalidLegalIdentification);
+        }
+        Ok(digits)
     }
 
     pub fn validate_transition(
@@ -129,16 +154,28 @@ mod tests {
     #[test]
     fn registration_rejects_invalid_names_and_slugs() {
         assert_eq!(
-            Tenant::validate_registration(" ", "valid-slug"),
+            Tenant::validate_registration(" ", "valid-slug", "nit", "9001234567"),
             Err(TenantError::InvalidDisplayName)
         );
         assert_eq!(
-            Tenant::validate_registration("Valid tenant", "Invalid-Slug"),
+            Tenant::validate_registration("Valid tenant", "Invalid-Slug", "nit", "9001234567"),
             Err(TenantError::InvalidSlug)
         );
         assert_eq!(
-            Tenant::validate_registration("Valid tenant", "valid-slug"),
-            Ok(())
+            Tenant::validate_registration("Valid tenant", "valid-slug", "nit", "900.123.456-7"),
+            Ok("9001234567".to_owned())
+        );
+    }
+
+    #[test]
+    fn registration_rejects_invalid_legal_identification() {
+        assert_eq!(
+            Tenant::validate_registration("Valid tenant", "valid-slug", "passport", "123456"),
+            Err(TenantError::InvalidLegalIdentification)
+        );
+        assert_eq!(
+            Tenant::validate_registration("Valid tenant", "valid-slug", "cc", "12AB34"),
+            Err(TenantError::InvalidLegalIdentification)
         );
     }
 

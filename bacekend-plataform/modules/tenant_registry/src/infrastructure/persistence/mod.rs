@@ -28,6 +28,16 @@ pub struct ChangeTenantStatusRecord<'a> {
     pub expected_version: i64,
 }
 
+pub struct CreatePendingTenantRecord<'a> {
+    pub id: Uuid,
+    pub actor_id: Uuid,
+    pub display_name: &'a str,
+    pub slug: &'a str,
+    pub identification_type: &'a str,
+    pub identification_number: &'a str,
+    pub correlation_id: &'a str,
+}
+
 pub async fn claim_outbox_events(
     pool: &PgPool,
     limit: i64,
@@ -112,12 +122,17 @@ pub const MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate::Migrator {
 
 pub async fn create_pending_tenant(
     pool: &PgPool,
-    id: Uuid,
-    actor_id: Uuid,
-    display_name: &str,
-    slug: &str,
-    correlation_id: &str,
+    record: CreatePendingTenantRecord<'_>,
 ) -> Result<Tenant, sqlx::Error> {
+    let CreatePendingTenantRecord {
+        id,
+        actor_id,
+        display_name,
+        slug,
+        identification_type,
+        identification_number,
+        correlation_id,
+    } = record;
     let mut transaction = pool.begin().await?;
     sqlx::query("SELECT set_config('app.actor_id', $1, true)")
         .bind(actor_id.to_string())
@@ -128,13 +143,15 @@ pub async fn create_pending_tenant(
         .execute(&mut *transaction)
         .await?;
     let row = sqlx::query(
-        "INSERT INTO tenant_registry.tenants (id, display_name, slug, status, created_by) \
-         VALUES ($1, $2, $3, 'pending_verification', $4) \
+        "INSERT INTO tenant_registry.tenants (id, display_name, slug, legal_identification_type, legal_identification_number, status, created_by) \
+         VALUES ($1, $2, $3, $4, $5, 'pending_verification', $6) \
          RETURNING id, display_name, slug, status, created_by, status_version, created_at, updated_at, closed_at",
     )
     .bind(id)
     .bind(display_name.trim())
     .bind(slug)
+    .bind(identification_type)
+    .bind(identification_number)
     .bind(actor_id)
     .fetch_one(&mut *transaction)
     .await?;

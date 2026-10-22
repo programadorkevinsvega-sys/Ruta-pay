@@ -69,6 +69,12 @@ Durante la prueba se ejecuta `docker restart payvia-shared-infra-redis-1` y `doc
 
 ## Flujos de aceptación
 
+### Corrección del formulario de registro de comercios
+
+Las decisiones de experiencia y navegación están en [ADR frontend de registro](../../../frontends/frontend-pasarela/docs/adr/ADR-0001-flujo-y-rutas-de-registro.md); la propiedad, persistencia y privacidad del documento legal están en [ADR de identidad legal del tenant](../adr/ADR-0009-identidad-legal-del-tenant.md).
+
+**Criterios de aceptación:** rutas `/register`, `/login` y redirección desde `/`; creación por BFF real con nombre y slug derivado, NIT/CC, contraseña confirmada y política aplicada también en backend; persistencia comprobada en PostgreSQL; rechazo de documentos duplicados/mal formados y contraseñas que incumplan; ausencia del documento en respuestas, Outbox/journal, WebSocket y logs; migración aditiva compatible con tenants existentes. Ejecutar pruebas unitarias, aceptación HTTP→BFF→gRPC→módulo y E2E del navegador con PostgreSQL, Redis y NATS reales.
+
 1. Crear usuario tenant, crear tenant pendiente, observar el evento durable y completar la membresía propietaria idempotente sin transacción SQL entre módulos.
 2. Login tenant y operador con cookies/audiencias distintas; logout, expiración, revocación, CSRF, origen inválido, cuenta inválida y límite de intentos.
 3. Operador verifica y activa tenant con permiso y motivo; suspensión/cierre revocan acceso en cada request y generan auditoría/evento.
@@ -123,3 +129,14 @@ El runner `run-browser-e2e-backend.sh` crea un namespace `e2e_<id-aleatorio>` po
 - `cargo test --locked -p platform-runtime event_topology::tests --lib`: aprobado (2 pruebas de namespaces, nombres y compatibilidad del stream por defecto).
 - `cargo clippy --locked -p platform-runtime -p bacekend-plataform --all-targets -- -D warnings`, `cargo fmt --all -- --check` y `bash -n` de los runners: aprobados.
 - Los streams de las dos E2E de navegador y de la E2E de recuperación se eliminaron individualmente; la prueba real de panic confirmó cleanup en fallo. El stream de producción compartido permaneció en 243 mensajes.
+
+### Corrección del registro de comercio — evidencia 2026-10-22
+
+Se implementaron por separado las decisiones de UI y navegación en el [ADR frontend](../../../frontends/frontend-pasarela/docs/adr/ADR-0001-flujo-y-rutas-de-registro.md), y de propiedad, persistencia y privacidad del documento en el [ADR de tenant](../adr/ADR-0009-identidad-legal-del-tenant.md). El usuario registra desde `/register`, inicia sesión desde `/login`, y la raíz redirige a `/login`; el formulario deriva el slug del nombre, solicita NIT/CC y confirma la contraseña. La misma regla de complejidad se aplica en la API.
+
+- `cargo test -p platform-identity-access --lib`: aprobado (8 pruebas); `cargo test -p platform-tenant-registry --lib`: aprobado (3 pruebas).
+- `set -a && source bacekend-plataform/.env && set +a && cargo test --locked -p bacekend-plataform --test identity_access_acceptance -- --nocapture`: aprobado contra PostgreSQL, Redis y JetStream reales; crea y elimina su base, rol y stream exclusivos. Verifica rechazo HTTP de contraseña débil, persistencia NIT y CC, normalización/unicidad, respuesta y error correlacionados sin documento, ausencia del NIT en Outbox/JetStream/journal/logs y provisioning idempotente.
+- `cd frontends/frontend-pasarela && npm test`: aprobado (7 pruebas); `npm run build`: aprobado; `npm run test:e2e`: aprobado (1 flujo Playwright contra BFF real), con rutas, validaciones, slug derivado y respuesta sin NIT.
+- `cargo fmt --all -- --check`, `cargo clippy -p bacekend-plataform --all-targets -- -D warnings` y `bacekend-plataform/build-production.sh`: aprobados.
+- `bacekend-plataform/migrate-production.sh` aplicó `tenant_registry` migration `202610220004` a `payvia_dev`; la consulta de verificación confirmó `success=true`. La base tenía cero tenants al aplicar la migración.
+- Se reconstruyó y reinició el backend local con el binario release actualizado. `/health/ready` respondió `ready`; OpenAPI publica `display_name`, `slug`, tipo y número legal; el servidor frontend local devuelve la SPA en `/`, `/login` y `/register`.

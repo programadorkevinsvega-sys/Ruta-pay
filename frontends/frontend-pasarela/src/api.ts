@@ -55,10 +55,25 @@ export async function register(email: string, password: string): Promise<void> {
   if (!response.ok) throw await apiError(response);
 }
 
-export async function createTenant(displayName: string, slug: string): Promise<Tenant> {
+export async function createTenant(
+  displayName: string,
+  slug: string,
+  legalIdentificationType: "nit" | "cc",
+  legalIdentificationNumber: string,
+): Promise<Tenant> {
   const csrf = csrfToken();
   if (csrf === null) throw new ApiError(403, "csrf_validation_failed", correlationId(), "No se pudo validar la sesión.");
-  const response = await fetch("/v1/tenants", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-Correlation-ID": correlationId(), "X-CSRF-Token": csrf }, body: JSON.stringify({ display_name: displayName, slug }) });
+  const response = await fetch("/v1/tenants", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", "X-Correlation-ID": correlationId(), "X-CSRF-Token": csrf },
+    body: JSON.stringify({
+      display_name: displayName,
+      slug,
+      legal_identification_type: legalIdentificationType,
+      legal_identification_number: legalIdentificationNumber,
+    }),
+  });
   if (!response.ok) throw await apiError(response);
   return await response.json() as Tenant;
 }

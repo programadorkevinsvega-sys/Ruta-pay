@@ -25,6 +25,16 @@ pub struct ChangeTenantStatusCommand<'a> {
     pub correlation_id: &'a str,
 }
 
+pub struct RegisterTenantCommand<'a> {
+    pub session_token: &'a str,
+    pub csrf_token: &'a str,
+    pub display_name: &'a str,
+    pub slug: &'a str,
+    pub identification_type: &'a str,
+    pub identification_number: &'a str,
+    pub correlation_id: &'a str,
+}
+
 impl TenantService {
     pub fn new(pool: PgPool, identity: Arc<dyn IdentityAccessPort>) -> Self {
         Self { pool, identity }
@@ -32,24 +42,38 @@ impl TenantService {
 
     pub async fn register(
         &self,
-        token: &str,
-        csrf_token: &str,
-        display_name: &str,
-        slug: &str,
-        correlation_id: &str,
+        command: RegisterTenantCommand<'_>,
     ) -> Result<Tenant, TenantServiceError> {
-        Tenant::validate_registration(display_name, slug)?;
+        let RegisterTenantCommand {
+            session_token,
+            csrf_token,
+            display_name,
+            slug,
+            identification_type,
+            identification_number,
+            correlation_id,
+        } = command;
+        let normalized_identification_number = Tenant::validate_registration(
+            display_name,
+            slug,
+            identification_type,
+            identification_number,
+        )?;
         let actor_id = self
             .identity
-            .validate_tenant_session(token, csrf_token, correlation_id)
+            .validate_tenant_session(session_token, csrf_token, correlation_id)
             .await?;
         persistence::create_pending_tenant(
             &self.pool,
-            Uuid::new_v4(),
-            actor_id,
-            display_name,
-            slug,
-            correlation_id,
+            persistence::CreatePendingTenantRecord {
+                id: Uuid::new_v4(),
+                actor_id,
+                display_name,
+                slug,
+                identification_type,
+                identification_number: &normalized_identification_number,
+                correlation_id,
+            },
         )
         .await
         .map_err(TenantServiceError::Database)
