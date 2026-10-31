@@ -82,9 +82,15 @@ impl IdentityService {
         .execute(&mut *transaction)
         .await?;
         sqlx::query(
-            "INSERT INTO identity_access.audit_events (event_id, actor_kind, actor_id, action, resource_id, outcome, correlation_id, trace_id) VALUES ($1, 'tenant_user', $2, 'tenant_user.registered', $2, 'completed', $3, $4)",
+            "INSERT INTO identity_access.audit_events (event_id,actor_kind,actor_id,tenant_id,action,resource_id,outcome,correlation_id,trace_id,safe_details) VALUES ($1,'system',NULL,$2,'api_key.authorization.checked',$3,$4,$5,$6,$7)",
         )
         .bind(Uuid::new_v4())
+        .bind(tenant_id)
+        .bind(key_id)
+        .bind(if allowed { "allowed" } else { "denied" })
+        .bind(correlation_id)
+        .bind(payvia_observability::current_trace_id())
+        .bind(serde_json::json!({        .bind(Uuid::new_v4())
         .bind(user_id)
         .bind(correlation_id)
         .bind(payvia_observability::current_trace_id())
@@ -748,9 +754,7 @@ impl IdentityService {
             .execute(&mut *transaction)
             .await?;
         let row = sqlx::query(
-            "SELECT id,environment,scopes FROM identity_access.api_keys \\
-             WHERE tenant_id=$1 AND secret_digest=$2 AND environment=$3 \\
-             AND status='active' AND revoked_at IS NULL",
+            "SELECT id,environment,scopes FROM identity_access.api_keys WHERE tenant_id=$1 AND secret_digest=$2 AND environment=$3 AND status='active' AND revoked_at IS NULL FOR UPDATE",
         )
         .bind(tenant_id)
         .bind(secret_digest.as_slice())
