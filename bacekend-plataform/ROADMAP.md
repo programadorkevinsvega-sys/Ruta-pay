@@ -8,7 +8,7 @@
 >
 > Los backends comparten el workspace Cargo raíz solo para resolución/build. Cada uno tiene binario, imagen, configuración, secretos, red, artefactos operativos y despliegue independiente en su propia VM/VPS; los dos frontends también tienen despliegues separados. Los artefactos de esta aplicación pertenecen a `bacekend-plataform/deploy/`.
 >
-> Estado: Fases 0, 1 y 2 integradas y cerradas en `main`. La Fase 2 se integró mediante PR #2 tras pasar Format, Clippy y Tests en CI. El acta está en [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md); las fases posteriores siguen pendientes.
+> Estado: las implementaciones de Fases 0, 1 y 2 están integradas en `main`; la Fase 2 se integró mediante PR #2 tras pasar Format, Clippy y Tests en CI. Ese cierre histórico acredita el alcance implementado y aceptado entonces, pero no certifica la cobertura exhaustiva exigida por la nueva política de pruebas. La auditoría de calidad por casos de uso está abierta mediante PRs #3, #4 y #5; hasta que sus pruebas y CI estén aprobadas, no se declara conformidad completa con la nueva Definition of Done. Las fases posteriores siguen pendientes.
 
 ## Autoridad de dominio
 
@@ -26,6 +26,13 @@ Pruebas unitarias y de propiedades aplican a la lógica; integración/aceptació
 
 ## Fase 0 — Auditoría, decisiones y workspace
 
+### Aceptación obligatoria de casos de uso y auditoría de pruebas
+
+Para cada caso de uso de esta fase, documentar y automatizar caminos positivos y negativos, entradas inválidas/tipos/límites, duplicados y concurrencia, permisos/aislamiento, estados, fallos de dependencias, integridad de persistencia/Outbox y redacción, según aplique. Cada caso debe enlazar requisito→escenario→test→ejecución CI. Fase 8 no sustituye estas pruebas.
+
+Auditoría de pruebas: [`docs/phase-0/test-audit.md`](docs/phase-0/test-audit.md). El PR #3 añade la matriz documental inicial; la automatización completa de trazabilidad amenaza→control→prueba sigue pendiente.
+
+
 - [x] Auditar scaffold, dependencias, configuración, CI y documentación. Evidencia: [`docs/phase-0/initial-audit.md`](docs/phase-0/initial-audit.md).
 - [x] Registrar ADRs de contratos gRPC, concesiones firmadas, migraciones coordinadas, identidad de servicio, operación y pruebas cross-backend en [`docs/adr/`](docs/adr/).
 - [x] Diseñar bounded contexts: identity/access, tenant registry, catalog/pricing, entitlements/quotas, subscription billing, authorization, audit, BFF y realtime. Evidencia: [`docs/phase-0/bounded-contexts.md`](docs/phase-0/bounded-contexts.md).
@@ -38,13 +45,20 @@ Pruebas unitarias y de propiedades aplican a la lógica; integración/aceptació
 - [x] Definir las dos apps frontend separadas: `frontends/frontend-pasarela/` para tenant y `frontends/frontend-plataform/` para administración de plataforma. Evidencia: ADR-0001 y auditoría de sus documentos actuales.
 - [x] Documentar la matriz de integración y el plan de aceptación por fase en [`docs/phase-0/integration-matrix.md`](docs/phase-0/integration-matrix.md).
 
-**Salida:** auditoría, decisiones, ownership, autorización inter-backend, matrices, contratos conceptuales, amenazas y fases documentados. Las ADRs registran decisiones ya establecidas por las reglas normativas; las decisiones de detalle no definidas por ellas siguen abiertas y no se presentan como aprobadas. Fase 0 queda cerrada como fase documental conforme a la decisión de alcance del proyecto; no afirma integración runtime. Las pruebas runtime HTTP→BFF→gRPC→módulo son criterio de Fase 1.
+**Salida:** auditoría, decisiones, ownership, autorización inter-backend, matrices, contratos conceptuales, amenazas y fases documentados. Las ADRs registran decisiones ya establecidas por las reglas normativas; las decisiones de detalle no definidas por ellas siguen abiertas y no se presentan como aprobadas. El alcance documental de Fase 0 se cerró históricamente conforme a la decisión de alcance del proyecto; la auditoría adicional de trazabilidad y reproducibilidad está registrada en PR #3 y no afirma integración runtime. Las pruebas runtime HTTP→BFF→gRPC→módulo son criterio de Fase 1.
 
 ### Evidencia y límites de Fase 0
 
 El informe de auditoría conserva los comandos ejecutados y el inventario real. No hay mutaciones persistidas visibles que originen realtime; Redis y NATS/Outbox son N/A porque Fase 0 no implementa runtime ni dominio. Por decisión de alcance del proyecto, Fase 0 es documental y se cierra al completar auditoría, ADRs, bounded contexts, threat model, matriz y verificación estática del workspace. No requiere adelantar contratos ejecutables: la aceptación HTTP→BFF→gRPC→módulo pertenece a Fase 1 y debe completarse allí antes de cerrar esa fase.
 
 ## Fase 1 — Fundaciones y observabilidad
+
+### Aceptación obligatoria de casos de uso y auditoría de pruebas
+
+Para cada caso de uso de esta fase, documentar y automatizar caminos positivos y negativos, entradas inválidas/tipos/límites, duplicados y concurrencia, permisos/aislamiento, estados, fallos de dependencias, integridad de persistencia/Outbox y redacción, según aplique. Cada caso debe enlazar requisito→escenario→test→ejecución CI. Fase 8 no sustituye estas pruebas.
+
+Auditoría de pruebas: [`docs/phase-1/test-audit.md`](docs/phase-1/test-audit.md). Estado: pruebas de runtime existentes y ampliación de límites en PR #4; matriz exhaustiva de configuración/readiness aún pendiente.
+
 
 La subfase 1.1 implementa el primer corte operativo: configuración tipada y validada; BFF Axum con OpenAPI y endpoints operacionales; contrato y servidor gRPC del módulo runtime; propagación W3C/correlation; errores tipados y envelopes seguros; logs JSON, OpenTelemetry/OTLP, métricas y Sentry con redacción; readiness verificada, apagado ordenado y diagnósticos de cada frontera. Su matriz previa, con N/A justificados, está en [`docs/phase-0/integration-matrix.md`](docs/phase-0/integration-matrix.md). El health endpoint es una interfaz operacional; por eso no crea una pantalla de producto ni requiere UI React. La aceptación debe usar cliente HTTP real y cruzar el límite de red gRPC. El Dockerfile y configuración de observabilidad son específicos del backend y se encuentran bajo `bacekend-plataform/deploy/`; su build usa la raíz como contexto Cargo, pero no contiene ni despliega el binario de pasarelas.
 
@@ -58,9 +72,16 @@ Criterios de cierre 1.1: pruebas reales HTTP→BFF→gRPC→módulo; traza y cor
 - [x] Health/readiness, apagado ordenado, dashboards/alertas y salud del pipeline de telemetría.
 - [x] Artefacto de despliegue exclusivo para `bacekend-plataform`, con configuración operativa bajo `bacekend-plataform/deploy/`; build y ejecución no inician el backend de pasarelas.
 
-**Salida:** integración automatizada prueba contexto HTTP→gRPC→módulo, éxito, desconexión y timeout, eventos correlacionados y ausencia de secretos. Fase 1 cerrada con evidencia registrada en [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md).
+**Salida:** integración automatizada prueba contexto HTTP→gRPC→módulo, éxito, desconexión y timeout, eventos correlacionados y ausencia de secretos. El alcance de implementación de Fase 1 se cerró históricamente con evidencia en [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md); su auditoría ampliada de casos de uso y límites está en PR #4 y queda sujeta a aprobación.
 
 ## Fase 2 — Identidad, tenant registry y aislamiento
+
+### Aceptación obligatoria de casos de uso y auditoría de pruebas
+
+Para cada caso de uso de esta fase, documentar y automatizar caminos positivos y negativos, entradas inválidas/tipos/límites, duplicados y concurrencia, permisos/aislamiento, estados, fallos de dependencias, integridad de persistencia/Outbox y redacción, según aplique. Cada caso debe enlazar requisito→escenario→test→ejecución CI. Fase 8 no sustituye estas pruebas.
+
+Auditoría de pruebas: [`docs/phase-2/test-audit.md`](docs/phase-2/test-audit.md). Estado: pruebas Rust y frontend existentes; duplicidad/concurrencia de email y ejecución de suites frontend/Playwright se incorporan en PR #5, pendiente de CI.
+
 
 La implementación se ejecuta conforme a la matriz previa de [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md). El primer corte incluye identidad/sesiones separadas para tenants y operadores, revisión manual de tenant, ciclo de vida de API Keys y las fronteras PostgreSQL/gRPC/Redis/JetStream/realtime y ambas aplicaciones frontend que aplican a estos cambios visibles.
 
@@ -73,9 +94,12 @@ La implementación se ejecuta conforme a la matriz previa de [`docs/phase-2/acce
 - [x] Outbox→JetStream, membresía idempotente, WebSocket autenticado, replay por cursor y recuperación REST.
 - [x] E2E Playwright de ambas apps y recuperación multi-réplica tras reiniciar Redis/NATS de desarrollo.
 
-**Salida:** cumplida. Aceptación HTTP→BFF→gRPC→módulo verifica identidad, permisos, tenant cruzado, API Keys, auditoría, errores y redacción con PostgreSQL/Redis/NATS reales de desarrollo; Playwright recorre ambas aplicaciones. Evidencia en [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md).
+**Salida funcional histórica:** cumplida dentro de los criterios implementados entonces. Aceptación HTTP→BFF→gRPC→módulo verifica identidad, permisos, tenant cruzado, API Keys, auditoría, errores y redacción con PostgreSQL/Redis/NATS reales de desarrollo; Playwright recorre ambas aplicaciones. Evidencia en [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md). La conformidad con la nueva matriz obligatoria de casos positivos/negativos, concurrencia y CI frontend/E2E queda pendiente del PR #5 y su ejecución aprobada.
 
 ## Fase 3 — Catálogo de planes, precios, límites y entitlement
+
+**Pruebas obligatorias de esta fase:** cada caso de uso y cada acción debe tener escenarios positivos/negativos, límites y tipos inválidos, duplicados/concurrencia, permisos/aislamiento, estados, fallos/reintentos, integridad y redacción aplicables. Registrar requisito→test→ejecución CI; no se aplaza a Fase 8.
+
 
 - [ ] Planes y versiones inmutables de precio/moneda/periodo; cambios con vigencias explícitas.
 - [ ] Capacidades, límites, cuotas, políticas de excedente y restricciones por entorno.
@@ -87,6 +111,9 @@ La implementación se ejecuta conforme a la matriz previa de [`docs/phase-2/acce
 **Salida:** pruebas reales cubren límites exactos, excedentes, concurrencia, cambio versionado de plan, fechas y aislamiento.
 
 ## Fase 4 — Suscripciones y facturación de uso Payvia
+
+**Pruebas obligatorias de esta fase:** cada caso de uso y cada acción debe tener escenarios positivos/negativos, límites y tipos inválidos, duplicados/concurrencia, permisos/aislamiento, estados, fallos/reintentos, integridad y redacción aplicables. Registrar requisito→test→ejecución CI; no se aplaza a Fase 8.
+
 
 - [ ] Ownership del ciclo de negocio de payment intents/transacciones: API Keys, idempotency scope, transiciones válidas y eventos normalizados; el backend de pasarelas ejecuta solamente llamadas de protocolo autorizadas.
 - [ ] Cobro a compradores de los tenants según el flujo configurado, separado del cobro que Payvia realiza a los tenants por usar la plataforma.
@@ -109,6 +136,9 @@ Referencias oficiales para la implementación: [Wompi — ambientes y llaves](ht
 
 ## Fase 5 — Decisión de autorización y concesiones para el backend de pasarelas
 
+**Pruebas obligatorias de esta fase:** cada caso de uso y cada acción debe tener escenarios positivos/negativos, límites y tipos inválidos, duplicados/concurrencia, permisos/aislamiento, estados, fallos/reintentos, integridad y redacción aplicables. Registrar requisito→test→ejecución CI; no se aplaza a Fase 8.
+
+
 - [ ] Contrato gRPC versionado `ExecuteAuthorizedGatewayOperation` y `ReportVerifiedProviderEvent` (o contratos versionados equivalentes).
 - [ ] Autenticación mutua TLS/mTLS, identidad de servicio rotatoria y autorización por método/scope.
 - [ ] Política por tenant, API Key, entorno, cuenta proveedor, plan, cuota, operación, monto/moneda y estado de cuenta.
@@ -123,6 +153,9 @@ Referencias oficiales para la implementación: [Wompi — ambientes y llaves](ht
 
 ## Fase 6 — Auditoría, eventos y realtime
 
+**Pruebas obligatorias de esta fase:** cada caso de uso y cada acción debe tener escenarios positivos/negativos, límites y tipos inválidos, duplicados/concurrencia, permisos/aislamiento, estados, fallos/reintentos, integridad y redacción aplicables. Registrar requisito→test→ejecución CI; no se aplaza a Fase 8.
+
+
 - [ ] Auditoría inmutable de administración, authz, tenant, plan, precio, límite y facturación.
 - [ ] Outbox en la transacción de negocio y relay durable JetStream.
 - [ ] Consumers durable idempotentes y DLQ/replay con permisos operativos.
@@ -134,6 +167,9 @@ Referencias oficiales para la implementación: [Wompi — ambientes y llaves](ht
 
 ## Fase 7 — Frontends independientes
 
+**Pruebas obligatorias de esta fase:** cada caso de uso y cada acción debe tener escenarios positivos/negativos, límites y tipos inválidos, duplicados/concurrencia, permisos/aislamiento, estados, fallos/reintentos, integridad y redacción aplicables. Registrar requisito→test→ejecución CI; no se aplaza a Fase 8.
+
+
 - [ ] Aplicación tenant: registro/invitación, plan/uso, suscripción/facturas, API Keys y estado de cuenta.
 - [ ] Aplicación administración: tenants, catálogo/versiones, precios, límites, consumo, facturación, autorización y auditoría.
 - [ ] Sesiones, permisos, navegación, cliente API y caché separados; ambas apps consumen exclusivamente BFF REST/OpenAPI/WebSocket autenticado.
@@ -143,6 +179,9 @@ Referencias oficiales para la implementación: [Wompi — ambientes y llaves](ht
 **Salida:** pruebas de permisos y contratos para ambas aplicaciones; frontend no accede a PostgreSQL, Redis, NATS, gRPC interno o servicio pasarela directamente.
 
 ## Fase 8 — Calidad, seguridad, resiliencia y rendimiento
+
+**Pruebas obligatorias de esta fase:** cada caso de uso y cada acción debe tener escenarios positivos/negativos, límites y tipos inválidos, duplicados/concurrencia, permisos/aislamiento, estados, fallos/reintentos, integridad y redacción aplicables. Registrar requisito→test→ejecución CI; no se aplaza a Fase 8.
+
 
 - [ ] Unitarias, properties, integración, E2E de frontera, contratos, aislamiento tenant y autorización.
 - [ ] Pruebas reales de caídas/reinicios PostgreSQL/Redis/JetStream en servicios de desarrollo documentados; nunca producción.
@@ -154,6 +193,9 @@ Referencias oficiales para la implementación: [Wompi — ambientes y llaves](ht
 **Salida:** no hay defectos críticos/altos abiertos ni criterios bloqueados presentados como pasados; evidencia reproducible y limitaciones registradas.
 
 ## Fase 9 — Operación y piloto
+
+**Pruebas obligatorias de esta fase:** cada caso de uso y cada acción debe tener escenarios positivos/negativos, límites y tipos inválidos, duplicados/concurrencia, permisos/aislamiento, estados, fallos/reintentos, integridad y redacción aplicables. Registrar requisito→test→ejecución CI; no se aplaza a Fase 8.
+
 
 - [ ] Despliegue seguro, entornos separados, backups/restauración, migraciones coordinadas y rotación de claves.
 - [ ] Runbooks de tenant suspendido, deuda, reintento/reconciliación, authz caída, replay y recuperación realtime.

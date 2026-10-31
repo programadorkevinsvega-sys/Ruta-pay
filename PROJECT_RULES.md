@@ -22,6 +22,16 @@ Los seis documentos listados abajo son requisitos normativos del proyecto y se i
 
 Se aplican conjuntamente con `ARCHITECTURE_RULES.md`, los `AGENTS.md` aplicables y el `PROJECT_RULES.md` de cada backend. La arquitectura de Payvia establece ownership y fronteras; los prompts concretan las obligaciones de calidad y observabilidad. Toda incompatibilidad debe documentarse y resolverse antes de implementar el alcance afectado, sin omitir ni reducir requisitos.
 
+## Política obligatoria de pruebas por fase y caso de uso
+
+La política normativa y la asignación de responsabilidades están en [ARCHITECTURE_ROLES.md](ARCHITECTURE_ROLES.md). Aplica a ambos backends, ambos frontends, APIs, workers, persistencia, eventos e infraestructura desde la fase que introduce cada comportamiento.
+
+Cada caso de uso implementado debe tener una matriz de escenarios positivos y negativos. Según corresponda, debe cubrir entradas vacías/nulas/malformadas/tipo incorrecto, límites (mínimo/máximo, debajo/encima, cero, negativos, longitud, precisión y overflow), duplicados normalizados, concurrencia/idempotencia, autenticación/autorización, roles/scopes, aislamiento tenant, estados/transiciones, fallos/timeout/reintentos/recuperación, integridad transaccional, auditoría/Outbox y redacción de datos sensibles.
+
+Las pruebas deben usar el nivel apropiado: unitarias/propiedad para reglas deterministas; integración con PostgreSQL/Redis/JetStream reales y aislados cuando el comportamiento los involucre; contratos para fronteras; E2E browser para recorridos de usuario. Los mocks no sustituyen aceptación real. Cada caso debe enlazar requisito, test, nivel y ejecución CI del commit. Los N/A requieren justificación concreta previa y propietario.
+
+La CI debe ejecutar todas las suites aplicables, incluidos Vitest, builds y Playwright cuando cambien o se acepten frontends. Una fase no se cierra si quedan pruebas obligatorias ausentes, sin ejecutar o fallidas. Fase 8 agrega fuzzing, seguridad transversal, carga, rendimiento y resiliencia; no aplaza pruebas de casos de uso. El porcentaje de cobertura es diagnóstico, no criterio único de cierre: se exige cobertura de todos los casos de uso definidos y particiones de riesgo aplicables, no enumeración imposible de todos los inputs.
+
 ## Topología de los dos backends
 
 El sistema tiene dos backends desplegables independientes y cada uno es internamente un monolito modular Rust:

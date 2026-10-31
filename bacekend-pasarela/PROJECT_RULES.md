@@ -59,6 +59,12 @@ Modelar errores tipados por firma inválida, replay, capacidad no soportada, den
 
 Por fase/subfase, documentar y probar la matriz PostgreSQL/migración, REST/BFF, gRPC, autorización concesión, Redis, JetStream/Outbox, realtime/recuperación, errores y sandbox. Probar integraciones reales contra servicios aislados y sandbox oficial; no usar mocks/stubs/fixtures para declarar aceptación. Reinicios solo sobre infraestructura de desarrollo identificada previamente. No declarar cerrada una fase con bloqueo o verificación no ejecutada.
 
+## Matriz obligatoria de pruebas por caso de uso y fase
+
+Aplicar [ARCHITECTURE_ROLES.md](../ARCHITECTURE_ROLES.md) y la política transversal de [PROJECT_RULES.md](../PROJECT_RULES.md). Cada operación implementada debe probar éxito y rechazo: entradas ausentes/nulas/malformadas/tipos incorrectos, límites/cero/negativos, duplicados normalizados y concurrentes, scopes/grants/autorización, aislamiento tenant/proveedor/ambiente, estados/transiciones, replay/idempotencia, timeout/desconexión/reintentos, integridad sin efectos parciales, auditoría y redacción, según aplique.
+
+Las pruebas se ejecutan en el nivel que acredita la garantía: unitarias/propiedad, integración con PostgreSQL/Redis/JetStream reales aislados, contratos gRPC, pruebas de conformidad de grants y E2E de frontera/usuario. Los mocks no sustituyen integraciones reales ni sandbox oficial cuando se requiere validar un proveedor. Cada escenario enlaza requisito, test y ejecución CI del commit. N/A se justifica antes de implementar. Ninguna fase se cierra con pruebas obligatorias ausentes, no ejecutadas o fallidas. Fase 8 añade hardening, fuzzing, carga y resiliencia; no posterga pruebas funcionales de fases anteriores.
+
 ## Documentos normativos y bloqueo
 
 Aplicar desde el día uno y en todos los módulos/crates, workers, APIs, infraestructura y fases/subfases de este backend todo requisito aplicable de:

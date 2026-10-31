@@ -24,6 +24,9 @@ Toda aceptación de error prueba diagnóstico específico y respuesta final con 
 
 ## Fase 0 — Auditoría y diseño de integración
 
+**Pruebas de salida:** matriz documental de escenarios/amenazas/controles y verificaciones estáticas reproducibles; no atribuir runtime no implementado. Cada N/A debe indicar la fase que ejecutará la prueba.
+
+
 - [ ] Inspeccionar crate actual, configuración, dependencias, contratos y tooling.
 - [ ] Definir por ADR contrato gRPC, concesión firmada, identidad de servicio, migraciones compartidas coordinadas, subjects/eventos y aceptación cross-backend.
 - [ ] Definir contrato gRPC plataforma→pasarelas `ExecuteAuthorizedGatewayOperation`: concesión firmada ligada al comando, vigencia, identidad de servicio, errores y correlación.
@@ -34,6 +37,9 @@ Toda aceptación de error prueba diagnóstico específico y respuesta final con 
 **Salida:** contratos versionados, ownership, threat model, sandbox/credenciales y matrices de integración aprobados.
 
 ## Fase 1 — Runtime, gRPC y observabilidad
+
+**Pruebas obligatorias de esta fase:** para cada caso de uso, automatizar caminos positivos/negativos, entradas inválidas y límites, duplicados/concurrencia, permisos/aislamiento, estados, fallos, integridad y redacción aplicables; registrar requisito→test→CI. No se aplaza a Fase 8.
+
 
 - [ ] Configuración tipada, timeouts, TLS/mTLS e identidad de servicio.
 - [ ] Servidor/cliente gRPC instrumentados con interceptores/span por RPC y propagación de contexto.
@@ -46,6 +52,9 @@ Toda aceptación de error prueba diagnóstico específico y respuesta final con 
 
 ## Fase 2 — Contrato neutral y harness de conformidad
 
+**Pruebas obligatorias de esta fase:** para cada caso de uso, automatizar caminos positivos/negativos, entradas inválidas y límites, duplicados/concurrencia, permisos/aislamiento, estados, fallos, integridad y redacción aplicables; registrar requisito→test→CI. No se aplaza a Fase 8.
+
+
 - [ ] Definir operaciones normalizadas (crear/consultar/cancelar/reembolsar únicamente cuando soporte real).
 - [ ] Definir tipos de importe entero, moneda, método, estado, referencia, error y descriptor de capacidades.
 - [ ] Definir trait interno y servicio gRPC versionado, con compatibilidad backward.
@@ -55,6 +64,9 @@ Toda aceptación de error prueba diagnóstico específico y respuesta final con 
 **Salida:** suite ejecutable contra implementaciones reales, contratos sin operaciones vacías y compatibilidad verificada.
 
 ## Fase 3 — Cuentas proveedor y secretos
+
+**Pruebas obligatorias de esta fase:** para cada caso de uso, automatizar caminos positivos/negativos, entradas inválidas y límites, duplicados/concurrencia, permisos/aislamiento, estados, fallos, integridad y redacción aplicables; registrar requisito→test→CI. No se aplaza a Fase 8.
+
 
 - [ ] Crear `gateway_credentials` como módulo/crate dueño del schema/migraciones de credenciales tenant, scopeados por tenant, proveedor, cuenta y ambiente.
 - [ ] Definir contratos/tipos por proveedor y comandos internos gRPC para almacenar, rotar, revocar, validar y entregar en memoria credenciales al adapter autorizado.
@@ -68,6 +80,9 @@ Toda aceptación de error prueba diagnóstico específico y respuesta final con 
 
 ## Fase 4 — Adaptadores independientes
 
+**Pruebas obligatorias de esta fase:** para cada caso de uso, automatizar caminos positivos/negativos, entradas inválidas y límites, duplicados/concurrencia, permisos/aislamiento, estados, fallos, integridad y redacción aplicables; registrar requisito→test→CI. No se aplaza a Fase 8.
+
+
 - [ ] `gateway_wompi`: contrato oficial, operaciones/capacidades verificadas, errores, timeouts y sandbox Colombia.
 - [ ] `gateway_bold`: contrato oficial, operaciones/capacidades verificadas, errores, timeouts y sandbox Colombia.
 - [ ] Un crate por proveedor futuro; no introducir ramas centrales por nombre.
@@ -78,6 +93,9 @@ Toda aceptación de error prueba diagnóstico específico y respuesta final con 
 **Salida:** cada adapter real pasa suite común con sandbox oficial, credenciales apropiadas y evidencia de capacidades; no se declara soporte por scaffold.
 
 ## Fase 5 — Verificación de concesión de plataforma por operación
+
+**Pruebas obligatorias de esta fase:** para cada caso de uso, automatizar caminos positivos/negativos, entradas inválidas y límites, duplicados/concurrencia, permisos/aislamiento, estados, fallos, integridad y redacción aplicables; registrar requisito→test→CI. No se aplaza a Fase 8.
+
 
 - [ ] Recibir cada operación protegida solo mediante comando autenticado de plataforma con concesión firmada.
 - [ ] Propagar identity service, `correlation_id`, `trace_id`, versión y deadline.
@@ -99,6 +117,9 @@ Toda aceptación de error prueba diagnóstico específico y respuesta final con 
 
 ## Fase 6 — Webhooks entrantes y eventos verificados
 
+**Pruebas obligatorias de esta fase:** para cada caso de uso, automatizar caminos positivos/negativos, entradas inválidas y límites, duplicados/concurrencia, permisos/aislamiento, estados, fallos, integridad y redacción aplicables; registrar requisito→test→CI. No se aplaza a Fase 8.
+
+
 - [ ] Endpoint HTTPS público con ruta/versionado por proveedor y tamaño limitado; conservar bytes crudos/headers exigidos.
 - [ ] Implementar verificación criptográfica oficial individual, frescura/anti-replay y comparación segura antes de confiar en contenido.
 - [ ] Registrar recepción técnica durable e idempotente, sin crear estado comercial autoritativo.
@@ -110,6 +131,9 @@ Toda aceptación de error prueba diagnóstico específico y respuesta final con 
 
 ## Fase 7 — Recuperación, resiliencia y operaciones
 
+**Pruebas obligatorias de esta fase:** para cada caso de uso, automatizar caminos positivos/negativos, entradas inválidas y límites, duplicados/concurrencia, permisos/aislamiento, estados, fallos, integridad y redacción aplicables; registrar requisito→test→CI. No se aplaza a Fase 8.
+
+
 - [ ] Reconexión PostgreSQL/Redis/NATS y gRPC con backoff acotado; no bloquear Tokio.
 - [ ] Redis `ConnectionManager`/PubSub resuscribe si se usa; JetStream reconstruye consumer durable y recupera mensajes sin duplicar efecto.
 - [ ] Pruebas de reinicio solo contra infraestructura local de desarrollo documentada, sin contenedores nuevos ni producción.
@@ -119,6 +143,9 @@ Toda aceptación de error prueba diagnóstico específico y respuesta final con 
 **Salida:** evidencia de reinicio/replay/recuperación con PostgreSQL, Redis/NATS reales y sandbox si aplica; no hay eventos confirmados perdidos.
 
 ## Fase 8 — Seguridad, calidad y lanzamiento
+
+**Pruebas obligatorias de esta fase:** para cada caso de uso, automatizar caminos positivos/negativos, entradas inválidas y límites, duplicados/concurrencia, permisos/aislamiento, estados, fallos, integridad y redacción aplicables; registrar requisito→test→CI. No se aplaza a Fase 8.
+
 
 - [ ] Unitarias/property tests de parser, normalización, firma, idempotencia y estados técnicos.
 - [ ] E2E HTTP de webhook→verificador→Outbox/NATS→consumidor plataforma y operación BFF→gRPC→authz→sandbox proveedor.

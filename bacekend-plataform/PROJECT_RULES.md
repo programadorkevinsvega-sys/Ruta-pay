@@ -42,6 +42,21 @@ Aplicar errores tipados y diagnosticables, autorización tenant en cada operaci�
 
 Todo cambio persistido visible sigue Outbox versionado → JetStream → realtime autenticado → TanStack Query → REST autorizado por cursor/snapshot, salvo justificación previa verificable. Redis/NATS se prueban con servicios reales aislados y recuperación tras reinicio cuando se usen.
 
+## Pruebas obligatorias de casos de uso en cada fase
+
+La política transversal está definida en [ARCHITECTURE_ROLES.md](../ARCHITECTURE_ROLES.md) y [PROJECT_RULES.md](../PROJECT_RULES.md). Para cada endpoint/operación de plataforma, el implementador debe probar tanto el resultado permitido como cada denegación/entrada inválida relevante, y verificar los efectos en PostgreSQL, Redis, JetStream, auditoría y Outbox cuando apliquen.
+
+La matriz de cada fase incluye expresamente:
+- Datos ausentes, nulos, vacíos, mal formados, tipo incorrecto, límites, cero y números negativos (rechazo en backend si no están permitidos).
+- Unicidad de email normalizado, slug, identificación legal y claves idempotentes, en secuencia y concurrencia.
+- Sesiones ausentes, inválidas, expiradas, revocadas, CSRF/Origin inválidos y separación tenant/operator.
+- Cada rol × permiso × operación relevante, acceso cross-tenant y RLS.
+- Transiciones válidas/prohibidas, motivos, versión obsoleta y carreras concurrentes.
+- Timeout/desconexión de PostgreSQL, Redis, JetStream y gRPC cuando la operación dependa de ellos; rollback, reintento y recuperación sin efectos parciales.
+- No duplicación de identidades, membresías, eventos, cobros ni otras consecuencias; auditoría y telemetría seguras.
+
+Las pruebas unitarias no sustituyen las pruebas HTTP→BFF→gRPC→módulo ni los E2E browser de ambos frontends cuando esas fronteras formen parte del caso de uso. La CI debe ejecutar las suites de frontend y browser relevantes. Ninguna prueba funcional de una fase se aplaza a Fase 8; esa fase añade campañas transversales avanzadas.
+
 ## Contrato de pago normalizado
 
 El envelope de webhook conserva un `payment_method` discriminado por `type` (`card`, `pse` o `crypto`) y `details` tipado para el método. `transaction.amount` es el importe facturado en unidades menores; el settlement cripto se expresa aparte con monto decimal string y moneda/activo, sin `float`. El mapeo proveedor→contrato normalizado pertenece al módulo de pagos, valida cada dato del evento verificado y no expone payloads crudos de proveedor. Campos concretos y evolución de esquema se versionan en OpenAPI/event contract.
