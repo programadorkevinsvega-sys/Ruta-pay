@@ -2605,6 +2605,20 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .expect("CSRF rejection response arrives");
     assert_eq!(rejected_csrf.status(), StatusCode::FORBIDDEN);
 
+    let mut tenant_realtime_subscription_client = realtime_acceptance_client.clone();
+    let mut tenant_realtime_subscription = tenant_realtime_subscription_client
+        .subscribe_events(SubscribeEventsRequest {
+            session_token: session_cookie.clone(),
+            csrf_token: csrf_cookie.clone(),
+            audience: "tenant".to_owned(),
+            tenant_id: created_tenant_id.to_string(),
+            after_cursor: replay_cursor,
+            correlation_id: "corr_realtime_tenant_revocation_subscription".to_owned(),
+        })
+        .await
+        .expect("authorized tenant can subscribe to its realtime stream")
+        .into_inner();
+
     let logout = client
         .delete(format!("http://{http_addr}/v1/identity/session"))
         .header(header::ORIGIN, &origin)
@@ -2618,6 +2632,21 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("valid logout response arrives");
     assert_eq!(logout.status(), StatusCode::NO_CONTENT);
+    let tenant_revocation_status = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            match tenant_realtime_subscription.message().await {
+                Err(status) => break status,
+                Ok(Some(_event)) => continue,
+                Ok(None) => panic!("tenant realtime subscription must report authorization revocation"),
+            }
+        }
+    })
+    .await
+    .expect("tenant realtime subscription revalidates session revocation");
+    assert_eq!(
+        tenant_revocation_status.code(),
+        tonic::Code::Unauthenticated
+    );
     let tenant_logout_audited: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM identity_access.audit_events WHERE actor_id = $1 AND action = 'identity.session.revoked' AND correlation_id = 'corr_identity_logout')",
     )
@@ -2959,6 +2988,22 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             operator_tenant_list.status(),
             StatusCode::OK,
             "all operator roles have tenants.read"
+        );
+        let operator_tenant_detail = client
+            .get(format!(
+                "http://{http_addr}/v1/tenants/{created_tenant_id}"
+            ))
+            .header(
+                header::COOKIE,
+                format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+            )
+            .send()
+            .await
+            .expect("operator tenant detail endpoint responds for each role");
+        assert_eq!(
+            operator_tenant_detail.status(),
+            StatusCode::OK,
+            "operator role {role} can read tenant details"
         );
     }
 
@@ -3356,12 +3401,12 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .expect("support close receives an HTTP response");
     assert_eq!(support_close.status(), StatusCode::FORBIDDEN);
 
-    sqlx::query("UPDATE identity_access.operator_users SET role='platform_security' WHERE id=$1")
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_owner' WHERE id=$1")
         .bind(operator_id)
         .execute(&migration_pool)
         .await
-        .expect("platform security role is selected for tenant close");
-    let security_closing = client
+        .expect("platform owner role is selected for tenant close");
+    let owner_closing = client
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{second_tenant_id}/status"
         ))
@@ -3378,8 +3423,13 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         }))
         .send()
         .await
-        .expect("platform security can start tenant close");
-    assert_eq!(security_closing.status(), StatusCode::OK);
+        .expect("platform owner can start tenant close");
+    assert_eq!(owner_closing.status(), StatusCode::OK);
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_security' WHERE id=$1")
+        .bind(operator_id)
+        .execute(&migration_pool)
+        .await
+        .expect("platform security role is selected to finish tenant close");
     let security_closed = client
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{second_tenant_id}/status"
@@ -3521,24 +3571,41 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     );
 
     // Expired and revoked sessions are rejected at the HTTP boundary.
-    let expired_session_digest = Sha256::digest(session_cookie.as_bytes());
+    // The second tenant session has not been revoked; expire it explicitly so
+    // this assertion distinguishes expiration from the separate logout checks.
+    let expired_session_digest = Sha256::digest(second_session_cookie.as_bytes());
     sqlx::query(
         "UPDATE identity_access.sessions SET expires_at=now()-interval '1 second' WHERE token_digest=$1",
     )
     .bind(expired_session_digest.as_slice())
     .execute(&migration_pool)
     .await
-    .expect("tenant session is marked expired in isolated PostgreSQL");
+    .expect("active second tenant session is marked expired in isolated PostgreSQL");
     let expired_session_response = client
         .get(format!("http://{http_addr}/v1/identity/session"))
         .header(
             header::COOKIE,
-            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+            format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
         )
         .send()
         .await
         .expect("expired session receives an HTTP response");
     assert_eq!(expired_session_response.status(), StatusCode::UNAUTHORIZED);
+    let expired_session_api_key_access = client
+        .get(format!(
+            "http://{http_addr}/v1/tenants/{second_tenant_id}/api-keys"
+        ))
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("expired tenant session cannot access API key resources");
+    assert_eq!(
+        expired_session_api_key_access.status(),
+        StatusCode::UNAUTHORIZED
+    );
 
     // Two lifecycle mutations using the same expected version must serialize:
     // one commits, the other receives a version conflict regardless of which
@@ -3660,6 +3727,21 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .expect("revoked matrix operator session receives an HTTP response");
     assert_eq!(
         revoked_matrix_session_response.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let revoked_operator_tenant_list = client
+        .get(format!("http://{http_addr}/v1/platform/tenants?limit=10&offset=0"))
+        .header(
+            header::COOKIE,
+            format!(
+                "payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"
+            ),
+        )
+        .send()
+        .await
+        .expect("revoked operator session cannot access administrative tenant resources");
+    assert_eq!(
+        revoked_operator_tenant_list.status(),
         StatusCode::UNAUTHORIZED
     );
 
