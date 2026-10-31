@@ -38,10 +38,7 @@ mod tests {
 
     #[test]
     fn rejects_empty_and_overlong_correlation_ids() {
-        assert_eq!(
-            CorrelationId::parse(String::new()),
-            Err(CorrelationIdError)
-        );
+        assert_eq!(CorrelationId::parse(String::new()), Err(CorrelationIdError));
         assert_eq!(
             CorrelationId::parse("a".repeat(129)),
             Err(CorrelationIdError)
