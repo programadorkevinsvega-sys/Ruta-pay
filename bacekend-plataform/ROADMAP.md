@@ -98,6 +98,9 @@ La implementación se ejecuta conforme a la matriz previa de [`docs/phase-2/acce
 
 ## Fase 3 — Catálogo de planes, precios, límites y entitlement
 
+**Pruebas obligatorias de esta fase:** cada caso de uso y cada acción debe tener escenarios positivos/negativos, límites y tipos inválidos, duplicados/concurrencia, permisos/aislamiento, estados, fallos/reintentos, integridad y redacción aplicables. Registrar requisito→test→ejecución CI; no se aplaza a Fase 8.
+
+
 - [ ] Planes y versiones inmutables de precio/moneda/periodo; cambios con vigencias explícitas.
 - [ ] Capacidades, límites, cuotas, políticas de excedente y restricciones por entorno.
 - [ ] Evaluación determinista del entitlement por tenant, plan y fecha efectiva.
@@ -108,6 +111,9 @@ La implementación se ejecuta conforme a la matriz previa de [`docs/phase-2/acce
 **Salida:** pruebas reales cubren límites exactos, excedentes, concurrencia, cambio versionado de plan, fechas y aislamiento.
 
 ## Fase 4 — Suscripciones y facturación de uso Payvia
+
+**Pruebas obligatorias de esta fase:** cada caso de uso y cada acción debe tener escenarios positivos/negativos, límites y tipos inválidos, duplicados/concurrencia, permisos/aislamiento, estados, fallos/reintentos, integridad y redacción aplicables. Registrar requisito→test→ejecución CI; no se aplaza a Fase 8.
+
 
 - [ ] Ownership del ciclo de negocio de payment intents/transacciones: API Keys, idempotency scope, transiciones válidas y eventos normalizados; el backend de pasarelas ejecuta solamente llamadas de protocolo autorizadas.
 - [ ] Cobro a compradores de los tenants según el flujo configurado, separado del cobro que Payvia realiza a los tenants por usar la plataforma.
@@ -130,6 +136,9 @@ Referencias oficiales para la implementación: [Wompi — ambientes y llaves](ht
 
 ## Fase 5 — Decisión de autorización y concesiones para el backend de pasarelas
 
+**Pruebas obligatorias de esta fase:** cada caso de uso y cada acción debe tener escenarios positivos/negativos, límites y tipos inválidos, duplicados/concurrencia, permisos/aislamiento, estados, fallos/reintentos, integridad y redacción aplicables. Registrar requisito→test→ejecución CI; no se aplaza a Fase 8.
+
+
 - [ ] Contrato gRPC versionado `ExecuteAuthorizedGatewayOperation` y `ReportVerifiedProviderEvent` (o contratos versionados equivalentes).
 - [ ] Autenticación mutua TLS/mTLS, identidad de servicio rotatoria y autorización por método/scope.
 - [ ] Política por tenant, API Key, entorno, cuenta proveedor, plan, cuota, operación, monto/moneda y estado de cuenta.
@@ -144,6 +153,9 @@ Referencias oficiales para la implementación: [Wompi — ambientes y llaves](ht
 
 ## Fase 6 — Auditoría, eventos y realtime
 
+**Pruebas obligatorias de esta fase:** cada caso de uso y cada acción debe tener escenarios positivos/negativos, límites y tipos inválidos, duplicados/concurrencia, permisos/aislamiento, estados, fallos/reintentos, integridad y redacción aplicables. Registrar requisito→test→ejecución CI; no se aplaza a Fase 8.
+
+
 - [ ] Auditoría inmutable de administración, authz, tenant, plan, precio, límite y facturación.
 - [ ] Outbox en la transacción de negocio y relay durable JetStream.
 - [ ] Consumers durable idempotentes y DLQ/replay con permisos operativos.
@@ -155,6 +167,9 @@ Referencias oficiales para la implementación: [Wompi — ambientes y llaves](ht
 
 ## Fase 7 — Frontends independientes
 
+**Pruebas obligatorias de esta fase:** cada caso de uso y cada acción debe tener escenarios positivos/negativos, límites y tipos inválidos, duplicados/concurrencia, permisos/aislamiento, estados, fallos/reintentos, integridad y redacción aplicables. Registrar requisito→test→ejecución CI; no se aplaza a Fase 8.
+
+
 - [ ] Aplicación tenant: registro/invitación, plan/uso, suscripción/facturas, API Keys y estado de cuenta.
 - [ ] Aplicación administración: tenants, catálogo/versiones, precios, límites, consumo, facturación, autorización y auditoría.
 - [ ] Sesiones, permisos, navegación, cliente API y caché separados; ambas apps consumen exclusivamente BFF REST/OpenAPI/WebSocket autenticado.
@@ -164,6 +179,9 @@ Referencias oficiales para la implementación: [Wompi — ambientes y llaves](ht
 **Salida:** pruebas de permisos y contratos para ambas aplicaciones; frontend no accede a PostgreSQL, Redis, NATS, gRPC interno o servicio pasarela directamente.
 
 ## Fase 8 — Calidad, seguridad, resiliencia y rendimiento
+
+**Pruebas obligatorias de esta fase:** cada caso de uso y cada acción debe tener escenarios positivos/negativos, límites y tipos inválidos, duplicados/concurrencia, permisos/aislamiento, estados, fallos/reintentos, integridad y redacción aplicables. Registrar requisito→test→ejecución CI; no se aplaza a Fase 8.
+
 
 - [ ] Unitarias, properties, integración, E2E de frontera, contratos, aislamiento tenant y autorización.
 - [ ] Pruebas reales de caídas/reinicios PostgreSQL/Redis/JetStream en servicios de desarrollo documentados; nunca producción.
@@ -175,6 +193,9 @@ Referencias oficiales para la implementación: [Wompi — ambientes y llaves](ht
 **Salida:** no hay defectos críticos/altos abiertos ni criterios bloqueados presentados como pasados; evidencia reproducible y limitaciones registradas.
 
 ## Fase 9 — Operación y piloto
+
+**Pruebas obligatorias de esta fase:** cada caso de uso y cada acción debe tener escenarios positivos/negativos, límites y tipos inválidos, duplicados/concurrencia, permisos/aislamiento, estados, fallos/reintentos, integridad y redacción aplicables. Registrar requisito→test→ejecución CI; no se aplaza a Fase 8.
+
 
 - [ ] Despliegue seguro, entornos separados, backups/restauración, migraciones coordinadas y rotación de claves.
 - [ ] Runbooks de tenant suspendido, deuda, reintento/reconciliación, authz caída, replay y recuperación realtime.
