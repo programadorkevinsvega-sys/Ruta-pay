@@ -471,10 +471,10 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     // must roll back the identity and audit writes rather than leave partial state.
     sqlx::raw_sql(
         "CREATE OR REPLACE FUNCTION identity_access.reject_test_outbox_event() RETURNS trigger \
-         LANGUAGE plpgsql AS $ BEGIN \
+         LANGUAGE plpgsql AS $phase2$ BEGIN \
          IF NEW.correlation_id = 'corr_force_identity_outbox_failure' THEN \
            RAISE EXCEPTION 'forced acceptance failure'; \
-         END IF; RETURN NEW; END $; \
+         END IF; RETURN NEW; END $phase2$; \
          CREATE TRIGGER reject_test_outbox_event BEFORE INSERT ON identity_access.outbox_events \
          FOR EACH ROW EXECUTE FUNCTION identity_access.reject_test_outbox_event();",
     )
