@@ -10,7 +10,7 @@ La auditoría cubre las capacidades implementadas en Fase 2: registro e inicio d
 - `tests/http_grpc_acceptance.rs` cubre el recorrido fundacional del runtime.
 - Las pruebas de dominio cubren validación de correo, contraseñas, API Keys, slug, identificación legal, permisos y transiciones de estado.
 - CI ejecuta Format, Clippy, Rust tests, Vitest y builds de ambos frontends, instalación de Chromium y Playwright E2E de tenant, plataforma y recuperación realtime multi-réplica.
-- CI #284 aprobó todas esas etapas en el commit `adc4142dded8b5cb878a61425e196c94a05d38b0`. La última ampliación de tipos DTO requiere su propia ejecución verde en el SHA más reciente antes de integrar.
+- CI #286 aprobó todas esas etapas en el SHA de código `d1a5359f9b43e443d3168cc5c94b2dae4c9728e3`: Format, Clippy, Rust tests, ambos frontends, Chromium/Playwright, E2E tenant, E2E plataforma, recuperación realtime multi-réplica y limpieza.
 
 ## Matriz de cobertura actual
 
@@ -45,4 +45,4 @@ La auditoría cubre las capacidades implementadas en Fase 2: registro e inicio d
 
 ## Criterio de cierre
 
-No se declara cobertura matemática del 100 %. La matriz de comportamiento definida para las rutas implementadas de Fase 2 está cubierta por pruebas de dominio, aceptación real y E2E. El cierre de calidad exige que el CI vuelva a aprobar sobre el SHA final del PR; el PR debe permanecer abierto y sin merge hasta la autorización correspondiente.
+No se declara cobertura matemática del 100 %. La matriz de comportamiento definida para las rutas implementadas de Fase 2 está cubierta por pruebas de dominio, aceptación real y E2E. CI #286 aprobó el SHA final de código; cualquier cambio posterior de código debe volver a validarse. El PR permanece abierto y sin merge hasta la autorización correspondiente.
