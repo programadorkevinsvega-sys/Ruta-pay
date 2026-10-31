@@ -1151,7 +1151,10 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .fetch_one(&migration_pool)
     .await
     .expect("deferred JetStream event state is queryable");
-    assert_eq!(deferred_event_state.0.as_deref(), Some(jetstream_error_code));
+    assert_eq!(
+        deferred_event_state.0.as_deref(),
+        Some(jetstream_error_code)
+    );
     assert!(deferred_event_state.1);
 
     let failed_stream = failed_topology
