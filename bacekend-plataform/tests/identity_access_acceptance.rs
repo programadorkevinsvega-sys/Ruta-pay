@@ -461,6 +461,13 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .await
     .expect("rollback audit count is queryable");
     assert_eq!(rollback_audit_count, 0, "audit insert must not be partial");
+    let rollback_outbox_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM identity_access.outbox_events WHERE correlation_id='corr_force_identity_outbox_failure'",
+    )
+    .fetch_one(&migration_pool)
+    .await
+    .expect("rollback Outbox count is queryable");
+    assert_eq!(rollback_outbox_count, 0, "Outbox insert must not be partial");
     sqlx::raw_sql(
         "DROP TRIGGER reject_test_outbox_event ON identity_access.outbox_events; \
          DROP FUNCTION identity_access.reject_test_outbox_event();",
