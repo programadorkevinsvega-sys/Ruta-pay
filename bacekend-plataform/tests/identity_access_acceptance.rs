@@ -1071,6 +1071,58 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         Uuid::new_v4().as_u128() % 1_000_000_000_000_000_000
     );
     let tenant_slug = format!("acceptance-{}", Uuid::new_v4().simple());
+    sqlx::raw_sql(
+        "CREATE OR REPLACE FUNCTION tenant_registry.reject_test_outbox_event() RETURNS trigger          LANGUAGE plpgsql AS $ BEGIN          IF NEW.correlation_id = 'corr_tenant_registration_outbox_failure' THEN              RAISE EXCEPTION 'injected tenant Outbox failure';          END IF; RETURN NEW; END; $;          CREATE TRIGGER reject_test_outbox_event BEFORE INSERT ON tenant_registry.outbox_events          FOR EACH ROW EXECUTE FUNCTION tenant_registry.reject_test_outbox_event();",
+    )
+    .execute(&migration_pool)
+    .await
+    .expect("tenant Outbox failure trigger is installed");
+    let tenants_before_outbox_failure: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("tenant count before Outbox failure is queryable");
+    let tenant_outbox_failure = client
+        .post(format!("http://{http_addr}/v1/tenants"))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .header("x-csrf-token", &csrf_cookie)
+        .header("x-correlation-id", "corr_tenant_registration_outbox_failure")
+        .json(&serde_json::json!({
+            "display_name": "Tenant rollback acceptance",
+            "slug": format!("rollback-{}", Uuid::new_v4().simple()),
+            "legal_identification_type": "nit",
+            "legal_identification_number": format!("7{:018}", Uuid::new_v4().as_u128() % 1_000_000_000_000_000_000)
+        }))
+        .send()
+        .await
+        .expect("tenant registration Outbox failure receives an HTTP response");
+    assert_eq!(tenant_outbox_failure.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let tenants_after_outbox_failure: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("tenant count after Outbox failure is queryable");
+    assert_eq!(
+        tenants_after_outbox_failure, tenants_before_outbox_failure,
+        "tenant registration must roll back when its Outbox write fails"
+    );
+    let failed_tenant_outbox_rows: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM tenant_registry.outbox_events WHERE correlation_id='corr_tenant_registration_outbox_failure'",
+    )
+    .fetch_one(&migration_pool)
+    .await
+    .expect("failed tenant Outbox write leaves no row");
+    assert_eq!(failed_tenant_outbox_rows, 0);
+    sqlx::raw_sql(
+        "DROP TRIGGER reject_test_outbox_event ON tenant_registry.outbox_events;          DROP FUNCTION tenant_registry.reject_test_outbox_event();",
+    )
+    .execute(&migration_pool)
+    .await
+    .expect("tenant registration failure trigger is removed");
     let tenant_create = client
         .post(format!("http://{http_addr}/v1/tenants"))
         .header(header::ORIGIN, &origin)
@@ -1173,6 +1225,66 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let tenant_list_body: serde_json::Value =
         tenant_list.json().await.expect("tenant list is JSON");
     assert_eq!(tenant_list_body["total"], 1);
+    sqlx::raw_sql(
+        "CREATE OR REPLACE FUNCTION tenant_registry.reject_test_status_outbox_event() RETURNS trigger          LANGUAGE plpgsql AS $ BEGIN          IF NEW.correlation_id = 'corr_tenant_status_outbox_failure' THEN              RAISE EXCEPTION 'injected tenant status Outbox failure';          END IF; RETURN NEW; END; $;          CREATE TRIGGER reject_test_status_outbox_event BEFORE INSERT ON tenant_registry.outbox_events          FOR EACH ROW EXECUTE FUNCTION tenant_registry.reject_test_status_outbox_event();",
+    )
+    .execute(&migration_pool)
+    .await
+    .expect("tenant status Outbox failure trigger is installed");
+    let tenant_before_status_outbox_failure: (String, i64) =
+        sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
+            .bind(created_tenant_id)
+            .fetch_one(&migration_pool)
+            .await
+            .expect("tenant state before status Outbox failure is queryable");
+    let status_outbox_failure = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &operator_csrf_cookie)
+        .header("x-correlation-id", "corr_tenant_status_outbox_failure")
+        .json(&serde_json::json!({
+            "status": "active",
+            "reason": "Injected Outbox failure must roll back",
+            "expected_version": tenant_before_status_outbox_failure.1
+        }))
+        .send()
+        .await
+        .expect("tenant status Outbox failure receives an HTTP response");
+    assert_eq!(
+        status_outbox_failure.status(),
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    let tenant_after_status_outbox_failure: (String, i64) =
+        sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
+            .bind(created_tenant_id)
+            .fetch_one(&migration_pool)
+            .await
+            .expect("tenant state after status Outbox failure is queryable");
+    assert_eq!(
+        tenant_after_status_outbox_failure, tenant_before_status_outbox_failure,
+        "status and version must roll back when the Outbox write fails"
+    );
+    let failed_status_history_rows: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM tenant_registry.status_history WHERE tenant_id=$1 AND version=$2",
+    )
+    .bind(created_tenant_id)
+    .bind(tenant_before_status_outbox_failure.1 + 1)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("failed status Outbox write leaves no history row");
+    assert_eq!(failed_status_history_rows, 0);
+    sqlx::raw_sql(
+        "DROP TRIGGER reject_test_status_outbox_event ON tenant_registry.outbox_events;          DROP FUNCTION tenant_registry.reject_test_status_outbox_event();",
+    )
+    .execute(&migration_pool)
+    .await
+    .expect("tenant status failure trigger is removed");
     let tenant_admin_status = client
         .post(format!("http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"))
         .header(header::ORIGIN, &origin)
@@ -1723,6 +1835,62 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         "invalid API key values and types must not persist API keys"
     );
 
+    sqlx::raw_sql(
+        "CREATE OR REPLACE FUNCTION identity_access.reject_test_api_key_outbox_event() RETURNS trigger          LANGUAGE plpgsql AS $ BEGIN          IF NEW.correlation_id = 'corr_api_key_outbox_failure' THEN              RAISE EXCEPTION 'injected API key Outbox failure';          END IF; RETURN NEW; END; $;          CREATE TRIGGER reject_test_api_key_outbox_event BEFORE INSERT ON identity_access.outbox_events          FOR EACH ROW EXECUTE FUNCTION identity_access.reject_test_api_key_outbox_event();",
+    )
+    .execute(&migration_pool)
+    .await
+    .expect("API key Outbox failure trigger is installed");
+    let api_keys_before_outbox_failure: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM identity_access.api_keys")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("API key count before Outbox failure is queryable");
+    let api_key_outbox_failure = client
+        .post(format!(
+            "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .header("x-csrf-token", &csrf_cookie)
+        .header("x-correlation-id", "corr_api_key_outbox_failure")
+        .json(&serde_json::json!({
+            "name": "Rollback API key",
+            "environment": "test",
+            "scopes": ["payment_intents.create"]
+        }))
+        .send()
+        .await
+        .expect("API key Outbox failure receives an HTTP response");
+    assert_eq!(
+        api_key_outbox_failure.status(),
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    let api_keys_after_outbox_failure: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM identity_access.api_keys")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("API key count after Outbox failure is queryable");
+    assert_eq!(
+        api_keys_after_outbox_failure, api_keys_before_outbox_failure,
+        "API key creation must roll back when its Outbox write fails"
+    );
+    let failed_api_key_audit_rows: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM identity_access.audit_events WHERE correlation_id='corr_api_key_outbox_failure'",
+    )
+    .fetch_one(&migration_pool)
+    .await
+    .expect("failed API key transaction leaves no audit row");
+    assert_eq!(failed_api_key_audit_rows, 0);
+    sqlx::raw_sql(
+        "DROP TRIGGER reject_test_api_key_outbox_event ON identity_access.outbox_events;          DROP FUNCTION identity_access.reject_test_api_key_outbox_event();",
+    )
+    .execute(&migration_pool)
+    .await
+    .expect("API key failure trigger is removed");
     let api_key_creation = client
         .post(format!(
             "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
