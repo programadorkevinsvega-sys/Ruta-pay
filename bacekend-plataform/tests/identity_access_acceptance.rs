@@ -372,7 +372,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     );
     let client = Client::builder()
         .local_address(std::net::IpAddr::V4(test_source_ip))
-        .default_headers(default_headers)
+        .default_headers(default_headers.clone())
         .build()
         .expect("HTTP acceptance client builds");
     let email = format!("acceptance_{}@example.test", Uuid::new_v4().simple());
@@ -1572,6 +1572,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     );
     let rate_limit_client = Client::builder()
         .local_address(std::net::IpAddr::V4(rate_limit_source_ip))
+        .default_headers(default_headers)
         .build()
         .expect("isolated rate-limit HTTP client builds");
     let limited_email = format!("limited_{}@example.test", Uuid::new_v4().simple());
