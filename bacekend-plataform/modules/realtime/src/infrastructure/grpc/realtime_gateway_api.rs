@@ -273,7 +273,7 @@ async fn send_replay(
                         JournalError::CursorOutOfRange => "realtime_cursor_out_of_range".to_owned(),
                         JournalError::CursorGap => "realtime_cursor_gap".to_owned(),
                     };
-                    let retryable = matches!(error, JournalError::Database(_) | JournalError::Redis);
+                    let retryable = matches!(&error, JournalError::Database(_) | JournalError::Redis);
                     tracing::error!(event.name = "realtime.journal.replay.failed", component = "realtime", operation = "replay_journal", dependency = "postgresql", error_code, error_category = "persistence", retryable, dependency_duration_ms = started.elapsed().as_millis() as u64, correlation_id = %correlation_id);
                     let _ = sender.send(Err(map_journal_error(error))).await;
                     return Err(());
