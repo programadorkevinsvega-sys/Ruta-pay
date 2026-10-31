@@ -1615,7 +1615,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .execute(&migration_pool)
     .await
     .expect("existing identity Outbox events are deferred for isolated retry acceptance");
-    let identity_failure_namespace = format!("identity_failure_{}", Uuid::new_v4().simple());
+    let identity_failure_namespace = format!("e2e_identity_{}", Uuid::new_v4().simple());
     let identity_failure_topology =
         EventTopology::from_namespace(Some(&identity_failure_namespace))
             .expect("identity failure namespace is valid");
