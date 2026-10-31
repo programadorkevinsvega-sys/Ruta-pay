@@ -749,6 +749,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         "9{:018}",
         Uuid::new_v4().as_u128() % 1_000_000_000_000_000_000
     );
+    let tenant_slug = format!("acceptance-{}", Uuid::new_v4().simple());
     let tenant_create = client
         .post(format!("http://{http_addr}/v1/tenants"))
         .header(header::ORIGIN, &origin)
@@ -760,7 +761,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .header("x-correlation-id", "corr_tenant_onboarding")
         .json(&serde_json::json!({
             "display_name": "Acceptance tenant",
-            "slug": format!("acceptance-{}", Uuid::new_v4().simple()),
+            "slug": tenant_slug.clone(),
             "legal_identification_type": "nit",
             "legal_identification_number": legal_identification_number.clone()
         }))
@@ -805,6 +806,46 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .await
     .expect("tenant onboarding is durably queued for owner membership provisioning");
     assert!(owner_membership_event);
+    let duplicate_slug_identification = format!(
+        "8{:018}",
+        Uuid::new_v4().as_u128() % 1_000_000_000_000_000_000
+    );
+    let conflicting_slug = client
+        .post(format!("http://{http_addr}/v1/tenants"))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .header("x-csrf-token", &csrf_cookie)
+        .header("x-correlation-id", "corr_duplicate_tenant_slug")
+        .json(&serde_json::json!({
+            "display_name": "Duplicate slug tenant",
+            "slug": tenant_slug.clone(),
+            "legal_identification_type": "cc",
+            "legal_identification_number": duplicate_slug_identification
+        }))
+        .send()
+        .await
+        .expect("duplicate tenant slug returns a conflict");
+    assert_eq!(conflicting_slug.status(), StatusCode::CONFLICT);
+    let duplicate_slug_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM tenant_registry.tenants WHERE slug=$1",
+    )
+    .bind(&tenant_slug)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("duplicate slug count is queryable");
+    assert_eq!(duplicate_slug_count, 1, "tenant slug remains unique");
+    let duplicate_slug_event_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM tenant_registry.outbox_events WHERE aggregate_id=$1 AND event_type='tenant.registered'",
+    )
+    .bind(created_tenant_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("tenant registration event count is queryable");
+    assert_eq!(duplicate_slug_event_count, 1);
+
     let conflicting_document = client
         .post(format!("http://{http_addr}/v1/tenants"))
         .header(header::ORIGIN, &origin)
