@@ -195,13 +195,9 @@ mod tests {
             Err(TenantError::InvalidDisplayName)
         );
         assert!(Tenant::validate_registration("Valid tenant", "abc", "nit", "12345").is_ok());
-        assert!(Tenant::validate_registration(
-            "Valid tenant",
-            &"a".repeat(64),
-            "nit",
-            "12345"
-        )
-        .is_ok());
+        assert!(
+            Tenant::validate_registration("Valid tenant", &"a".repeat(64), "nit", "12345").is_ok()
+        );
         let too_long_slug = "a".repeat(65);
         for invalid_slug in [
             "ab",
