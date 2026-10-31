@@ -116,9 +116,10 @@ async fn real_http_bff_and_grpc_module_cover_success_unavailable_and_timeout() {
     let catalog_client = CatalogPricingGrpcClient::connect(format!("http://{runtime_addr}"))
         .await
         .expect("catalog gRPC connection");
-    let entitlements_client = EntitlementsQuotasGrpcClient::connect(format!("http://{runtime_addr}"))
-        .await
-        .expect("entitlements gRPC connection");
+    let entitlements_client =
+        EntitlementsQuotasGrpcClient::connect(format!("http://{runtime_addr}"))
+            .await
+            .expect("entitlements gRPC connection");
 
     let http_listener = TcpListener::bind("127.0.0.1:0").await.expect("BFF bind");
     let http_addr = http_listener.local_addr().expect("BFF address");
@@ -282,9 +283,10 @@ async fn real_http_bff_and_grpc_module_cover_success_unavailable_and_timeout() {
     let blackhole_grpc_client = RuntimeProbeClient::new(blackhole_endpoint.connect_lazy());
     let blackhole_realtime_client =
         RealtimeGatewayGrpcClient::new(blackhole_endpoint.connect_lazy());
-    let blackhole_channel = tonic::transport::Endpoint::from_shared(format!("http://{blackhole_addr}"))
-        .expect("blackhole endpoint parses")
-        .connect_lazy();
+    let blackhole_channel =
+        tonic::transport::Endpoint::from_shared(format!("http://{blackhole_addr}"))
+            .expect("blackhole endpoint parses")
+            .connect_lazy();
     let blackhole_tenant_client = TenantRegistryGrpcClient::new(blackhole_channel.clone());
     let blackhole_catalog_client = CatalogPricingGrpcClient::new(blackhole_channel.clone());
     let blackhole_entitlements_client = EntitlementsQuotasGrpcClient::new(blackhole_channel);

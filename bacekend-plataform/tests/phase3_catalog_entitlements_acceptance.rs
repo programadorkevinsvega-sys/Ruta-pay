@@ -30,10 +30,16 @@ impl AcceptanceDatabaseCleanup {
     ) -> Result<(), sqlx::Error> {
         sqlx::query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1 AND pid<>pg_backend_pid()")
             .bind(database_name).execute(admin_pool).await?;
-        sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP DATABASE IF EXISTS \"{database_name}\"")))
-            .execute(admin_pool).await?;
-        sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP ROLE IF EXISTS \"{runtime_role}\"")))
-            .execute(admin_pool).await?;
+        sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+            "DROP DATABASE IF EXISTS \"{database_name}\""
+        )))
+        .execute(admin_pool)
+        .await?;
+        sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+            "DROP ROLE IF EXISTS \"{runtime_role}\""
+        )))
+        .execute(admin_pool)
+        .await?;
         Ok(())
     }
 }
@@ -47,9 +53,9 @@ impl Drop for AcceptanceDatabaseCleanup {
             let runtime = tokio::runtime::Handle::current();
             tokio::task::block_in_place(|| {
                 runtime.block_on(async move {
-                    Self::drop_resources(&pool, &database, &role)
-                        .await
-                        .expect("panic cleanup removes only this isolated phase three database and role");
+                    Self::drop_resources(&pool, &database, &role).await.expect(
+                        "panic cleanup removes only this isolated phase three database and role",
+                    );
                 })
             });
         }
@@ -86,10 +92,12 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
     let runtime_role = format!("phase3_{suffix}");
     let runtime_password = Uuid::new_v4().simple().to_string();
 
-    sqlx::raw_sql(sqlx::AssertSqlSafe(format!("CREATE DATABASE \"{database_name}\"")))
-        .execute(&admin_pool)
-        .await
-        .expect("isolated phase three database is created");
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+        "CREATE DATABASE \"{database_name}\""
+    )))
+    .execute(&admin_pool)
+    .await
+    .expect("isolated phase three database is created");
     let mut cleanup = AcceptanceDatabaseCleanup {
         admin_pool: admin_pool.clone(),
         database_name: database_name.clone(),
@@ -157,20 +165,23 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
     .await
     .expect("runtime role receives sequence privileges");
 
-    database_url.set_username(&runtime_role).expect("runtime role username is valid");
-    database_url.set_password(Some(&runtime_password)).expect("runtime role password is valid");
+    database_url
+        .set_username(&runtime_role)
+        .expect("runtime role username is valid");
+    database_url
+        .set_password(Some(&runtime_password))
+        .expect("runtime role password is valid");
     let runtime_pool = PgPoolOptions::new()
         .max_connections(12)
         .acquire_timeout(StdDuration::from_secs(5))
         .connect(database_url.as_str())
         .await
         .expect("restricted runtime role connects");
-    let bypass_rls: bool = sqlx::query_scalar(
-        "SELECT rolbypassrls FROM pg_roles WHERE rolname=current_user",
-    )
-    .fetch_one(&runtime_pool)
-    .await
-    .expect("runtime role RLS attribute is readable");
+    let bypass_rls: bool =
+        sqlx::query_scalar("SELECT rolbypassrls FROM pg_roles WHERE rolname=current_user")
+            .fetch_one(&runtime_pool)
+            .await
+            .expect("runtime role RLS attribute is readable");
     assert!(!bypass_rls, "application role must not bypass RLS");
 
     let catalog = CatalogService::new(runtime_pool.clone());
@@ -185,13 +196,26 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
     let correlation = "phase3_real_postgres_acceptance";
 
     let plan = catalog
-        .create_plan(actor, "acceptance-plan", "Acceptance Plan", "real database acceptance", correlation)
+        .create_plan(
+            actor,
+            "acceptance-plan",
+            "Acceptance Plan",
+            "real database acceptance",
+            correlation,
+        )
         .await
         .expect("plan creation persists through the application service");
     let price_one = catalog
         .publish_price_version(
-            actor, plan.id, "USD", 1200, "month", 1, price_start,
-            Some(future_start), correlation,
+            actor,
+            plan.id,
+            "USD",
+            1200,
+            "month",
+            1,
+            price_start,
+            Some(future_start),
+            correlation,
         )
         .await
         .expect("first immutable price version is published");
@@ -205,11 +229,25 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
         .await
         .expect("capability snapshot is persisted");
     entitlements
-        .assign_plan(actor, tenant_one, price_one.id, price_start, None, correlation)
+        .assign_plan(
+            actor,
+            tenant_one,
+            price_one.id,
+            price_start,
+            None,
+            correlation,
+        )
         .await
         .expect("first tenant receives the plan");
     entitlements
-        .assign_plan(actor, tenant_two, price_one.id, price_start, None, correlation)
+        .assign_plan(
+            actor,
+            tenant_two,
+            price_one.id,
+            price_start,
+            None,
+            correlation,
+        )
         .await
         .expect("second tenant receives the same plan");
 
@@ -223,25 +261,64 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
     assert_eq!(initial.remaining, Some(5));
 
     let (after_four, replayed) = entitlements
-        .consume(actor, tenant_one, "payments.monthly", "test", 4, "phase3-payment-001", now, correlation)
+        .consume(
+            actor,
+            tenant_one,
+            "payments.monthly",
+            "test",
+            4,
+            "phase3-payment-001",
+            now,
+            correlation,
+        )
         .await
         .expect("usage below the quota is accepted");
     assert!(!replayed);
     assert_eq!(after_four.consumed, 4);
     let (replayed_result, replayed) = entitlements
-        .consume(actor, tenant_one, "payments.monthly", "test", 4, "phase3-payment-001", now, correlation)
+        .consume(
+            actor,
+            tenant_one,
+            "payments.monthly",
+            "test",
+            4,
+            "phase3-payment-001",
+            now,
+            correlation,
+        )
         .await
         .expect("identical idempotent replay returns the recorded result");
     assert!(replayed);
     assert_eq!(replayed_result.consumed, 4);
     let conflict = entitlements
-        .consume(actor, tenant_one, "payments.monthly", "test", 3, "phase3-payment-001", now, correlation)
+        .consume(
+            actor,
+            tenant_one,
+            "payments.monthly",
+            "test",
+            3,
+            "phase3-payment-001",
+            now,
+            correlation,
+        )
         .await
         .expect_err("idempotency key cannot be reused with different operation data");
-    assert!(is_domain_error(conflict, EntitlementError::IdempotencyConflict));
+    assert!(is_domain_error(
+        conflict,
+        EntitlementError::IdempotencyConflict
+    ));
 
     let (at_limit, replayed) = entitlements
-        .consume(actor, tenant_one, "payments.monthly", "test", 1, "phase3-payment-002", now, correlation)
+        .consume(
+            actor,
+            tenant_one,
+            "payments.monthly",
+            "test",
+            1,
+            "phase3-payment-002",
+            now,
+            correlation,
+        )
         .await
         .expect("consumption exactly at the limit is accepted");
     assert!(!replayed);
@@ -249,13 +326,31 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
     assert!(!at_limit.allowed);
     assert_eq!(at_limit.remaining, Some(0));
     let exceeded = entitlements
-        .consume(actor, tenant_one, "payments.monthly", "test", 1, "phase3-payment-003", now, correlation)
+        .consume(
+            actor,
+            tenant_one,
+            "payments.monthly",
+            "test",
+            1,
+            "phase3-payment-003",
+            now,
+            correlation,
+        )
         .await
         .expect_err("consumption above the limit is rejected");
     assert!(is_domain_error(exceeded, EntitlementError::QuotaExceeded));
 
     let (overage, _) = entitlements
-        .consume(actor, tenant_one, "reports.export", "test", 2, "phase3-overage-001", now, correlation)
+        .consume(
+            actor,
+            tenant_one,
+            "reports.export",
+            "test",
+            2,
+            "phase3-overage-001",
+            now,
+            correlation,
+        )
         .await
         .expect("allow-overage policy records usage above the configured limit");
     assert!(overage.allowed);
@@ -269,17 +364,45 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
     assert!(!restricted.allowed);
     assert_eq!(restricted.reason, "environment_restricted");
     assert!(
-        entitlements.evaluate(actor, tenant_one, "live.feature", "live", now).await
-            .expect("live environment is accepted").allowed
+        entitlements
+            .evaluate(actor, tenant_one, "live.feature", "live", now)
+            .await
+            .expect("live environment is accepted")
+            .allowed
     );
 
     let (concurrent_a, concurrent_b) = tokio::join!(
-        entitlements.consume(actor, tenant_two, "payments.monthly", "test", 3, "phase3-race-a", now, correlation),
-        entitlements.consume(actor, tenant_two, "payments.monthly", "test", 3, "phase3-race-b", now, correlation),
+        entitlements.consume(
+            actor,
+            tenant_two,
+            "payments.monthly",
+            "test",
+            3,
+            "phase3-race-a",
+            now,
+            correlation
+        ),
+        entitlements.consume(
+            actor,
+            tenant_two,
+            "payments.monthly",
+            "test",
+            3,
+            "phase3-race-b",
+            now,
+            correlation
+        ),
     );
-    assert_eq!(usize::from(concurrent_a.is_ok()) + usize::from(concurrent_b.is_ok()), 1,
-        "only one concurrent transaction may consume three units from a five-unit quota");
-    let rejected = if let Err(error) = concurrent_a { error } else { concurrent_b.expect_err("one concurrent quota transaction is rejected") };
+    assert_eq!(
+        usize::from(concurrent_a.is_ok()) + usize::from(concurrent_b.is_ok()),
+        1,
+        "only one concurrent transaction may consume three units from a five-unit quota"
+    );
+    let rejected = if let Err(error) = concurrent_a {
+        error
+    } else {
+        concurrent_b.expect_err("one concurrent quota transaction is rejected")
+    };
     assert!(is_domain_error(rejected, EntitlementError::QuotaExceeded));
     let concurrent_usage = entitlements
         .evaluate(actor, tenant_two, "payments.monthly", "test", now)
@@ -288,15 +411,37 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
     assert_eq!(concurrent_usage.consumed, 3);
 
     let price_two = catalog
-        .publish_price_version(actor, plan.id, "USD", 1500, "month", 1, future_start, None, correlation)
+        .publish_price_version(
+            actor,
+            plan.id,
+            "USD",
+            1500,
+            "month",
+            1,
+            future_start,
+            None,
+            correlation,
+        )
         .await
         .expect("future price version is published without mutating the previous version");
     entitlements
-        .set_capabilities(actor, price_two.id, &[capability("payments.monthly", Some(10), "all", "deny")], correlation)
+        .set_capabilities(
+            actor,
+            price_two.id,
+            &[capability("payments.monthly", Some(10), "all", "deny")],
+            correlation,
+        )
         .await
         .expect("new price version receives a new immutable capability snapshot");
     entitlements
-        .assign_plan(actor, tenant_one, price_two.id, future_start, None, correlation)
+        .assign_plan(
+            actor,
+            tenant_one,
+            price_two.id,
+            future_start,
+            None,
+            correlation,
+        )
         .await
         .expect("future plan assignment closes the previous effective assignment");
     let before_change = entitlements
@@ -304,7 +449,13 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
         .await
         .expect("historical plan remains effective before the scheduled change");
     let after_change = entitlements
-        .evaluate(actor, tenant_one, "payments.monthly", "test", future_start + Duration::seconds(1))
+        .evaluate(
+            actor,
+            tenant_one,
+            "payments.monthly",
+            "test",
+            future_start + Duration::seconds(1),
+        )
         .await
         .expect("new plan version becomes effective at the scheduled instant");
     assert_eq!(before_change.price_version_id, price_one.id);
@@ -315,9 +466,15 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
         .evaluate(actor, tenant_unassigned, "payments.monthly", "test", now)
         .await
         .expect_err("another tenant cannot inherit a tenant's plan or usage");
-    assert!(is_domain_error(unassigned, EntitlementError::CapabilityUnavailable));
+    assert!(is_domain_error(
+        unassigned,
+        EntitlementError::CapabilityUnavailable
+    ));
 
-    let mut tenant_scope = runtime_pool.begin().await.expect("tenant scope transaction begins");
+    let mut tenant_scope = runtime_pool
+        .begin()
+        .await
+        .expect("tenant scope transaction begins");
     sqlx::query("SELECT set_config('app.tenant_id',$1,true)")
         .bind(tenant_one.to_string())
         .execute(&mut *tenant_scope)
@@ -338,15 +495,33 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
     .fetch_one(&mut *tenant_scope)
     .await
     .expect("foreign tenant assignment query executes under RLS");
-    assert_eq!(foreign_assignments, 0, "RLS hides another tenant's assignments");
-    tenant_scope.rollback().await.expect("tenant scope transaction rolls back");
+    assert_eq!(
+        foreign_assignments, 0,
+        "RLS hides another tenant's assignments"
+    );
+    tenant_scope
+        .rollback()
+        .await
+        .expect("tenant scope transaction rolls back");
 
-    let audit_count: i64 = sqlx::query_scalar("SELECT count(*) FROM entitlements_quotas.audit_events")
-        .fetch_one(&migration_pool).await.expect("audit records are queryable by the migration role");
-    let outbox_count: i64 = sqlx::query_scalar("SELECT count(*) FROM entitlements_quotas.outbox_events")
-        .fetch_one(&migration_pool).await.expect("outbox records are queryable by the migration role");
-    assert!(audit_count >= 5, "sensitive entitlement and usage actions are audited");
-    assert!(outbox_count >= 5, "business events are committed with their state changes");
+    let audit_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM entitlements_quotas.audit_events")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("audit records are queryable by the migration role");
+    let outbox_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM entitlements_quotas.outbox_events")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("outbox records are queryable by the migration role");
+    assert!(
+        audit_count >= 5,
+        "sensitive entitlement and usage actions are audited"
+    );
+    assert!(
+        outbox_count >= 5,
+        "business events are committed with their state changes"
+    );
 
     runtime_pool.close().await;
     migration_pool.close().await;

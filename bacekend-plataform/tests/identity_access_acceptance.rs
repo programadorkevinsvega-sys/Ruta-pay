@@ -239,13 +239,19 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             ("tenant_admin".to_owned(), "api_keys.manage".to_owned()),
             ("tenant_admin".to_owned(), "members.manage".to_owned()),
             ("tenant_admin".to_owned(), "tenant.read".to_owned()),
-            ("tenant_admin".to_owned(), "tenant.settings.manage".to_owned()),
+            (
+                "tenant_admin".to_owned(),
+                "tenant.settings.manage".to_owned()
+            ),
             ("tenant_admin".to_owned(), "usage.consume".to_owned()),
             ("tenant_admin".to_owned(), "usage.read".to_owned()),
             ("tenant_owner".to_owned(), "api_keys.manage".to_owned()),
             ("tenant_owner".to_owned(), "members.manage".to_owned()),
             ("tenant_owner".to_owned(), "tenant.read".to_owned()),
-            ("tenant_owner".to_owned(), "tenant.settings.manage".to_owned()),
+            (
+                "tenant_owner".to_owned(),
+                "tenant.settings.manage".to_owned()
+            ),
             ("tenant_owner".to_owned(), "usage.consume".to_owned()),
             ("tenant_owner".to_owned(), "usage.read".to_owned()),
             ("viewer".to_owned(), "tenant.read".to_owned()),
@@ -263,14 +269,20 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         operator_role_permissions,
         vec![
             ("platform_owner".to_owned(), "catalog.manage".to_owned()),
-            ("platform_owner".to_owned(), "operators.bootstrap".to_owned()),
+            (
+                "platform_owner".to_owned(),
+                "operators.bootstrap".to_owned()
+            ),
             ("platform_owner".to_owned(), "tenants.activate".to_owned()),
             ("platform_owner".to_owned(), "tenants.close".to_owned()),
             ("platform_owner".to_owned(), "tenants.read".to_owned()),
             ("platform_owner".to_owned(), "tenants.suspend".to_owned()),
             ("platform_owner".to_owned(), "tenants.verify".to_owned()),
             ("platform_security".to_owned(), "catalog.manage".to_owned()),
-            ("platform_security".to_owned(), "tenants.activate".to_owned()),
+            (
+                "platform_security".to_owned(),
+                "tenants.activate".to_owned()
+            ),
             ("platform_security".to_owned(), "tenants.close".to_owned()),
             ("platform_security".to_owned(), "tenants.read".to_owned()),
             ("platform_security".to_owned(), "tenants.suspend".to_owned()),
