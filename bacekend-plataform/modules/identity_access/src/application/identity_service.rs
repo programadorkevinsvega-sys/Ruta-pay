@@ -82,15 +82,9 @@ impl IdentityService {
         .execute(&mut *transaction)
         .await?;
         sqlx::query(
-            "INSERT INTO identity_access.audit_events (event_id,actor_kind,actor_id,tenant_id,action,resource_id,outcome,correlation_id,trace_id,safe_details) VALUES ($1,'system',NULL,$2,'api_key.authorization.checked',$3,$4,$5,$6,$7)",
+            "INSERT INTO identity_access.audit_events (event_id, actor_kind, actor_id, action, resource_id, outcome, correlation_id, trace_id) VALUES ($1, 'tenant_user', $2, 'tenant_user.registered', $2, 'completed', $3, $4)",
         )
         .bind(Uuid::new_v4())
-        .bind(tenant_id)
-        .bind(key_id)
-        .bind(if allowed { "allowed" } else { "denied" })
-        .bind(correlation_id)
-        .bind(payvia_observability::current_trace_id())
-        .bind(serde_json::json!({        .bind(Uuid::new_v4())
         .bind(user_id)
         .bind(correlation_id)
         .bind(payvia_observability::current_trace_id())
@@ -772,13 +766,11 @@ impl IdentityService {
             stored_environment == environment && scopes.iter().any(|scope| scope == required_scope);
 
         sqlx::query(
-            "INSERT INTO identity_access.audit_events \\
-             (event_id,actor_kind,actor_id,tenant_id,action,resource_id,outcome,correlation_id,trace_id,safe_details) \\
-             VALUES ($1,'system',$2,$3,'api_key.authorization.checked',$2,$4,$5,$6,$7)",
+            "INSERT INTO identity_access.audit_events (event_id,actor_kind,actor_id,tenant_id,action,resource_id,outcome,correlation_id,trace_id,safe_details) VALUES ($1,'system',NULL,$2,'api_key.authorization.checked',$3,$4,$5,$6,$7)",
         )
         .bind(Uuid::new_v4())
-        .bind(key_id)
         .bind(tenant_id)
+        .bind(key_id)
         .bind(if allowed { "allowed" } else { "denied" })
         .bind(correlation_id)
         .bind(payvia_observability::current_trace_id())
