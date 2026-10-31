@@ -3,6 +3,7 @@ use payvia_platform_bff::{
 };
 use payvia_platform_core::{config::AppConfig, metrics, shutdown_signal, telemetry};
 use platform_contracts::identity_access::identity_access_client::IdentityAccessClient as IdentityAccessGrpcClient;
+use platform_contracts::catalog_pricing::catalog_pricing_client::CatalogPricingClient as CatalogPricingGrpcClient;
 use platform_contracts::realtime::realtime_gateway_client::RealtimeGatewayClient as RealtimeGatewayGrpcClient;
 use platform_contracts::runtime::runtime_probe_client::RuntimeProbeClient as RuntimeProbeGrpcClient;
 use platform_contracts::tenant_registry::tenant_registry_client::TenantRegistryClient as TenantRegistryGrpcClient;
@@ -97,15 +98,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
     let runtime_listener = bind_listener(config.grpc_addr, "platform_runtime", "bind_grpc").await?;
     let runtime_addr = runtime_listener.local_addr()?;
-    let identity_module_client = IdentityAccessGrpcClient::new(
-        Endpoint::from_shared(format!("http://{runtime_addr}"))?.connect_lazy(),
-    );
+    let runtime_channel = Endpoint::from_shared(format!("http://{runtime_addr}"))?.connect_lazy();
+    let identity_module_client = IdentityAccessGrpcClient::new(runtime_channel.clone());
+    let catalog_module_client = CatalogPricingGrpcClient::new(runtime_channel.clone());
+    let tenant_module_client = TenantRegistryGrpcClient::new(runtime_channel);
     let runtime_task = tokio::spawn(serve_runtime(
         runtime_listener,
         database_pool,
         redis_manager,
         redis_client,
         identity_module_client,
+        catalog_module_client,
+        tenant_module_client,
         shutdown_rx.clone(),
     ));
     let endpoint = Endpoint::from_shared(format!("http://{runtime_addr}"))?
@@ -218,6 +222,8 @@ async fn serve_runtime(
     redis_manager: redis::aio::ConnectionManager,
     redis_client: redis::Client,
     identity_client: IdentityAccessGrpcClient<tonic::transport::Channel>,
+    catalog_client: CatalogPricingGrpcClient<tonic::transport::Channel>,
+    tenant_client: TenantRegistryGrpcClient<tonic::transport::Channel>,
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<(), tonic::transport::Error> {
     let span = tracing::info_span!("grpc.server", component = "platform_runtime");
@@ -228,6 +234,8 @@ async fn serve_runtime(
             redis_manager,
             redis_client,
             identity_client,
+            catalog_client,
+            tenant_client,
             async move {
                 let _ = shutdown.changed().await;
             },
