@@ -800,8 +800,8 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .header(header::ORIGIN, &origin)
         .header("x-correlation-id", "corr_operator_login")
         .json(&serde_json::json!({
-            "email": operator_email,
-            "password": operator_password
+            "email": operator_email.clone(),
+            "password": operator_password.clone()
         }))
         .send()
         .await
@@ -2113,8 +2113,8 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .header(header::ORIGIN, &origin)
         .header("x-correlation-id", "corr_operator_matrix_login")
         .json(&serde_json::json!({
-            "email": operator_email,
-            "password": operator_password
+            "email": operator_email.clone(),
+            "password": operator_password.clone()
         }))
         .send()
         .await
