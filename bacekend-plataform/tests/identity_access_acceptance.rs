@@ -442,7 +442,10 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .fetch_one(&migration_pool)
     .await
     .expect("registration event count is queryable");
-    assert_eq!(duplicate_event_count, 1, "duplicate registration emits no event");
+    assert_eq!(
+        duplicate_event_count, 1,
+        "duplicate registration emits no event"
+    );
 
     // Two simultaneous registrations for the same normalized email must have
     // exactly one winner, even when both requests pass the rate limiter.
