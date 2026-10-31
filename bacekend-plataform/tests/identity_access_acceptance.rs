@@ -829,13 +829,12 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("duplicate tenant slug returns a conflict");
     assert_eq!(conflicting_slug.status(), StatusCode::CONFLICT);
-    let duplicate_slug_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM tenant_registry.tenants WHERE slug=$1",
-    )
-    .bind(&tenant_slug)
-    .fetch_one(&migration_pool)
-    .await
-    .expect("duplicate slug count is queryable");
+    let duplicate_slug_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants WHERE slug=$1")
+            .bind(&tenant_slug)
+            .fetch_one(&migration_pool)
+            .await
+            .expect("duplicate slug count is queryable");
     assert_eq!(duplicate_slug_count, 1, "tenant slug remains unique");
     let duplicate_slug_event_count: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM tenant_registry.outbox_events WHERE aggregate_id=$1 AND event_type='tenant.registered'",
