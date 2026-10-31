@@ -18,6 +18,9 @@ use crate::domain::{
 const SESSION_LIFETIME: Duration = Duration::from_secs(12 * 60 * 60);
 const LOGIN_WINDOW_SECONDS: u64 = 60;
 const LOGIN_WINDOW_LIMIT: u64 = 10;
+const REGISTRATION_WINDOW_SECONDS: u64 = 300;
+const REGISTRATION_ACCOUNT_LIMIT: i64 = 5;
+const REGISTRATION_IP_LIMIT: i64 = 20;
 
 #[derive(Clone)]
 pub struct IdentityService {
@@ -34,10 +37,13 @@ impl IdentityService {
         &self,
         email: &str,
         password: &str,
+        source_ip: &str,
         correlation_id: &str,
         traceparent: Option<&str>,
     ) -> Result<Uuid, IdentityError> {
         let email = EmailAddress::parse(email)?;
+        self.enforce_registration_rate_limit(email.as_str(), source_ip)
+            .await?;
         validate_password(password)?;
         let password_owned = password.to_owned();
         let password_hash = tokio::task::spawn_blocking(move || hash_password(&password_owned))
@@ -332,6 +338,55 @@ impl IdentityService {
             csrf_token: SecretToken(csrf_token),
             expires_at,
         })
+    }
+
+    async fn enforce_registration_rate_limit(
+        &self,
+        email: &str,
+        source_ip: &str,
+    ) -> Result<(), IdentityError> {
+        let source_ip = source_ip
+            .parse::<std::net::IpAddr>()
+            .map_err(|_| IdentityError::SourceAddressInvalid)?;
+        let account_digest = Sha256::digest(email.as_bytes());
+        let ip_digest = Sha256::digest(source_ip.to_string().as_bytes());
+        let account_key = format!(
+            "platform:identity:registration:account:{}",
+            URL_SAFE_NO_PAD.encode(account_digest)
+        );
+        let ip_key = format!(
+            "platform:identity:registration:ip:{}",
+            URL_SAFE_NO_PAD.encode(ip_digest)
+        );
+
+        // Increment both counters and set their expirations atomically so concurrent
+        // registration requests cannot bypass the fixed-window limit.
+        const RATE_LIMIT_SCRIPT: &str = r#"
+            local account_count = redis.call('INCR', KEYS[1])
+            if account_count == 1 then
+                redis.call('EXPIRE', KEYS[1], ARGV[1])
+            end
+            local ip_count = redis.call('INCR', KEYS[2])
+            if ip_count == 1 then
+                redis.call('EXPIRE', KEYS[2], ARGV[1])
+            end
+            return {account_count, ip_count}
+        "#;
+        let mut connection = self.redis.clone();
+        let (account_count, ip_count): (i64, i64) = redis::cmd("EVAL")
+            .arg(RATE_LIMIT_SCRIPT)
+            .arg(2)
+            .arg(&account_key)
+            .arg(&ip_key)
+            .arg(REGISTRATION_WINDOW_SECONDS)
+            .query_async(&mut connection)
+            .await
+            .map_err(IdentityError::Redis)?;
+
+        if account_count > REGISTRATION_ACCOUNT_LIMIT || ip_count > REGISTRATION_IP_LIMIT {
+            return Err(IdentityError::RateLimited);
+        }
+        Ok(())
     }
 
     async fn enforce_login_rate_limit(
