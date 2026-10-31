@@ -254,6 +254,14 @@ pub async fn replay_events(
     headers: HeaderMap,
 ) -> Response {
     let correlation = correlation_id(&headers);
+    if !matches!(query.audience.as_str(), "tenant" | "platform") {
+        return tenant_grpc_error(
+            tonic::Status::invalid_argument("realtime audience is invalid"),
+            "replay_realtime_events",
+            &correlation,
+            0,
+        );
+    }
     let Some((session, csrf)) = realtime_credentials(&headers, &query.audience) else {
         return auth_error(correlation);
     };
@@ -304,6 +312,14 @@ pub async fn websocket_events(
     let correlation = correlation_id(&headers);
     if !identity::valid_origin(&headers) {
         return csrf_error(correlation);
+    }
+    if !matches!(query.audience.as_str(), "tenant" | "platform") {
+        return tenant_grpc_error(
+            tonic::Status::invalid_argument("realtime audience is invalid"),
+            "subscribe_realtime_events",
+            &correlation,
+            0,
+        );
     }
     let Some((session, csrf)) = realtime_credentials(&headers, &query.audience) else {
         return auth_error(correlation);
