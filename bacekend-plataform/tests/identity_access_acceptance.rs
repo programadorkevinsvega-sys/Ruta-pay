@@ -361,7 +361,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         "operator bootstrap is durable for realtime"
     );
 
-    let redis_client = redis::Client::open(redis_url).expect("Redis URL parses");
+    let redis_client = redis::Client::open(redis_url.clone()).expect("Redis URL parses");
     let redis_manager = redis::aio::ConnectionManager::new(redis_client.clone())
         .await
         .expect("real development Redis accepts a connection");
