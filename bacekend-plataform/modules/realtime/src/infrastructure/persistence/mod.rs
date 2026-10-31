@@ -41,6 +41,10 @@ pub enum JournalError {
     Redis,
     #[error("journal event has an invalid persisted format")]
     InvalidPersistedEvent,
+    #[error("realtime cursor is outside the retained scope")]
+    CursorOutOfRange,
+    #[error("realtime journal contains a cursor gap")]
+    CursorGap,
 }
 
 pub async fn persist_event(pool: &PgPool, envelope: &EventEnvelope) -> Result<bool, JournalError> {
@@ -159,6 +163,25 @@ pub async fn replay(
         .bind(tenant_id.map_or_else(String::new, |tenant_id| tenant_id.to_string()))
         .execute(&mut *transaction)
         .await?;
+    if after_cursor < 0 {
+        return Err(JournalError::CursorOutOfRange);
+    }
+    let scope_key = match audience {
+        "tenant" => format!("tenant:{}", tenant_id.ok_or(JournalError::InvalidEnvelope)?),
+        "platform" => "platform".to_owned(),
+        _ => return Err(JournalError::InvalidEnvelope),
+    };
+    let current_cursor = sqlx::query_scalar::<_, i64>(
+        "SELECT cursor FROM realtime.scope_cursors WHERE scope_key=$1",
+    )
+    .bind(scope_key)
+    .fetch_optional(&mut *transaction)
+    .await?
+    .unwrap_or(0);
+    if after_cursor > current_cursor {
+        return Err(JournalError::CursorOutOfRange);
+    }
+
     let rows = match audience {
         "tenant" => sqlx::query(
             "SELECT tenant_cursor AS cursor,event_id,event_type,aggregate_id,aggregate_version,audience,tenant_id,correlation_id,payload FROM realtime.event_journal \
@@ -180,6 +203,13 @@ pub async fn replay(
         _ => return Err(JournalError::InvalidEnvelope),
     };
     let events = rows.iter().map(map_event).collect::<Result<Vec<_>, _>>()?;
+    let mut expected_cursor = after_cursor.saturating_add(1);
+    for event in &events {
+        if event.cursor != expected_cursor {
+            return Err(JournalError::CursorGap);
+        }
+        expected_cursor = event.cursor.saturating_add(1);
+    }
     transaction.commit().await?;
     Ok(events)
 }
