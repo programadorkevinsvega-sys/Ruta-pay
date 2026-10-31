@@ -61,19 +61,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Start authenticated Redis for acceptance tests
         run: |
-          docker run --detach --name payvia-platform-test-redis --publish 6379:6379 redis:8-alpine \
+          docker run --detach --name payvia-shared-infra-redis-1 --publish 6379:6379 redis:8-alpine \
             redis-server --requirepass "$REDIS_PASSWORD"
           for attempt in $(seq 1 30); do
-            if docker exec -e REDISCLI_AUTH="$REDIS_PASSWORD" payvia-platform-test-redis redis-cli ping | grep -q PONG; then
+            if docker exec -e REDISCLI_AUTH="$REDIS_PASSWORD" payvia-shared-infra-redis-1 redis-cli ping | grep -q PONG; then
               exit 0
             fi
             sleep 1
           done
-          docker logs payvia-platform-test-redis
+          docker logs payvia-shared-infra-redis-1
           exit 1
       - name: Start authenticated JetStream for acceptance tests
         run: |
-          docker run --detach --name payvia-platform-test-nats --publish 4222:4222 nats:2-alpine \
+          docker run --detach --name payvia-shared-infra-nats-1 --publish 4222:4222 nats:2-alpine \
             -js --user "$NATS_USER" --pass "$NATS_PASSWORD"
           for attempt in $(seq 1 30); do
             if nc -z 127.0.0.1 4222; then
@@ -81,7 +81,7 @@ jobs:
             fi
             sleep 1
           done
-          docker logs payvia-platform-test-nats
+          docker logs payvia-shared-infra-nats-1
           exit 1
       - name: Format
         run: cargo fmt --all -- --check
@@ -127,6 +127,9 @@ jobs:
       - name: Browser E2E — platform frontend
         working-directory: frontends/frontend-plataform
         run: npm run test:e2e
+      - name: Browser E2E — multi-replica realtime recovery
+        working-directory: frontends/frontend-plataform
+        run: npm run test:e2e:recovery
       - name: Remove temporary E2E environment
         if: always()
         run: rm -f bacekend-plataform/.env
