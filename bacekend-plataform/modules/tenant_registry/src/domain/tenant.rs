@@ -202,9 +202,10 @@ mod tests {
             "12345"
         )
         .is_ok());
+        let too_long_slug = "a".repeat(65);
         for invalid_slug in [
             "ab",
-            &"a".repeat(65),
+            too_long_slug.as_str(),
             "-abc",
             "abc-",
             "a--b",
@@ -234,13 +235,14 @@ mod tests {
             Tenant::normalize_identification_number(&"1".repeat(20)),
             Ok("1".repeat(20))
         );
+        let too_long_identification = "1".repeat(21);
         for invalid in [
             "-12345",
             "12345-",
             "12--345",
             "12..345",
             "1234",
-            &"1".repeat(21),
+            too_long_identification.as_str(),
             "12A345",
         ] {
             assert_eq!(
