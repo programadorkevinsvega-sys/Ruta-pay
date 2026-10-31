@@ -230,13 +230,17 @@ impl IdentityAccess for IdentityAccessApi {
         let tenant_id = parse_uuid(&body.tenant_id, "tenant identifier")?;
         async move {
             let started = std::time::Instant::now();
-            match self.service.authorize_api_key_operation(
-                &body.secret,
-                tenant_id,
-                &body.environment,
-                &body.required_scope,
-                &correlation_id,
-            ).await {
+            match self
+                .service
+                .authorize_api_key_operation(
+                    &body.secret,
+                    tenant_id,
+                    &body.environment,
+                    &body.required_scope,
+                    &correlation_id,
+                )
+                .await
+            {
                 Ok(authorization) => {
                     tracing::info!(
                         event.name = "grpc.module.response",
