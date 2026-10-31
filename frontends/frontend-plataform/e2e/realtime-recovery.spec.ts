@@ -35,6 +35,7 @@ test("el BFF recupera realtime tras reiniciar Redis y JetStream", async ({ brows
   const userPassword = `Recovery-password-${suffix}Aa!`;
   const tenantName = `Recovery tenant ${suffix}`;
   const tenantSlug = `recovery-${suffix}`;
+  const legalIdentificationNumber = `9${Date.now()}${suffix.slice(0, 10)}`.slice(0, 20);
   const origin = process.env.PAYVIA_E2E_FRONTEND_ORIGIN ?? "http://localhost:4173";
   const registration = await request.post("/v1/identity/register", {
     headers: { Origin: origin, "X-Correlation-ID": crypto.randomUUID() },
@@ -51,7 +52,12 @@ test("el BFF recupera realtime tras reiniciar Redis y JetStream", async ({ brows
   expect(csrf).toBeDefined();
   const creation = await request.post("/v1/tenants", {
     headers: { Origin: origin, "X-CSRF-Token": csrf!.value, "X-Correlation-ID": crypto.randomUUID() },
-    data: { display_name: tenantName, slug: tenantSlug },
+    data: {
+      display_name: tenantName,
+      slug: tenantSlug,
+      legal_identification_type: "nit",
+      legal_identification_number: legalIdentificationNumber,
+    },
   });
   expect(creation.status(), await creation.text()).toBe(201);
 
