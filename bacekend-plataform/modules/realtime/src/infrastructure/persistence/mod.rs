@@ -203,15 +203,20 @@ pub async fn replay(
         _ => return Err(JournalError::InvalidEnvelope),
     };
     let events = rows.iter().map(map_event).collect::<Result<Vec<_>, _>>()?;
+    validate_cursor_sequence(after_cursor, &events)?;
+    transaction.commit().await?;
+    Ok(events)
+}
+
+fn validate_cursor_sequence(after_cursor: i64, events: &[JournalEvent]) -> Result<(), JournalError> {
     let mut expected_cursor = after_cursor.saturating_add(1);
-    for event in &events {
+    for event in events {
         if event.cursor != expected_cursor {
             return Err(JournalError::CursorGap);
         }
         expected_cursor = event.cursor.saturating_add(1);
     }
-    transaction.commit().await?;
-    Ok(events)
+    Ok(())
 }
 
 fn map_event(row: &PgRow) -> Result<JournalEvent, JournalError> {
@@ -251,3 +256,49 @@ pub const MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate::Migrator {
     create_schemas: std::borrow::Cow::Borrowed(&[std::borrow::Cow::Borrowed("realtime")]),
     ..sqlx::migrate!("infrastructure/persistence/migrations")
 };
+
+
+#[cfg(test)]
+mod cursor_tests {
+    use super::*;
+
+    fn event(cursor: i64) -> JournalEvent {
+        JournalEvent {
+            cursor,
+            event_id: Uuid::new_v4(),
+            event_type: "tenant.registered".to_owned(),
+            aggregate_id: Uuid::new_v4(),
+            aggregate_version: 1,
+            audience: "tenant".to_owned(),
+            tenant_id: Some(Uuid::new_v4()),
+            correlation_id: "cursor-test".to_owned(),
+            payload: serde_json::json!({}),
+        }
+    }
+
+    #[test]
+    fn replay_accepts_a_contiguous_cursor_sequence() {
+        assert!(validate_cursor_sequence(4, &[event(5), event(6), event(7)]).is_ok());
+    }
+
+    #[test]
+    fn replay_rejects_a_missing_cursor_in_the_middle() {
+        assert!(matches!(
+            validate_cursor_sequence(4, &[event(5), event(7)]),
+            Err(JournalError::CursorGap)
+        ));
+    }
+
+    #[test]
+    fn replay_rejects_a_gap_before_the_first_returned_event() {
+        assert!(matches!(
+            validate_cursor_sequence(4, &[event(6)]),
+            Err(JournalError::CursorGap)
+        ));
+    }
+
+    #[test]
+    fn replay_accepts_an_empty_page_at_the_current_cursor() {
+        assert!(validate_cursor_sequence(7, &[]).is_ok());
+    }
+}
