@@ -203,18 +203,31 @@ pub async fn replay(
         _ => return Err(JournalError::InvalidEnvelope),
     };
     let events = rows.iter().map(map_event).collect::<Result<Vec<_>, _>>()?;
-    validate_cursor_sequence(after_cursor, &events)?;
+    validate_cursor_sequence(
+        after_cursor,
+        current_cursor,
+        &events,
+        events.len() < limit as usize,
+    )?;
     transaction.commit().await?;
     Ok(events)
 }
 
-fn validate_cursor_sequence(after_cursor: i64, events: &[JournalEvent]) -> Result<(), JournalError> {
+fn validate_cursor_sequence(
+    after_cursor: i64,
+    current_cursor: i64,
+    events: &[JournalEvent],
+    page_complete: bool,
+) -> Result<(), JournalError> {
     let mut expected_cursor = after_cursor.saturating_add(1);
     for event in events {
         if event.cursor != expected_cursor {
             return Err(JournalError::CursorGap);
         }
         expected_cursor = event.cursor.saturating_add(1);
+    }
+    if page_complete && expected_cursor <= current_cursor {
+        return Err(JournalError::CursorGap);
     }
     Ok(())
 }
@@ -278,13 +291,13 @@ mod cursor_tests {
 
     #[test]
     fn replay_accepts_a_contiguous_cursor_sequence() {
-        assert!(validate_cursor_sequence(4, &[event(5), event(6), event(7)]).is_ok());
+        assert!(validate_cursor_sequence(4, 7, &[event(5), event(6), event(7)], true).is_ok());
     }
 
     #[test]
     fn replay_rejects_a_missing_cursor_in_the_middle() {
         assert!(matches!(
-            validate_cursor_sequence(4, &[event(5), event(7)]),
+            validate_cursor_sequence(4, 7, &[event(5), event(7)], true),
             Err(JournalError::CursorGap)
         ));
     }
@@ -292,13 +305,26 @@ mod cursor_tests {
     #[test]
     fn replay_rejects_a_gap_before_the_first_returned_event() {
         assert!(matches!(
-            validate_cursor_sequence(4, &[event(6)]),
+            validate_cursor_sequence(4, 7, &[event(6)], true),
+            Err(JournalError::CursorGap)
+        ));
+    }
+
+    #[test]
+    fn replay_rejects_a_gap_when_all_remaining_events_are_missing() {
+        assert!(matches!(
+            validate_cursor_sequence(4, 7, &[], true),
             Err(JournalError::CursorGap)
         ));
     }
 
     #[test]
     fn replay_accepts_an_empty_page_at_the_current_cursor() {
-        assert!(validate_cursor_sequence(7, &[]).is_ok());
+        assert!(validate_cursor_sequence(7, 7, &[], true).is_ok());
+    }
+
+    #[test]
+    fn replay_allows_a_full_page_before_the_scope_cursor() {
+        assert!(validate_cursor_sequence(4, 7, &[event(5), event(6)], false).is_ok());
     }
 }
