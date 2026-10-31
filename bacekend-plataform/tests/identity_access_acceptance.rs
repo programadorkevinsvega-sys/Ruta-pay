@@ -515,10 +515,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("overlong email is rejected at the HTTP boundary");
     assert_eq!(invalid_email.status(), StatusCode::BAD_REQUEST);
-    let invalid_passwords = vec![
-        "Short-1!".to_owned(),
-        format!("{}A1!", "a".repeat(126)),
-    ];
+    let invalid_passwords = vec!["Short-1!".to_owned(), format!("{}A1!", "a".repeat(126))];
     for invalid_password in invalid_passwords {
         let response = client
             .post(format!("http://{http_addr}/v1/identity/register"))
@@ -1236,8 +1233,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .await
     .expect("identity Outbox state after PostgreSQL failure is queryable");
     assert_eq!(
-        pending_identity_after_database_failure,
-        pending_identity_before_database_failure,
+        pending_identity_after_database_failure, pending_identity_before_database_failure,
         "identity Outbox PostgreSQL failure must not partially claim or consume events"
     );
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
@@ -1373,8 +1369,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .execute(&migration_pool)
     .await
     .expect("existing identity Outbox events are deferred for isolated retry acceptance");
-    let identity_failure_namespace =
-        format!("identity_failure_{}", Uuid::new_v4().simple());
+    let identity_failure_namespace = format!("identity_failure_{}", Uuid::new_v4().simple());
     let identity_failure_topology =
         EventTopology::from_namespace(Some(&identity_failure_namespace))
             .expect("identity failure namespace is valid");
@@ -1414,10 +1409,8 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .ensure_stream(&jetstream)
         .await
         .expect("identity JetStream stream is restored for retry");
-    sqlx::query(
-        "UPDATE identity_access.outbox_events SET available_at=now() WHERE event_id=$1",
-    )
-    .bind(identity_failed_event_id)
+    sqlx::query("UPDATE identity_access.outbox_events SET available_at=now() WHERE event_id=$1")
+        .bind(identity_failed_event_id)
     .execute(&migration_pool)
     .await
     .expect("identity failed event becomes eligible after dependency recovery");
@@ -2715,7 +2708,9 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             match tenant_realtime_subscription.message().await {
                 Err(status) => break status,
                 Ok(Some(_event)) => continue,
-                Ok(None) => panic!("tenant realtime subscription must report authorization revocation"),
+                Ok(None) => {
+                    panic!("tenant realtime subscription must report authorization revocation")
+                }
             }
         }
     })
@@ -3257,7 +3252,10 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .send()
         .await
         .expect("wrong expected_version JSON type is rejected");
-    assert_eq!(wrong_version_type.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        wrong_version_type.status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
 
     let invalid_status_value = client
         .post(format!(
@@ -3379,7 +3377,10 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .send()
         .await
         .expect("wrong tenant DTO field type is rejected");
-    assert_eq!(invalid_tenant_dto.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        invalid_tenant_dto.status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
 
     let tenant_after_invalid_transitions: (String, i64) =
         sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
@@ -3693,9 +3694,8 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .execute(&migration_pool)
         .await
         .expect("platform owner role is restored for concurrent lifecycle acceptance");
-    let race_status_url = format!(
-        "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
-    );
+    let race_status_url =
+        format!("http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status");
     let race_cookie = format!(
         "payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"
     );
@@ -3744,8 +3744,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("optimistic-lock race returns a safe conflict envelope");
     assert_eq!(
-        race_conflict_body["error"]["code"],
-        "tenant_state_conflict",
+        race_conflict_body["error"]["code"], "tenant_state_conflict",
         "the losing request must be classified as a stale-version conflict"
     );
     let race_final_state: (String, i64) =
@@ -3863,7 +3862,11 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             .await
             .expect("tenant Outbox worker reclaims an expired lease")
         };
-        assert_eq!(claimed.len(), 1, "only the expired {schema} event is eligible");
+        assert_eq!(
+            claimed.len(),
+            1,
+            "only the expired {schema} event is eligible"
+        );
         let claimed_event = &claimed[0];
         assert_eq!(claimed_event.event_id, event_id);
         assert_ne!(claimed_event.lease_token, stale_lease);
