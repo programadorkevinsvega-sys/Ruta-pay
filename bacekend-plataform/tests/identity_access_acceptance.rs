@@ -477,8 +477,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .await
     .expect("identity and session counts after Origin rejection are queryable");
     assert_eq!(
-        identity_state_after_origin_rejection,
-        identity_state_before_origin_rejection,
+        identity_state_after_origin_rejection, identity_state_before_origin_rejection,
         "untrusted Origin must not create identities or sessions"
     );
     let weak_password_email = format!("weak_password_{}@example.test", Uuid::new_v4().simple());
@@ -1580,10 +1579,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .send()
         .await
         .expect("missing CSRF token rejects API key revocation");
-    assert_eq!(
-        csrf_rejected_api_key_revoke.status(),
-        StatusCode::FORBIDDEN
-    );
+    assert_eq!(csrf_rejected_api_key_revoke.status(), StatusCode::FORBIDDEN);
     let revoked_key_status: String = sqlx::query_scalar(
         "SELECT status FROM identity_access.api_keys WHERE tenant_id=$1 AND id=$2",
     )
@@ -2661,13 +2657,12 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
 
     // Exercise activation and both close transitions on a separate tenant.
     // platform_support must be denied; platform_security may activate and close.
-    let second_tenant_initial_state: (String, i64) = sqlx::query_as(
-        "SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1",
-    )
-    .bind(second_tenant_id)
-    .fetch_one(&migration_pool)
-    .await
-    .expect("second tenant lifecycle state is queryable");
+    let second_tenant_initial_state: (String, i64) =
+        sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
+            .bind(second_tenant_id)
+            .fetch_one(&migration_pool)
+            .await
+            .expect("second tenant lifecycle state is queryable");
     assert_eq!(
         second_tenant_initial_state,
         ("pending_verification".to_owned(), 1)
@@ -2790,17 +2785,13 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("platform security can finish tenant close");
     assert_eq!(security_closed.status(), StatusCode::OK);
-    let second_tenant_closed_state: (String, i64) = sqlx::query_as(
-        "SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1",
-    )
-    .bind(second_tenant_id)
-    .fetch_one(&migration_pool)
-    .await
-    .expect("closed tenant lifecycle state is queryable");
-    assert_eq!(
-        second_tenant_closed_state,
-        ("closed".to_owned(), 4)
-    );
+    let second_tenant_closed_state: (String, i64) =
+        sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
+            .bind(second_tenant_id)
+            .fetch_one(&migration_pool)
+            .await
+            .expect("closed tenant lifecycle state is queryable");
+    assert_eq!(second_tenant_closed_state, ("closed".to_owned(), 4));
     sqlx::query("UPDATE identity_access.operator_users SET role='platform_owner' WHERE id=$1")
         .bind(operator_id)
         .execute(&migration_pool)
