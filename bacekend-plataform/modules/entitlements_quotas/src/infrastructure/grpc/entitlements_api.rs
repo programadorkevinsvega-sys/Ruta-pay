@@ -4,7 +4,8 @@ use platform_contracts::{
     entitlements_quotas::{
         entitlements_quotas_server::EntitlementsQuotas,
         AssignTenantPlanRequest, AssignTenantPlanResponse, CapabilityInput, ConsumeQuotaRequest,
-        ConsumeQuotaResponse, GetTenantEntitlementRequest, SetPlanCapabilitiesRequest,
+        ConsumeQuotaResponse, GetTenantEntitlementRequest, ListTenantEntitlementsRequest,
+        ListTenantEntitlementsResponse, SetPlanCapabilitiesRequest,
         SetPlanCapabilitiesResponse, TenantEntitlementResponse,
     },
     identity_access::{
@@ -112,6 +113,17 @@ impl EntitlementsQuotas for EntitlementsQuotasApi {
         let at = if body.effective_at.is_empty() { Utc::now() } else { parse_time(&body.effective_at)? };
         let result = self.service.evaluate(actor, tenant, &body.capability_key, &body.environment, at).await.map_err(map_error)?;
         Ok(Response::new(entitlement_response(result)))
+    }
+
+    async fn list_tenant_entitlements(&self, request: Request<ListTenantEntitlementsRequest>) -> Result<Response<ListTenantEntitlementsResponse>, Status> {
+        let body = request.into_inner();
+        let tenant = parse_uuid(&body.tenant_id)?;
+        let actor = self.authorize_tenant(body.session_token, body.csrf_token, tenant, "usage.read", body.correlation_id).await?;
+        let at = if body.effective_at.is_empty() { Utc::now() } else { parse_time(&body.effective_at)? };
+        let entitlements = self.service.list(actor, tenant, &body.environment, at).await.map_err(map_error)?;
+        Ok(Response::new(ListTenantEntitlementsResponse {
+            entitlements: entitlements.into_iter().map(entitlement_response).collect(),
+        }))
     }
 
     async fn consume_quota(&self, request: Request<ConsumeQuotaRequest>) -> Result<Response<ConsumeQuotaResponse>, Status> {

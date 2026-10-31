@@ -87,6 +87,24 @@ impl EntitlementService {
         Ok(build_entitlement(tenant, price_version, key, enabled, limit, policy, allowed_environment, environment, consumed, period_start, period_end))
     }
 
+    pub async fn list(&self, actor: Uuid, tenant: Uuid, environment: &str, at: DateTime<Utc>) -> Result<Vec<Entitlement>, EntitlementServiceError> {
+        validate_environment(environment)?;
+        let mut tx = self.pool.begin().await?;
+        set_tenant_context(&mut tx, tenant, actor).await?;
+        let keys = sqlx::query_scalar::<_, String>(
+            "SELECT c.capability_key FROM entitlements_quotas.tenant_plan_assignments a
+             JOIN entitlements_quotas.plan_capabilities c ON c.price_version_id=a.price_version_id
+             WHERE a.tenant_id=$1 AND a.effective_from <= $2 AND (a.effective_until IS NULL OR a.effective_until > $2)
+             ORDER BY c.capability_key"
+        ).bind(tenant).bind(at).fetch_all(&mut *tx).await?;
+        tx.commit().await?;
+        let mut entitlements = Vec::with_capacity(keys.len());
+        for key in keys {
+            entitlements.push(self.evaluate(actor, tenant, &key, environment, at).await?);
+        }
+        Ok(entitlements)
+    }
+
     pub async fn consume(&self, actor: Uuid, tenant: Uuid, key: &str, environment: &str, quantity: i64, idempotency_key: &str, now: DateTime<Utc>, correlation_id: &str) -> Result<(Entitlement,bool), EntitlementServiceError> {
         validate_consumption(quantity,idempotency_key)?;
         validate_environment(environment)?;
