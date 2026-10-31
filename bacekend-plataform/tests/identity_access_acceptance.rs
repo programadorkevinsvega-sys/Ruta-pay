@@ -1153,15 +1153,14 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         published_count > 0,
         "outbox events are acknowledged durably after dependency recovery"
     );
-    let retried_event_state: (Option<chrono::DateTime<chrono::Utc>>, Option<String>) =
-        sqlx::query_as(
-            "SELECT published_at,last_error_code FROM tenant_registry.outbox_events WHERE event_id=$1",
-        )
-        .bind(registration_event_id)
-        .fetch_one(&migration_pool)
-        .await
-        .expect("retried Outbox event state is queryable");
-    assert!(retried_event_state.0.is_some());
+    let retried_event_state: (bool, Option<String>) = sqlx::query_as(
+        "SELECT published_at IS NOT NULL,last_error_code FROM tenant_registry.outbox_events WHERE event_id=$1",
+    )
+    .bind(registration_event_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("retried Outbox event state is queryable");
+    assert!(retried_event_state.0);
     assert!(retried_event_state.1.is_none());
     let isolated_stream = jetstream
         .get_stream(&isolated_topology.stream_name)
@@ -1349,15 +1348,15 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect_err("API key cannot authorize a different tenant");
     assert_eq!(cross_tenant_api_key.code(), tonic::Code::Unauthenticated);
-    let api_key_last_used: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
-        "SELECT last_used_at FROM identity_access.api_keys WHERE tenant_id=$1 AND id=$2",
+    let api_key_last_used: bool = sqlx::query_scalar(
+        "SELECT last_used_at IS NOT NULL FROM identity_access.api_keys WHERE tenant_id=$1 AND id=$2",
     )
     .bind(created_tenant_id)
     .bind(api_key_id)
     .fetch_one(&migration_pool)
     .await
     .expect("successful scoped authorization updates last_used_at");
-    assert!(api_key_last_used.is_some());
+    assert!(api_key_last_used);
 
     let foreign_api_key_list = client
         .get(format!(
