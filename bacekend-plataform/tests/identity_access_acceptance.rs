@@ -1821,9 +1821,9 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .header(header::ORIGIN, &origin)
         .header(
             header::COOKIE,
-            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}; payvia_tenant_csrf={csrf_cookie}"),
         )
-        .header("x-csrf-token", &operator_csrf_cookie)
+        .header("x-csrf-token", &csrf_cookie)
         .json(&serde_json::json!({
             "name": "Wrong actor",
             "environment": "test",
