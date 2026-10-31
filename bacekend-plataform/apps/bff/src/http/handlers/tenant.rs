@@ -480,9 +480,21 @@ fn tenant_grpc_error(
             "not_found",
             false,
         ),
-        tonic::Code::Aborted | tonic::Code::FailedPrecondition => (
+        tonic::Code::OutOfRange => (
+            StatusCode::RANGE_NOT_SATISFIABLE,
+            "realtime_cursor_out_of_range",
+            "validation",
+            false,
+        ),
+        tonic::Code::Aborted => (
             StatusCode::CONFLICT,
             "tenant_state_conflict",
+            "conflict",
+            false,
+        ),
+        tonic::Code::FailedPrecondition => (
+            StatusCode::CONFLICT,
+            "realtime_cursor_gap",
             "conflict",
             false,
         ),
