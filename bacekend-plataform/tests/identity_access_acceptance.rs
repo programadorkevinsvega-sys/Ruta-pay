@@ -1211,6 +1211,41 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             .to_string()
             .contains(&legal_identification_number)
     );
+    let tenant_session_platform_list = client
+        .get(format!("http://{http_addr}/v1/platform/tenants?limit=10&offset=0"))
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("tenant session cannot enumerate platform tenants");
+    assert_eq!(
+        tenant_session_platform_list.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let tenant_session_platform_mutation = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .header("x-csrf-token", &csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "active",
+            "reason": "Tenant cannot administer platform state",
+            "expected_version": 1
+        }))
+        .send()
+        .await
+        .expect("tenant session cannot mutate platform tenant state");
+    assert_eq!(
+        tenant_session_platform_mutation.status(),
+        StatusCode::FORBIDDEN
+    );
     let tenant_list = client
         .get(format!("http://{http_addr}/v1/platform/tenants?query=Acceptance&limit=10&offset=0"))
         .header(
@@ -1762,6 +1797,44 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         created_tenant_id.to_string()
     );
     assert_eq!(memberships_body["memberships"][0]["role"], "tenant_owner");
+
+    let operator_session_api_key_list = client
+        .get(format!(
+            "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
+        ))
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("operator session cannot use tenant API key endpoints");
+    assert_eq!(
+        operator_session_api_key_list.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let operator_session_api_key_create = client
+        .post(format!(
+            "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "name": "Wrong actor",
+            "environment": "test",
+            "scopes": ["payment_intents.create"]
+        }))
+        .send()
+        .await
+        .expect("operator session cannot create tenant API keys");
+    assert_eq!(
+        operator_session_api_key_create.status(),
+        StatusCode::UNAUTHORIZED
+    );
 
     let api_keys_before_invalid_dtos: i64 =
         sqlx::query_scalar("SELECT count(*) FROM identity_access.api_keys")
@@ -2713,7 +2786,12 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .expect("future realtime cursor receives a classified response");
     assert_eq!(future_cursor.status(), StatusCode::RANGE_NOT_SATISFIABLE);
 
-    for invalid_cursor in ["-1", "not-a-number", "18446744073709551616"] {
+    for invalid_cursor in [
+        "-1",
+        "not-a-number",
+        "9223372036854775808",
+        "18446744073709551616",
+    ] {
         let invalid_cursor_response = client
             .get(format!("{replay_url}&cursor={invalid_cursor}"))
             .header(
@@ -3441,6 +3519,28 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("status transition without a meaningful reason is rejected");
     assert_eq!(missing_status_reason.status(), StatusCode::BAD_REQUEST);
+    let invalid_reasons = vec!["ab".to_owned(), "r".repeat(501)];
+    for invalid_reason in invalid_reasons {
+        let response = client
+            .post(format!(
+                "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+            ))
+            .header(header::ORIGIN, &origin)
+            .header(
+                header::COOKIE,
+                format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+            )
+            .header("x-csrf-token", &matrix_operator_csrf_cookie)
+            .json(&serde_json::json!({
+                "status": "suspended",
+                "reason": invalid_reason,
+                "expected_version": current_status_version
+            }))
+            .send()
+            .await
+            .expect("out-of-range lifecycle reason receives an HTTP response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
 
     let stale_status_version = client
         .post(format!(
@@ -3542,6 +3642,22 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             "invalid pagination query {invalid_query} must be rejected"
         );
     }
+    let oversized_tenant_query = client
+        .get(format!(
+            "http://{http_addr}/v1/platform/tenants?query={}",
+            "q".repeat(121)
+        ))
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("oversized tenant search query receives an HTTP response");
+    assert_eq!(
+        oversized_tenant_query.status(),
+        StatusCode::BAD_REQUEST
+    );
 
     let tenants_before_invalid_dtos: i64 =
         sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants")
