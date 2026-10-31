@@ -1620,7 +1620,6 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .expect("IP-limited registration response arrives");
     assert_eq!(ip_limited.status(), StatusCode::TOO_MANY_REQUESTS);
 
-
     let event_values: Vec<String> = captured_events
         .lock()
         .expect("event capture lock")
