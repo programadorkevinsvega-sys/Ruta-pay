@@ -2829,6 +2829,61 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .expect("platform owner can reactivate a suspended tenant");
     assert_eq!(owner_status_change.status(), StatusCode::OK);
 
+    // Invalid reasons and stale optimistic-lock versions must be rejected
+    // before changing the tenant aggregate or its version.
+    let missing_status_reason = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .header("x-correlation-id", "corr_tenant_status_missing_reason")
+        .json(&serde_json::json!({
+            "status": "suspended",
+            "reason": " ",
+            "expected_version": 4
+        }))
+        .send()
+        .await
+        .expect("status transition without a meaningful reason is rejected");
+    assert_eq!(missing_status_reason.status(), StatusCode::BAD_REQUEST);
+
+    let stale_status_version = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .header("x-correlation-id", "corr_tenant_status_stale_version")
+        .json(&serde_json::json!({
+            "status": "suspended",
+            "reason": "This stale transition must not be applied",
+            "expected_version": 3
+        }))
+        .send()
+        .await
+        .expect("stale tenant status version is rejected");
+    assert_eq!(stale_status_version.status(), StatusCode::CONFLICT);
+    let tenant_after_invalid_transitions: (String, i64) =
+        sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
+            .bind(created_tenant_id)
+            .fetch_one(&migration_pool)
+            .await
+            .expect("tenant state after invalid transitions is queryable");
+    assert_eq!(
+        tenant_after_invalid_transitions,
+        ("active".to_owned(), 4),
+        "invalid reason and stale version leave tenant state unchanged"
+    );
+
     // Exercise activation and both close transitions on a separate tenant.
     // platform_support must be denied; platform_security may activate and close.
     let second_tenant_initial_state: (String, i64) =
