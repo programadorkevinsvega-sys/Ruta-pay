@@ -190,11 +190,11 @@ async fn grant_runtime_privileges(
         "DO $$
          DECLARE role_name text := current_setting('payvia.runtime_db_role');
          BEGIN
-             EXECUTE format('GRANT USAGE ON SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas, catalog_pricing, entitlements_quotas TO %I', role_name);
-             EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas, catalog_pricing, entitlements_quotas TO %I', role_name);
-             EXECUTE format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas, catalog_pricing, entitlements_quotas TO %I', role_name);
-             EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas, catalog_pricing, entitlements_quotas GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %I', role_name);
-             EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas, catalog_pricing, entitlements_quotas GRANT USAGE, SELECT ON SEQUENCES TO %I', role_name);
+             EXECUTE format('GRANT USAGE ON SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas TO %I', role_name);
+             EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas TO %I', role_name);
+             EXECUTE format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas TO %I', role_name);
+             EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %I', role_name);
+             EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas GRANT USAGE, SELECT ON SEQUENCES TO %I', role_name);
          END $$",
     )
     .execute(&mut *transaction)

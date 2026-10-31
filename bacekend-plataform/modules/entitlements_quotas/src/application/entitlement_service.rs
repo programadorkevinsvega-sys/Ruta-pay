@@ -38,6 +38,8 @@ impl EntitlementService {
         set_operator_context(&mut tx, actor).await?;
         let tenant_lock = format!("tenant-plan-assignment:{tenant}");
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))").bind(tenant_lock).execute(&mut *tx).await?;
+        sqlx::query("UPDATE entitlements_quotas.tenant_plan_assignments SET effective_until=$2 WHERE tenant_id=$1 AND effective_from < $2 AND effective_until IS NULL")
+            .bind(tenant).bind(from).execute(&mut *tx).await?;
         let overlap: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM entitlements_quotas.tenant_plan_assignments WHERE tenant_id=$1 AND tstzrange(effective_from,effective_until,'[)') && tstzrange($2,$3,'[)'))")
             .bind(tenant).bind(from).bind(until).fetch_one(&mut *tx).await?;
         if overlap { return Err(EntitlementError::AssignmentConflict.into()); }
