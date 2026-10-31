@@ -1647,7 +1647,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .expect("identity deferred Outbox state is queryable");
     assert_eq!(
         identity_deferred_state.0.as_deref(),
-        Some("jetstream_publish_unavailable")
+        Some("jetstream_ack_unavailable")
     );
     assert!(identity_deferred_state.1);
     assert!(identity_deferred_state.2);
