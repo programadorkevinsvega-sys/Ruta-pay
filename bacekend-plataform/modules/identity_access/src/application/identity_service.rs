@@ -760,11 +760,12 @@ impl IdentityService {
         .ok_or(IdentityError::AuthenticationFailed)?;
 
         let key_id: Uuid = row.try_get("id").map_err(IdentityError::Database)?;
-        let stored_environment: String =
-            row.try_get("environment").map_err(IdentityError::Database)?;
+        let stored_environment: String = row
+            .try_get("environment")
+            .map_err(IdentityError::Database)?;
         let scopes: Vec<String> = row.try_get("scopes").map_err(IdentityError::Database)?;
-        let allowed = stored_environment == environment
-            && scopes.iter().any(|scope| scope == required_scope);
+        let allowed =
+            stored_environment == environment && scopes.iter().any(|scope| scope == required_scope);
 
         sqlx::query(
             "INSERT INTO identity_access.audit_events \\
