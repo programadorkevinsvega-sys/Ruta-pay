@@ -9,6 +9,8 @@ members = [
     "bacekend-plataform/modules/identity_access",
     "bacekend-plataform/modules/tenant_registry",
     "bacekend-plataform/modules/realtime",
+    "bacekend-plataform/modules/catalog_pricing",
+    "bacekend-plataform/modules/entitlements_quotas",
     "crates/observability",
     "bacekend-pasarela",
 ]
