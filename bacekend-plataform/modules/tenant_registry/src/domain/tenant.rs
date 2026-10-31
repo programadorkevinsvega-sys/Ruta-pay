@@ -274,4 +274,103 @@ mod tests {
             Err(TenantError::InvalidTransition)
         );
     }
+
+    #[test]
+    fn tenant_status_transition_matrix_rejects_every_unlisted_edge() {
+        use TenantStatus::*;
+        let statuses = [PendingVerification, Active, Suspended, Closing, Closed];
+        let allowed = [
+            (PendingVerification, Active),
+            (PendingVerification, Suspended),
+            (PendingVerification, Closed),
+            (Active, Suspended),
+            (Active, Closing),
+            (Suspended, Active),
+            (Suspended, Closing),
+            (Closing, Closed),
+        ];
+        for current in statuses {
+            for next in statuses {
+                assert_eq!(
+                    current.permits(next),
+                    allowed.contains(&(current, next)),
+                    "unexpected transition {} -> {}",
+                    current.as_str(),
+                    next.as_str()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tenant_transition_reason_has_inclusive_three_to_500_character_bounds() {
+        use TenantStatus::*;
+        assert_eq!(
+            Tenant::validate_transition(Active, Closing, "abc", false),
+            Ok(())
+        );
+        assert_eq!(
+            Tenant::validate_transition(Active, Closing, &"r".repeat(500), false),
+            Ok(())
+        );
+        for reason in ["", "  ", "ab", &"r".repeat(501)] {
+            assert_eq!(
+                Tenant::validate_transition(Active, Closing, reason, false),
+                Err(TenantError::MissingReason),
+                "must reject reason {reason:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn operator_is_required_for_sensitive_lifecycle_transitions() {
+        use TenantStatus::*;
+        for (current, next) in [
+            (PendingVerification, Active),
+            (Active, Suspended),
+            (Suspended, Active),
+            (PendingVerification, Closed),
+            (Active, Closed),
+            (Suspended, Closed),
+            (Closing, Closed),
+        ] {
+            assert_eq!(
+                Tenant::validate_transition(current, next, "reviewed by operator", false),
+                Err(TenantError::OperatorRequired),
+                "operator must authorize {} -> {}",
+                current.as_str(),
+                next.as_str()
+            );
+            assert_eq!(
+                Tenant::validate_transition(current, next, "reviewed by operator", true),
+                Ok(()),
+                "operator may authorize {} -> {}",
+                current.as_str(),
+                next.as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn tenant_status_parser_accepts_known_values_and_rejects_unknown_values() {
+        use TenantStatus::*;
+        for (raw, expected) in [
+            ("pending_verification", PendingVerification),
+            ("active", Active),
+            ("suspended", Suspended),
+            ("closing", Closing),
+            ("closed", Closed),
+        ] {
+            assert_eq!(TenantStatus::parse(raw), Ok(expected));
+            assert_eq!(expected.as_str(), raw);
+        }
+        for invalid in ["", "pending", "ACTIVE", "deleted", "unknown"] {
+            assert_eq!(
+                TenantStatus::parse(invalid),
+                Err(TenantError::InvalidStatus),
+                "must reject status {invalid:?}"
+            );
+        }
+    }
+
 }
