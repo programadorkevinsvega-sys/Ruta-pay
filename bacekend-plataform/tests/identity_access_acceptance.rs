@@ -2111,6 +2111,164 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             .any(|value| value.contains(&second_legal_identification_number))
     );
 
+    // Exercise operator grants and real tenant administration endpoints for
+    // platform_owner, platform_security, and platform_support.
+    let operator_role_matrix = [
+        (
+            "platform_owner",
+            &[
+                "tenants.read",
+                "tenants.verify",
+                "tenants.activate",
+                "tenants.suspend",
+                "tenants.close",
+                "operators.bootstrap",
+            ][..],
+        ),
+        (
+            "platform_security",
+            &[
+                "tenants.read",
+                "tenants.verify",
+                "tenants.activate",
+                "tenants.suspend",
+                "tenants.close",
+            ][..],
+        ),
+        ("platform_support", &["tenants.read"][..]),
+    ];
+    for (role, allowed_permissions) in operator_role_matrix {
+        sqlx::query("UPDATE identity_access.operator_users SET role=$1 WHERE id=$2")
+            .bind(role)
+            .bind(operator_id)
+            .execute(&migration_pool)
+            .await
+            .expect("operator role can be switched for isolated acceptance");
+        for permission in [
+            "tenants.read",
+            "tenants.verify",
+            "tenants.activate",
+            "tenants.suspend",
+            "tenants.close",
+            "operators.bootstrap",
+        ] {
+            let decision = authorization_client
+                .authorize_operator_operation(AuthorizeOperatorOperationRequest {
+                    session_token: operator_session_cookie.clone(),
+                    csrf_token: operator_csrf_cookie.clone(),
+                    permission: permission.to_owned(),
+                    correlation_id: format!("corr_operator_role_{role}_{permission}"),
+                })
+                .await;
+            if allowed_permissions.contains(&permission) {
+                assert!(
+                    decision.is_ok(),
+                    "role {role} must be allowed permission {permission}"
+                );
+            } else {
+                assert_eq!(
+                    decision.expect_err("ungranted operator permission is denied").code(),
+                    tonic::Code::PermissionDenied,
+                    "role {role} must be denied permission {permission}"
+                );
+            }
+        }
+        let operator_tenant_list = client
+            .get(format!("http://{http_addr}/v1/platform/tenants?limit=10&offset=0"))
+            .header(
+                header::COOKIE,
+                format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+            )
+            .send()
+            .await
+            .expect("operator tenant listing responds for each role");
+        assert_eq!(
+            operator_tenant_list.status(),
+            StatusCode::OK,
+            "all operator roles have tenants.read"
+        );
+    }
+
+    // platform_support may read tenants but must not suspend them. Verify that
+    // the denial leaves both status and version unchanged.
+    let support_status_change = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "suspended",
+            "reason": "Support role must not change tenant lifecycle",
+            "expected_version": 2
+        }))
+        .send()
+        .await
+        .expect("support lifecycle mutation receives a response");
+    assert_eq!(support_status_change.status(), StatusCode::FORBIDDEN);
+    let status_after_support_denial: (String, i64) = sqlx::query_as(
+        "SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1",
+    )
+    .bind(created_tenant_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("tenant state after support denial is queryable");
+    assert_eq!(status_after_support_denial, ("active".to_owned(), 2));
+
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_security' WHERE id=$1")
+        .bind(operator_id)
+        .execute(&migration_pool)
+        .await
+        .expect("platform security role is selected for lifecycle acceptance");
+    let security_status_change = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "suspended",
+            "reason": "Authorized platform security suspension",
+            "expected_version": 2
+        }))
+        .send()
+        .await
+        .expect("platform security can suspend a tenant");
+    assert_eq!(security_status_change.status(), StatusCode::OK);
+
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_owner' WHERE id=$1")
+        .bind(operator_id)
+        .execute(&migration_pool)
+        .await
+        .expect("platform owner role is restored for lifecycle acceptance");
+    let owner_status_change = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "active",
+            "reason": "Authorized platform owner reactivation",
+            "expected_version": 3
+        }))
+        .send()
+        .await
+        .expect("platform owner can reactivate a suspended tenant");
+    assert_eq!(owner_status_change.status(), StatusCode::OK);
+
     // Mutating HTTP endpoints must reject missing CSRF tokens or untrusted origins
     // before reaching a module or changing durable state.
     let tenants_before_csrf_rejection: i64 =
