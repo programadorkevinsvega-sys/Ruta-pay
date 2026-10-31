@@ -2422,7 +2422,9 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .expect("unsupported realtime audience receives an HTTP response");
     assert_eq!(invalid_realtime_scope.status(), StatusCode::BAD_REQUEST);
     let malformed_realtime_tenant = client
-        .get("http://{http_addr}/v1/realtime/events?audience=tenant&tenant_id=not-a-uuid&cursor=0")
+        .get(format!(
+            "http://{http_addr}/v1/realtime/events?audience=tenant&tenant_id=not-a-uuid&cursor=0"
+        ))
         .header(
             header::COOKIE,
             format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
