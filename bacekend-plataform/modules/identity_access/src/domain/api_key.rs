@@ -153,4 +153,63 @@ mod tests {
         );
         assert!(diagnostic.contains("[REDACTED]"));
     }
+
+    #[test]
+    fn api_key_name_and_scope_limits_accept_edges_and_reject_out_of_range_values() {
+        let scope = "a".repeat(64);
+        let scopes = vec![scope.clone(); 16];
+        assert!(create_api_key("ab", ApiKeyEnvironment::Test, &["read".to_owned()]).is_ok());
+        assert!(create_api_key(&"n".repeat(80), ApiKeyEnvironment::Live, &["read".to_owned()]).is_ok());
+        assert!(create_api_key("valid name", ApiKeyEnvironment::Test, &scopes).is_ok());
+
+        for invalid_name in ["a", &"n".repeat(81), "bad\nname"] {
+            assert_eq!(
+                create_api_key(invalid_name, ApiKeyEnvironment::Test, &["read".to_owned()]),
+                Err(ApiKeyError::InvalidName),
+                "must reject name {invalid_name:?}"
+            );
+        }
+
+        assert_eq!(
+            create_api_key("valid name", ApiKeyEnvironment::Test, &[scope + "x"]),
+            Err(ApiKeyError::InvalidScopes)
+        );
+        let too_many_scopes = vec!["read".to_owned(); 17];
+        assert_eq!(
+            create_api_key("valid name", ApiKeyEnvironment::Test, &too_many_scopes),
+            Err(ApiKeyError::InvalidScopes)
+        );
+    }
+
+    #[test]
+    fn api_key_scopes_reject_empty_uppercase_unicode_and_unsupported_separators() {
+        for invalid_scope in ["", "Read", "read-write", "read/write", "área", "read scope"] {
+            assert_eq!(
+                create_api_key("valid name", ApiKeyEnvironment::Test, &[invalid_scope.to_owned()]),
+                Err(ApiKeyError::InvalidScopes),
+                "must reject scope {invalid_scope:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_and_live_keys_have_distinct_prefixes_and_unique_secrets() {
+        let test_key = create_api_key(
+            "test key",
+            ApiKeyEnvironment::Test,
+            &["payment_intents:read".to_owned()],
+        )
+        .expect("test key");
+        let live_key = create_api_key(
+            "live key",
+            ApiKeyEnvironment::Live,
+            &["payment_intents:read".to_owned()],
+        )
+        .expect("live key");
+        assert!(test_key.secret.starts_with("test_"));
+        assert!(live_key.secret.starts_with("live_"));
+        assert_ne!(test_key.secret, live_key.secret);
+        assert_ne!(test_key.digest, live_key.digest);
+    }
+
 }
