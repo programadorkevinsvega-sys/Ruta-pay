@@ -8,7 +8,7 @@
 >
 > Los backends comparten el workspace Cargo raíz solo para resolución/build. Cada uno tiene binario, imagen, configuración, secretos, red, artefactos operativos y despliegue independiente en su propia VM/VPS; los dos frontends también tienen despliegues separados. Los artefactos de esta aplicación pertenecen a `bacekend-plataform/deploy/`.
 >
-> Estado: Fases 0, 1 y 2 cerradas en la rama `feat/platform-phase-2-identity-tenants`. El acta de Fase 2 está en [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md). La integración a `main` queda sujeta a revisión mediante PR; las fases posteriores siguen pendientes.
+> Estado: Fases 0, 1 y 2 integradas y cerradas en `main`. La Fase 2 se integró mediante PR #2 tras pasar Format, Clippy y Tests en CI. El acta está en [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md); las fases posteriores siguen pendientes.
 
 ## Autoridad de dominio
 
@@ -175,4 +175,4 @@ Referencias oficiales para la implementación: [Wompi — ambientes y llaves](ht
 
 ## Estado
 
-Fases 0, 1 y 2 están cerradas dentro de sus alcances documentados. Las evidencias están en [`docs/phase-0/`](docs/phase-0/), [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md) y [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md). Fase 2 está completa en `feat/platform-phase-2-identity-tenants` y requiere revisión por PR antes de integrarse. Las fases posteriores siguen pendientes; cuentas sandbox, credenciales o decisiones legales faltantes se documentan como bloqueos concretos, sin simulaciones.
+Fases 0, 1 y 2 están cerradas dentro de sus alcances documentados. Las evidencias están en [`docs/phase-0/`](docs/phase-0/), [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md) y [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md). Fase 2 está integrada en `main` mediante PR #2 (squash merge). Las fases posteriores siguen pendientes; cuentas sandbox, credenciales o decisiones legales faltantes se documentan como bloqueos concretos, sin simulaciones.
