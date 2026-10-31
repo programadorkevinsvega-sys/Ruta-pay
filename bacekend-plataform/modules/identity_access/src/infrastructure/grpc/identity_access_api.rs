@@ -2,7 +2,8 @@ use crate::application::identity_service::{IdentityError, IdentityService};
 use opentelemetry::{global, propagation::Extractor, trace::TraceContextExt};
 use payvia_observability::{current_span_id, current_trace_id};
 use platform_contracts::identity_access::{
-    ApiKeyMetadata, AuthorizeOperatorOperationRequest, AuthorizeOperatorOperationResponse,
+    ApiKeyMetadata, AuthorizeApiKeyOperationRequest, AuthorizeApiKeyOperationResponse,
+    AuthorizeOperatorOperationRequest, AuthorizeOperatorOperationResponse,
     AuthorizeTenantOperationRequest, AuthorizeTenantOperationResponse, CreateApiKeyRequest,
     CreateApiKeyResponse, CreateOperatorSessionRequest, CreateOperatorSessionResponse,
     CreateTenantSessionRequest, CreateTenantSessionResponse, ListApiKeysRequest,
@@ -217,6 +218,55 @@ impl IdentityAccess for IdentityAccessApi {
                 Err(error) => Err(log_and_map(error, "revoke_api_key", &correlation_id, started.elapsed().as_millis() as u64)),
             }
         }.instrument(span).await
+    }
+
+    async fn authorize_api_key_operation(
+        &self,
+        request: Request<AuthorizeApiKeyOperationRequest>,
+    ) -> Result<Response<AuthorizeApiKeyOperationResponse>, Status> {
+        let correlation_id = request.get_ref().correlation_id.clone();
+        let span = grpc_span(&request, "authorize_api_key_operation", &correlation_id);
+        let body = request.into_inner();
+        let tenant_id = parse_uuid(&body.tenant_id, "tenant identifier")?;
+        async move {
+            let started = std::time::Instant::now();
+            match self.service.authorize_api_key_operation(
+                &body.secret,
+                tenant_id,
+                &body.environment,
+                &body.required_scope,
+                &correlation_id,
+            ).await {
+                Ok(authorization) => {
+                    tracing::info!(
+                        event.name = "grpc.module.response",
+                        component = "identity_access",
+                        operation = "authorize_api_key_operation",
+                        result = "success",
+                        tenant_id = %authorization.tenant_id,
+                        key_id = %authorization.key_id,
+                        environment = %authorization.environment,
+                        duration_total_ms = started.elapsed().as_millis() as u64,
+                        correlation_id = %correlation_id,
+                        trace_id = %current_trace_id(),
+                        span_id = %current_span_id()
+                    );
+                    Ok(Response::new(AuthorizeApiKeyOperationResponse {
+                        key_id: authorization.key_id.to_string(),
+                        tenant_id: authorization.tenant_id.to_string(),
+                        environment: authorization.environment,
+                    }))
+                }
+                Err(error) => Err(log_and_map(
+                    error,
+                    "authorize_api_key_operation",
+                    &correlation_id,
+                    started.elapsed().as_millis() as u64,
+                )),
+            }
+        }
+        .instrument(span)
+        .await
     }
 
     async fn create_operator_session(
