@@ -2217,6 +2217,23 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .expect("future realtime cursor receives a classified response");
     assert_eq!(future_cursor.status(), StatusCode::RANGE_NOT_SATISFIABLE);
 
+    for invalid_cursor in ["-1", "not-a-number", "18446744073709551616"] {
+        let invalid_cursor_response = client
+            .get(format!("{replay_url}&cursor={invalid_cursor}"))
+            .header(
+                header::COOKIE,
+                format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+            )
+            .send()
+            .await
+            .expect("malformed or negative realtime cursor receives an HTTP response");
+        assert_eq!(
+            invalid_cursor_response.status(),
+            StatusCode::BAD_REQUEST,
+            "invalid cursor {invalid_cursor} must be rejected at the HTTP boundary"
+        );
+    }
+
     let foreign_tenant_replay = client
         .get(format!(
             "http://{http_addr}/v1/realtime/events?audience=tenant&tenant_id={}&cursor=0",
@@ -2878,6 +2895,103 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("stale tenant status version is rejected");
     assert_eq!(stale_status_version.status(), StatusCode::CONFLICT);
+
+    let zero_expected_version = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "suspended",
+            "reason": "A version must be positive",
+            "expected_version": 0
+        }))
+        .send()
+        .await
+        .expect("zero expected version is rejected as invalid input");
+    assert_eq!(zero_expected_version.status(), StatusCode::BAD_REQUEST);
+
+    let wrong_version_type = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "suspended",
+            "reason": "The version must be an integer",
+            "expected_version": "not-an-integer"
+        }))
+        .send()
+        .await
+        .expect("wrong expected_version JSON type is rejected");
+    assert_eq!(wrong_version_type.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let invalid_status_value = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "unknown-state",
+            "reason": "Unknown states must not be accepted",
+            "expected_version": current_status_version
+        }))
+        .send()
+        .await
+        .expect("unknown lifecycle state is rejected");
+    assert_eq!(invalid_status_value.status(), StatusCode::BAD_REQUEST);
+
+    for invalid_query in ["limit=0", "limit=101", "offset=-1", "limit=not-a-number"] {
+        let invalid_list = client
+            .get(format!("http://{http_addr}/v1/platform/tenants?{invalid_query}"))
+            .header(
+                header::COOKIE,
+                format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+            )
+            .send()
+            .await
+            .expect("invalid tenant-list pagination receives an HTTP response");
+        assert_eq!(
+            invalid_list.status(),
+            StatusCode::BAD_REQUEST,
+            "invalid pagination query {invalid_query} must be rejected"
+        );
+    }
+
+    let invalid_tenant_dto = client
+        .post(format!("http://{http_addr}/v1/tenants"))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &second_csrf_cookie)
+        .json(&serde_json::json!({
+            "display_name": "Invalid tenant DTO",
+            "slug": 42,
+            "legal_identification_type": "nit",
+            "legal_identification_number": "123456"
+        }))
+        .send()
+        .await
+        .expect("wrong tenant DTO field type is rejected");
+    assert_eq!(invalid_tenant_dto.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
     let tenant_after_invalid_transitions: (String, i64) =
         sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
             .bind(created_tenant_id)
@@ -3159,6 +3273,99 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("expired session receives an HTTP response");
     assert_eq!(expired_session_response.status(), StatusCode::UNAUTHORIZED);
+
+    // Two lifecycle mutations using the same expected version must serialize:
+    // one commits, the other receives a version conflict regardless of which
+    // state transition wins the row lock.
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_owner' WHERE id=$1")
+        .bind(operator_id)
+        .execute(&migration_pool)
+        .await
+        .expect("platform owner role is restored for concurrent lifecycle acceptance");
+    let race_status_url = format!(
+        "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+    );
+    let race_cookie = format!(
+        "payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"
+    );
+    let (suspend_race, close_race) = tokio::join!(
+        client
+            .post(&race_status_url)
+            .header(header::ORIGIN, &origin)
+            .header(header::COOKIE, &race_cookie)
+            .header("x-csrf-token", &matrix_operator_csrf_cookie)
+            .header("x-correlation-id", "corr_tenant_status_race_suspend")
+            .json(&serde_json::json!({
+                "status": "suspended",
+                "reason": "Concurrent optimistic-lock suspension",
+                "expected_version": current_status_version
+            }))
+            .send(),
+        client
+            .post(&race_status_url)
+            .header(header::ORIGIN, &origin)
+            .header(header::COOKIE, &race_cookie)
+            .header("x-csrf-token", &matrix_operator_csrf_cookie)
+            .header("x-correlation-id", "corr_tenant_status_race_close")
+            .json(&serde_json::json!({
+                "status": "closing",
+                "reason": "Concurrent optimistic-lock close",
+                "expected_version": current_status_version
+            }))
+            .send()
+    );
+    let suspend_race = suspend_race.expect("concurrent suspension response arrives");
+    let close_race = close_race.expect("concurrent close response arrives");
+    let mut race_statuses = vec![suspend_race.status(), close_race.status()];
+    race_statuses.sort();
+    assert_eq!(
+        race_statuses,
+        vec![StatusCode::OK, StatusCode::CONFLICT],
+        "exactly one concurrent tenant status mutation may commit"
+    );
+    let race_conflict = if suspend_race.status() == StatusCode::CONFLICT {
+        suspend_race
+    } else {
+        close_race
+    };
+    let race_conflict_body: serde_json::Value = race_conflict
+        .json()
+        .await
+        .expect("optimistic-lock race returns a safe conflict envelope");
+    assert_eq!(
+        race_conflict_body["error"]["code"],
+        "tenant_state_conflict",
+        "the losing request must be classified as a stale-version conflict"
+    );
+    let race_final_state: (String, i64) =
+        sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
+            .bind(created_tenant_id)
+            .fetch_one(&migration_pool)
+            .await
+            .expect("concurrent lifecycle final state is queryable");
+    assert!(
+        matches!(race_final_state.0.as_str(), "suspended" | "closing"),
+        "one of the two requested transitions must win"
+    );
+    assert_eq!(race_final_state.1, current_status_version + 1);
+    let race_history_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM tenant_registry.status_history WHERE tenant_id=$1 AND version=$2",
+    )
+    .bind(created_tenant_id)
+    .bind(current_status_version + 1)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("single concurrent status-history row is queryable");
+    assert_eq!(race_history_count, 1);
+    let race_outbox_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM tenant_registry.outbox_events WHERE aggregate_id=$1 AND aggregate_version=$2 AND event_type='tenant.status.changed'",
+    )
+    .bind(created_tenant_id)
+    .bind(current_status_version + 1)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("single concurrent status Outbox event is queryable");
+    assert_eq!(race_outbox_count, 1);
 
     let matrix_operator_logout = client
         .delete(format!("http://{http_addr}/v1/platform/identity/session"))
