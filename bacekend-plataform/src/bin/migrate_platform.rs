@@ -123,6 +123,20 @@ async fn migrate() -> Result<(), &'static str> {
             tracing::error!(event.name="database.module_migration.failed", component="entitlements_quotas", operation="apply_migrations", dependency="postgresql", error_class=%error, error_category="persistence", retryable=false);
             "entitlements_quotas_migration_failed"
         })?;
+    platform_catalog_pricing::infrastructure::persistence::MIGRATOR
+        .run(&pool)
+        .await
+        .map_err(|error| {
+            tracing::error!(event.name="database.module_migration.failed", component="catalog_pricing", operation="apply_migrations", dependency="postgresql", error_class=%error, error_category="persistence", retryable=false);
+            "catalog_pricing_migration_failed"
+        })?;
+    platform_entitlements_quotas::infrastructure::persistence::MIGRATOR
+        .run(&pool)
+        .await
+        .map_err(|error| {
+            tracing::error!(event.name="database.module_migration.failed", component="entitlements_quotas", operation="apply_migrations", dependency="postgresql", error_class=%error, error_category="persistence", retryable=false);
+            "entitlements_quotas_migration_failed"
+        })?;
     grant_runtime_privileges(&pool, &runtime_role).await?;
     pool.close().await;
     tracing::info!(
@@ -190,11 +204,11 @@ async fn grant_runtime_privileges(
         "DO $$
          DECLARE role_name text := current_setting('payvia.runtime_db_role');
          BEGIN
-             EXECUTE format('GRANT USAGE ON SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas TO %I', role_name);
-             EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas TO %I', role_name);
-             EXECUTE format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas TO %I', role_name);
-             EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %I', role_name);
-             EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas GRANT USAGE, SELECT ON SEQUENCES TO %I', role_name);
+             EXECUTE format('GRANT USAGE ON SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas, catalog_pricing, entitlements_quotas TO %I', role_name);
+             EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas, catalog_pricing, entitlements_quotas TO %I', role_name);
+             EXECUTE format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas, catalog_pricing, entitlements_quotas TO %I', role_name);
+             EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas, catalog_pricing, entitlements_quotas GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %I', role_name);
+             EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas, catalog_pricing, entitlements_quotas GRANT USAGE, SELECT ON SEQUENCES TO %I', role_name);
          END $$",
     )
     .execute(&mut *transaction)
