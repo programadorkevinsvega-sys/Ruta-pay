@@ -50,6 +50,7 @@ impl IdentityAccess for IdentityAccessApi {
                 .register_tenant_user(
                     &body.email,
                     &body.password,
+                    &body.source_ip,
                     &correlation_id,
                     traceparent.as_deref(),
                 )
