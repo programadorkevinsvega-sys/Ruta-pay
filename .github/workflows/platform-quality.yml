@@ -16,6 +16,10 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'bacekend-plataform/**'
+      - 'frontends/**'
+      - 'AGENTS.md'
+      - 'PROJECT_RULES.md'
+      - 'ROADMAP.md'
       - '.github/workflows/platform-quality.yml'
 
 jobs:
