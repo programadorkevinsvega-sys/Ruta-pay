@@ -118,7 +118,11 @@ jobs:
           npm run build
       - name: Install Chromium for browser acceptance
         working-directory: frontends/frontend-pasarela
-        run: npx playwright install --with-deps chromium
+        env:
+          PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: 120000
+        run: |
+          timeout --signal=TERM --kill-after=30s 10m npx playwright install chromium
+          npx playwright install --list
       - name: Provision isolated browser acceptance environment
         run: |
           umask 077
