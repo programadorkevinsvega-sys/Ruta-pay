@@ -1057,7 +1057,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .await
     .expect("pending Outbox state before PostgreSQL failure is queryable");
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
-        "REVOKE UPDATE ON tenant_registry.outbox_events FROM \"{runtime_role}\"
+        "REVOKE UPDATE ON tenant_registry.outbox_events FROM \"{runtime_role}\""
     )))
     .execute(&migration_pool)
     .await
@@ -1085,7 +1085,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         "failed PostgreSQL claim must not partially lease or consume events"
     );
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
-        "GRANT UPDATE ON tenant_registry.outbox_events TO \"{runtime_role}\"
+        "GRANT UPDATE ON tenant_registry.outbox_events TO \"{runtime_role}\""
     )))
     .execute(&migration_pool)
     .await
