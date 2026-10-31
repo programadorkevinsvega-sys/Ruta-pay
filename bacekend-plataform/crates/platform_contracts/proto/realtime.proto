@@ -1,0 +1,44 @@
+syntax = "proto3";
+package payvia.platform.realtime.v1;
+
+service RealtimeGateway {
+  rpc ReplayEvents (ReplayEventsRequest) returns (ReplayEventsResponse);
+  rpc SubscribeEvents (SubscribeEventsRequest) returns (stream RealtimeEvent);
+}
+
+message ReplayEventsRequest {
+  string session_token = 1;
+  string csrf_token = 2;
+  string audience = 3;
+  string tenant_id = 4;
+  uint64 after_cursor = 5;
+  uint32 limit = 6;
+  string correlation_id = 7;
+}
+
+message ReplayEventsResponse {
+  repeated RealtimeEvent events = 1;
+  uint64 next_cursor = 2;
+  bool has_more = 3;
+}
+
+message SubscribeEventsRequest {
+  string session_token = 1;
+  string csrf_token = 2;
+  string audience = 3;
+  string tenant_id = 4;
+  uint64 after_cursor = 5;
+  string correlation_id = 6;
+}
+
+message RealtimeEvent {
+  uint64 cursor = 1;
+  string event_id = 2;
+  string event_type = 3;
+  string aggregate_id = 4;
+  uint64 aggregate_version = 5;
+  string audience = 6;
+  string tenant_id = 7;
+  string correlation_id = 8;
+  string payload_json = 9;
+}

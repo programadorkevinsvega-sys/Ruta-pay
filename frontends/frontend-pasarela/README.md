@@ -25,6 +25,7 @@ El backend de plataforma autentica al usuario, autoriza cada acción y aplica la
 ## Funcionalidades objetivo
 
 - Inicio de sesión, contexto de comercio y selección segura del entorno de prueba o producción.
+- Registro de comercio con nombre visible, slug derivado automáticamente, NIT/CC y validación de contraseña.
 - Resumen de actividad, consultas y detalle de payment intents y transacciones.
 - Creación de links de pago con monto, moneda soportada, descripción y metadata permitida; presentación del QR generado por el backend.
 - Administración de API Keys de prueba y producción: creación con visualización única, scopes y revocación, sin recuperar ni persistir el secreto en el navegador.
@@ -41,9 +42,16 @@ La app presenta la interfaz del comercio y consume solo el BFF REST/OpenAPI/WebS
 
 ## Requisitos e instalación
 
-Stack objetivo: Node.js con versión fijada, gestor de paquetes declarado por el frontend, React, TypeScript, Vite y TanStack Query. Se requiere acceso a un BFF de desarrollo y una sesión/API Key de prueba provisionada por los flujos oficiales.
+Requisitos verificados: Node.js 22.12 o superior y npm. El registro está en `/register`, el inicio de sesión en `/login` y `/` redirige al inicio de sesión. El alta crea una cuenta y comercio por REST del BFF; el slug se genera desde el nombre, y el backend guarda NIT/CC sin exponerlo en la respuesta o realtime. Las contraseñas requieren entre 12 y 128 caracteres, mayúscula, minúscula, número, símbolo y confirmación coincidente. La aplicación también presenta memberships y realtime de sesión; pagos y credenciales de pasarela siguen pendientes.
 
-La app aún no tiene `package.json`, lockfile ni servidor implementado; no existe un comando de instalación o desarrollo que pueda ejecutarse en esta revisión. Cuando se cree la aplicación, esta sección debe reemplazarse con versiones y comandos verificados. No hay URLs ni credenciales de API para configurar por ahora.
+```bash
+npm ci
+npm test
+npm run build
+npm run dev
+```
+
+La configuración pertenece a esta aplicación frontend. Copia `.env.example` a `.env` en `frontends/frontend-pasarela` y define `VITE_PLATFORM_BFF_URL` con la dirección del BFF. Vite reenvía `/v1` por ese destino y alinea `Host` y `Origin` únicamente en el proxy local para cumplir la validación same-origin del BFF. Producción requiere enrutar `/v1` por HTTPS al BFF sin alterar `Host` ni `Origin`.
 
 ## Uso de la API
 
@@ -53,7 +61,7 @@ El resultado usa un `payment_method` normalizado discriminado: `card`, `pse` o `
 
 ## Escuchar el estado en tiempo real
 
-Un coordinador central mantendrá el WebSocket autenticado del BFF para la sesión y tenant activos. Los eventos autorizados por transacción actualizan TanStack Query; el cliente deduplica por `event_id`, controla cursor/versión, reconecta con backoff y pide snapshot REST para reparar eventos perdidos. La ruta y contrato de suscripción se documentarán cuando estén publicados. La app aún no abre una conexión real.
+El coordinador central mantiene el WebSocket autenticado del BFF para la sesión y tenants activos. Los eventos autorizados actualizan TanStack Query; el cliente deduplica por `event_id`, controla cursor/versión, reconecta con backoff y recupera eventos por REST/cursor. La UI muestra estado de conexión y permite sincronización manual. Pagos todavía no están disponibles; la aceptación de identidad/realtime está registrada en el [acta de Fase 2](../../bacekend-plataform/docs/phase-2/acceptance.md).
 
 ## Webhooks hacia tu servidor
 
@@ -79,17 +87,17 @@ La plataforma usa identidad de servicio y mTLS para comunicar el comando al back
 
 ## Stack de interfaz objetivo
 
-React, TypeScript y Vite; cliente REST generado o tipado desde OpenAPI; TanStack Query para datos de servidor; coordinador central realtime; componentes accesibles y pruebas automatizadas de UI, contratos y seguridad del cliente.
-
-Las versiones, comandos, variables y procesos de build se documentarán cuando exista una aplicación ejecutable verificada. Este documento no anuncia un scaffold como funcionalidad implementada.
+React 19, TypeScript 7, Vite 8 y TanStack Query 5 con versiones fijadas en `package-lock.json`. Vitest cubre mensajes de error seguros, generación de slug, documento legal y política de contraseña; Playwright recorre registro/realtime contra el BFF real.
 
 ## Estado
 
-Planificación. No se declara disponible una pantalla o flujo hasta que su contrato de API, autorización, estados de error, pruebas y recuperación estén implementados y verificados.
+Identidad, alta de comercio/membresía y realtime recuperable están integrados con el BFF real y documentados en la Fase 2. La operación de pagos, links/QR, API Keys y configuración de pasarelas permanece pendiente en fases posteriores.
 
 ## Documentación relacionada
 
 - [Roadmap de frontend-pasarela](ROADMAP.md)
+- [ADR de rutas y flujo de registro](docs/adr/ADR-0001-flujo-y-rutas-de-registro.md)
+- [Integración de identidad tenant](docs/phase-1/integration.md)
 - [Backend de plataforma y su API](../../bacekend-plataform/README.md)
 - [Backend técnico de pasarelas](../../bacekend-pasarela/README.md)
 - [Arquitectura del producto](../../ARCHITECTURE_RULES.md)

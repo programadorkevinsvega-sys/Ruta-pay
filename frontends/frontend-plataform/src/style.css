@@ -1,0 +1,35 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  color: #e9eff8;
+  background: #0e1624;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+button, input { font: inherit; }
+.page { display: grid; min-height: 100vh; place-items: center; padding: 24px; }
+.panel { width: min(100%, 440px); padding: 36px; border: 1px solid #26364b; border-radius: 18px; background: #152235; box-shadow: 0 24px 80px #0005; }
+.eyebrow { color: #8aa9d3; font-size: .75rem; font-weight: 700; letter-spacing: .16em; }
+h1 { margin: 12px 0; font-size: 1.9rem; }
+.hint, .identity { color: #afbdd0; line-height: 1.6; }
+form { display: grid; gap: 12px; margin-top: 26px; }
+label { color: #dbe5f2; font-size: .9rem; font-weight: 600; }
+input { width: 100%; padding: 12px 14px; color: #f7faff; border: 1px solid #42546b; border-radius: 8px; background: #0e1929; }
+input:focus-visible, button:focus-visible { outline: 3px solid #72adff; outline-offset: 2px; }
+button { margin-top: 10px; padding: 12px 16px; border: 0; border-radius: 8px; color: #0e1624; background: #9cc5ff; font-weight: 700; cursor: pointer; }
+button:disabled { cursor: wait; opacity: .7; }
+button.secondary { color: #e9eff8; background: #30445e; }
+.error { margin: 12px 0; padding: 12px; border: 1px solid #dc7180; border-radius: 8px; color: #ffd6dc; background: #4b202a; }
+.error p { margin: 0 0 4px; }
+.error small { color: #f4aeb8; }
+code { overflow-wrap: anywhere; }
+.page { place-items: start center; }
+.panel { width: min(100%, 920px); margin: 4vh 0; }
+.tenant-admin { margin: 32px 0; }
+.tenant-list { display: grid; gap: 10px; }
+.tenant-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px; border: 1px solid #293959; border-radius: 10px; background: #101a32; }
+.tenant-row p { margin: 6px 0 0; color: #b8c4db; }
+.tenant-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.tenant-actions button { margin: 0; }

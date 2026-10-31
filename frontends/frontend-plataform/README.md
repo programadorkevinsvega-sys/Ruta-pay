@@ -39,9 +39,16 @@ La consola es un cliente sin autoridad de negocio. Envía requests REST/OpenAPI 
 
 ## Requisitos e instalación
 
-Stack objetivo: Node.js con versión fijada, React, TypeScript, Vite y TanStack Query. La app requiere acceso al BFF de desarrollo y una identidad de operador provisionada de forma segura.
+Requisitos verificados: Node.js 22.12 o superior y npm. La app ejecutable actual implementa inicio/cierre de sesión de operador y recuperación de sesión desde el BFF. Búsqueda y ciclo de vida de tenants aún no están publicados por el backend.
 
-Esta carpeta aún no tiene `package.json`, lockfile ni aplicación ejecutable. Por lo tanto no hay comandos de instalación, desarrollo o build que puedan afirmarse como verificados. Las versiones, variables públicas y comandos se añadirán cuando exista el scaffold funcional.
+```bash
+npm ci
+npm test
+npm run build
+npm run dev
+```
+
+La configuración pertenece a esta aplicación frontend. Copia `.env.example` a `.env` en `frontends/frontend-plataform` y define `VITE_PLATFORM_BFF_URL` con la dirección del BFF. Vite reenvía `/v1` por ese destino y alinea `Host` y `Origin` únicamente en el proxy local para cumplir la validación same-origin del BFF. Producción requiere servir `/v1` por HTTPS al BFF sin alterar `Host` ni `Origin`.
 
 ## Uso de APIs administrativas
 
@@ -70,9 +77,9 @@ Las operaciones de consola no acceden a pasarelas directamente. Plataforma auten
 
 ## Stack y estado
 
-Stack objetivo: React, TypeScript, Vite, cliente API alineado con OpenAPI, TanStack Query y coordinador realtime central. Las versiones y comandos se publicarán cuando existan y hayan sido verificados.
+React 19, TypeScript 7, Vite 8 y TanStack Query 5 con versiones fijadas en `package-lock.json`. Vitest cubre manejo seguro de diagnósticos. La UI actual es un flujo inicial de identidad y no completa las funciones administrativas ni el roadmap.
 
-Planificación. No se considera implementada una operación administrativa por existir únicamente una vista o componente: debe contar con contrato real, autorización, auditoría, estados de error, sincronización y pruebas correspondientes.
+En implementación. Tenant lifecycle, autorización visible por rol, auditoría UI, WebSocket realtime y recuperación REST por cursor siguen pendientes del contrato y runtime de backend.
 
 ## Documentación relacionada
 

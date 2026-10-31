@@ -4,14 +4,21 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+async-nats.workspace = true
 platform-contracts = { path = "../../crates/platform_contracts" }
 payvia-platform-core = { path = "../../platform" }
 payvia-observability = { path = "../../../crates/observability" }
+platform-identity-access = { path = "../identity_access" }
+platform-tenant-registry = { path = "../tenant_registry" }
+platform-realtime = { path = "../realtime" }
 opentelemetry.workspace = true
 thiserror.workspace = true
 metrics.workspace = true
 tokio-stream.workspace = true
 tokio.workspace = true
+sqlx.workspace = true
+redis.workspace = true
+serde_json.workspace = true
 tonic.workspace = true
 tracing.workspace = true
 tracing-opentelemetry.workspace = true

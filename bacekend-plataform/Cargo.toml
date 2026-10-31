@@ -3,21 +3,44 @@ name = "bacekend-plataform"
 version.workspace = true
 edition.workspace = true
 
+[[bin]]
+name = "bootstrap-platform-operator"
+path = "src/bin/bootstrap_platform_operator.rs"
+
+[[bin]]
+name = "migrate-platform"
+path = "src/bin/migrate_platform.rs"
+
+[[bin]]
+name = "cleanup-platform-e2e-stream"
+path = "src/bin/cleanup_platform_e2e_stream.rs"
+
 [dependencies]
+async-nats.workspace = true
 axum.workspace = true
 metrics-exporter-prometheus.workspace = true
 platform-contracts = { path = "crates/platform_contracts" }
 platform-runtime = { path = "modules/platform_runtime" }
 payvia-platform-bff = { path = "apps/bff" }
 payvia-platform-core = { path = "platform" }
+platform-identity-access = { path = "modules/identity_access" }
+platform-tenant-registry = { path = "modules/tenant_registry" }
+platform-realtime = { path = "modules/realtime" }
+redis.workspace = true
+rpassword.workspace = true
+sqlx.workspace = true
+url.workspace = true
 tokio.workspace = true
 tonic.workspace = true
 tracing.workspace = true
+tracing-subscriber.workspace = true
 serde_json.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
+base64.workspace = true
 reqwest = { version = "0.12", features = ["json"] }
-tracing-subscriber.workspace = true
+sha2.workspace = true
 opentelemetry.workspace = true
 opentelemetry_sdk.workspace = true
 tracing-opentelemetry.workspace = true

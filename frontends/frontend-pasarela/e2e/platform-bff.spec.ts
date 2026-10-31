@@ -1,0 +1,50 @@
+import { expect, test } from "@playwright/test";
+
+test("comercio completa onboarding en el navegador a través del BFF real", async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = window as Window & { payviaRealtimeEvents?: string[] };
+    state.payviaRealtimeEvents = [];
+    window.addEventListener("payvia:realtime-event", (event) => {
+      state.payviaRealtimeEvents?.push((event as CustomEvent<{ event_type: string }>).detail.event_type);
+    });
+  });
+  const responses: number[] = [];
+  page.on("response", (response) => { if (response.url().includes("/v1/")) responses.push(response.status()); });
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole("heading", { name: "Iniciar sesión" })).toBeVisible();
+  await page.getByRole("link", { name: "Registra tu comercio" }).click();
+  await expect(page).toHaveURL(/\/register$/);
+  await expect(page.getByRole("heading", { name: "Crear cuenta de comercio" })).toBeVisible();
+  const suffix = crypto.randomUUID().replaceAll("-", "");
+  const merchantName = `E2E Comercio ${suffix}`;
+  const legalIdentificationNumber = `${Date.now()}${String(Math.floor(Math.random() * 1_000_000)).padStart(6, "0")}`;
+  await page.getByLabel("Nombre del comercio").fill(merchantName);
+  await expect(page.getByLabel("Identificador generado")).toHaveValue(`e2e-comercio-${suffix}`);
+  await page.getByLabel("Tipo de documento").selectOption("nit");
+  await page.getByLabel("Número de NIT o CC").fill(legalIdentificationNumber);
+  await page.getByLabel("Correo").fill(`e2e-${suffix}@example.test`);
+  await page.getByLabel("Contraseña", { exact: true }).fill("long-lowercase-password");
+  await page.getByLabel("Confirmar contraseña").fill("long-lowercase-password");
+  await page.getByRole("button", { name: "Crear cuenta y comercio" }).click();
+  await expect(page.getByRole("alert")).toContainText("debe cumplir todos los requisitos");
+  await page.getByLabel("Contraseña", { exact: true }).fill(`E2e-password-${suffix}Aa!`);
+  await page.getByLabel("Confirmar contraseña").fill(`E2e-password-${suffix}Aa?`);
+  await page.getByRole("button", { name: "Crear cuenta y comercio" }).click();
+  await expect(page.getByRole("alert")).toContainText("no coinciden");
+  await page.getByLabel("Confirmar contraseña").fill(`E2e-password-${suffix}Aa!`);
+  const tenantResponsePromise = page.waitForResponse((response) => response.url().includes("/v1/tenants") && response.status() === 201);
+  await page.getByRole("button", { name: "Crear cuenta y comercio" }).click();
+  const tenantResponse = await tenantResponsePromise;
+  const tenantBody = await tenantResponse.json() as { display_name: string; slug: string };
+  expect(tenantBody.display_name).toBe(merchantName);
+  expect(tenantBody.slug).toBe(`e2e-comercio-${suffix}`);
+  expect(JSON.stringify(tenantBody)).not.toContain(legalIdentificationNumber);
+  await expect(page.getByRole("heading", { name: "Sesión autenticada" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(`E2E Comercio ${suffix}`)).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByText("tenant_owner · active")).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByText(/Tiempo real: conectado/)).toBeVisible({ timeout: 45_000 });
+  await expect.poll(() => page.evaluate(() => (window as Window & { payviaRealtimeEvents?: string[] }).payviaRealtimeEvents?.includes("tenant.registered") ?? false), { timeout: 45_000 }).toBe(true);
+  expect(responses).toContain(201);
+  expect(responses).toContain(200);
+});
