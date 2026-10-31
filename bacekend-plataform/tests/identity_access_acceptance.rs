@@ -4,8 +4,8 @@ use opentelemetry::{global, trace::TracerProvider as _};
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerProvider};
 use platform_contracts::{
     identity_access::{
-        AuthorizeOperatorOperationRequest, AuthorizeTenantOperationRequest,
-        identity_access_client::IdentityAccessClient,
+        AuthorizeApiKeyOperationRequest, AuthorizeOperatorOperationRequest,
+        AuthorizeTenantOperationRequest, identity_access_client::IdentityAccessClient,
     },
     realtime::realtime_gateway_client::RealtimeGatewayClient as RealtimeGatewayGrpcClient,
     runtime::runtime_probe_client::RuntimeProbeClient,
@@ -1219,6 +1219,65 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         Sha256::digest(api_key_secret.as_bytes()).as_slice()
     );
 
+    let scoped_api_key_authorization = identity_client
+        .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
+            secret: api_key_secret.to_owned(),
+            tenant_id: created_tenant_id.to_string(),
+            environment: "live".to_owned(),
+            required_scope: "payment_intents.create".to_owned(),
+            correlation_id: "corr_api_key_scope_allowed".to_owned(),
+        })
+        .await
+        .expect("API key with the requested scope authorizes the operation")
+        .into_inner();
+    assert_eq!(scoped_api_key_authorization.key_id, api_key_id.to_string());
+    assert_eq!(
+        scoped_api_key_authorization.tenant_id,
+        created_tenant_id.to_string()
+    );
+    let denied_api_key_scope = identity_client
+        .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
+            secret: api_key_secret.to_owned(),
+            tenant_id: created_tenant_id.to_string(),
+            environment: "live".to_owned(),
+            required_scope: "payment_intents.capture".to_owned(),
+            correlation_id: "corr_api_key_scope_denied".to_owned(),
+        })
+        .await
+        .expect_err("API key cannot authorize an operation outside its scopes");
+    assert_eq!(denied_api_key_scope.code(), tonic::Code::PermissionDenied);
+    let wrong_environment_api_key = identity_client
+        .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
+            secret: api_key_secret.to_owned(),
+            tenant_id: created_tenant_id.to_string(),
+            environment: "test".to_owned(),
+            required_scope: "payment_intents.create".to_owned(),
+            correlation_id: "corr_api_key_wrong_environment".to_owned(),
+        })
+        .await
+        .expect_err("live API key cannot authorize test environment operations");
+    assert_eq!(wrong_environment_api_key.code(), tonic::Code::Unauthenticated);
+    let cross_tenant_api_key = identity_client
+        .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
+            secret: api_key_secret.to_owned(),
+            tenant_id: Uuid::new_v4().to_string(),
+            environment: "live".to_owned(),
+            required_scope: "payment_intents.create".to_owned(),
+            correlation_id: "corr_api_key_cross_tenant".to_owned(),
+        })
+        .await
+        .expect_err("API key cannot authorize a different tenant");
+    assert_eq!(cross_tenant_api_key.code(), tonic::Code::Unauthenticated);
+    let api_key_last_used: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
+        "SELECT last_used_at FROM identity_access.api_keys WHERE tenant_id=$1 AND id=$2",
+    )
+    .bind(created_tenant_id)
+    .bind(api_key_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("successful scoped authorization updates last_used_at");
+    assert!(api_key_last_used.is_some());
+
     let foreign_api_key_list = client
         .get(format!(
             "http://{http_addr}/v1/tenants/{}/api-keys",
@@ -1278,6 +1337,20 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .await
     .expect("revocation persists in PostgreSQL");
     assert_eq!(revoked_key_status, "revoked");
+    let revoked_api_key_authorization = identity_client
+        .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
+            secret: api_key_secret.to_owned(),
+            tenant_id: created_tenant_id.to_string(),
+            environment: "live".to_owned(),
+            required_scope: "payment_intents.create".to_owned(),
+            correlation_id: "corr_api_key_revoked_denied".to_owned(),
+        })
+        .await
+        .expect_err("revoked API key cannot authorize future operations");
+    assert_eq!(
+        revoked_api_key_authorization.code(),
+        tonic::Code::Unauthenticated
+    );
     let api_key_audit: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM identity_access.audit_events WHERE resource_id=$1 AND action='api_key.created' AND outcome='completed') AND EXISTS (SELECT 1 FROM identity_access.audit_events WHERE resource_id=$1 AND action='api_key.revoked' AND outcome='completed')",
     )
