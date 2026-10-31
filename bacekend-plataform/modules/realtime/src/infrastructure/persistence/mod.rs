@@ -270,7 +270,6 @@ pub const MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate::Migrator {
     ..sqlx::migrate!("infrastructure/persistence/migrations")
 };
 
-
 #[cfg(test)]
 mod cursor_tests {
     use super::*;
