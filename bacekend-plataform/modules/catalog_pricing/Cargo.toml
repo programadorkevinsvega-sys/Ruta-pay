@@ -1,0 +1,13 @@
+[package]
+name = "platform-catalog-pricing"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+chrono.workspace = true
+platform-contracts = { path = "../../crates/platform_contracts" }
+sqlx.workspace = true
+thiserror.workspace = true
+tonic.workspace = true
+tracing.workspace = true
+uuid.workspace = true

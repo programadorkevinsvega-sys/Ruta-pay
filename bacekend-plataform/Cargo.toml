@@ -26,8 +26,6 @@ payvia-platform-core = { path = "platform" }
 platform-identity-access = { path = "modules/identity_access" }
 platform-tenant-registry = { path = "modules/tenant_registry" }
 platform-realtime = { path = "modules/realtime" }
-platform-catalog-pricing = { path = "modules/catalog_pricing" }
-platform-entitlements-quotas = { path = "modules/entitlements_quotas" }
 redis.workspace = true
 rpassword.workspace = true
 sqlx.workspace = true
@@ -46,3 +44,4 @@ sha2.workspace = true
 opentelemetry.workspace = true
 opentelemetry_sdk.workspace = true
 tracing-opentelemetry.workspace = true
+serde_json.workspace = true
