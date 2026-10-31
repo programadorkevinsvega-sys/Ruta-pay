@@ -313,7 +313,8 @@ mod tests {
             Tenant::validate_transition(Active, Closing, &"r".repeat(500), false),
             Ok(())
         );
-        for reason in ["", "  ", "ab", &"r".repeat(501)] {
+        let too_long_reason = "r".repeat(501);
+        for reason in ["", "  ", "ab", too_long_reason.as_str()] {
             assert_eq!(
                 Tenant::validate_transition(Active, Closing, reason, false),
                 Err(TenantError::MissingReason),
