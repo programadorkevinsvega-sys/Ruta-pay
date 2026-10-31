@@ -162,7 +162,8 @@ mod tests {
         assert!(create_api_key(&"n".repeat(80), ApiKeyEnvironment::Live, &["read".to_owned()]).is_ok());
         assert!(create_api_key("valid name", ApiKeyEnvironment::Test, &scopes).is_ok());
 
-        for invalid_name in ["a", &"n".repeat(81), "bad\nname"] {
+        let too_long_name = "n".repeat(81);
+        for invalid_name in ["a", too_long_name.as_str(), "bad\nname"] {
             assert_eq!(
                 create_api_key(invalid_name, ApiKeyEnvironment::Test, &["read".to_owned()]),
                 Err(ApiKeyError::InvalidName),
