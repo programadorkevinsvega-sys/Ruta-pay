@@ -1043,6 +1043,50 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let event_topology = EventTopology::from_namespace(Some(&event_namespace))
         .expect("test event namespace is valid");
 
+    // Simulate a transient PostgreSQL write failure in the Outbox relay.
+    // The failed claim must not consume or mutate events; restoring privileges
+    // lets the same pending events be processed by the next relay attempt.
+    let pending_before_database_failure: (i64, i64) = sqlx::query_as(
+        "SELECT count(*),coalesce(sum(attempts),0) FROM tenant_registry.outbox_events WHERE published_at IS NULL",
+    )
+    .fetch_one(&migration_pool)
+    .await
+    .expect("pending Outbox state before PostgreSQL failure is queryable");
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+        "REVOKE UPDATE ON tenant_registry.outbox_events FROM \\"{runtime_role}\\""
+    )))
+    .execute(&migration_pool)
+    .await
+    .expect("isolated runtime role loses Outbox update privilege for failure injection");
+    let postgres_relay_failure =
+        platform_tenant_registry::infrastructure::outbox_relay::relay_batch(
+            &runtime_pool,
+            &jetstream,
+            &event_topology.subject_prefix,
+        )
+        .await;
+    assert!(
+        postgres_relay_failure.is_err(),
+        "PostgreSQL permission failure is surfaced to the relay worker"
+    );
+    let pending_after_database_failure: (i64, i64) = sqlx::query_as(
+        "SELECT count(*),coalesce(sum(attempts),0) FROM tenant_registry.outbox_events WHERE published_at IS NULL",
+    )
+    .fetch_one(&migration_pool)
+    .await
+    .expect("pending Outbox state after PostgreSQL failure is queryable");
+    assert_eq!(
+        pending_after_database_failure,
+        pending_before_database_failure,
+        "failed PostgreSQL claim must not partially lease or consume events"
+    );
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+        "GRANT UPDATE ON tenant_registry.outbox_events TO \\"{runtime_role}\\""
+    )))
+    .execute(&migration_pool)
+    .await
+    .expect("isolated runtime role regains Outbox update privilege");
+
     // Simulate JetStream unavailability by attempting delivery before the
     // isolated stream exists. The relay must release its lease and reschedule
     // every failed event without marking it published.
