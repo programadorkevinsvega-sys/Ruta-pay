@@ -6,6 +6,10 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'bacekend-plataform/**'
+      - 'frontends/**'
+      - 'AGENTS.md'
+      - 'PROJECT_RULES.md'
+      - 'ROADMAP.md'
       - '.github/workflows/platform-quality.yml'
   pull_request:
     paths:
@@ -81,3 +85,44 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Tests
         run: cargo test --workspace
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.1
+          cache: npm
+          cache-dependency-path: |
+            frontends/frontend-pasarela/package-lock.json
+            frontends/frontend-plataform/package-lock.json
+      - name: Install and test tenant frontend
+        working-directory: frontends/frontend-pasarela
+        run: |
+          npm ci
+          npm test
+          npm run build
+      - name: Install and test platform frontend
+        working-directory: frontends/frontend-plataform
+        run: |
+          npm ci
+          npm test
+          npm run build
+      - name: Install Chromium for browser acceptance
+        working-directory: frontends/frontend-pasarela
+        run: npx playwright install --with-deps chromium
+      - name: Provision isolated browser acceptance environment
+        run: |
+          umask 077
+          cat > bacekend-plataform/.env <<EOF
+          PLATFORM_TEST_DATABASE_ADMIN_URL=$PLATFORM_TEST_DATABASE_ADMIN_URL
+          PLATFORM_REDIS_URL=$PLATFORM_REDIS_URL
+          PLATFORM_NATS_URL=$PLATFORM_NATS_URL
+          NATS_USER=$NATS_USER
+          NATS_PASSWORD=$NATS_PASSWORD
+          EOF
+      - name: Browser E2E — tenant frontend
+        working-directory: frontends/frontend-pasarela
+        run: npm run test:e2e
+      - name: Browser E2E — platform frontend
+        working-directory: frontends/frontend-plataform
+        run: npm run test:e2e
+      - name: Remove temporary E2E environment
+        if: always()
+        run: rm -f bacekend-plataform/.env
