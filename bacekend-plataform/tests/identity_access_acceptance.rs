@@ -3487,6 +3487,56 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .expect("platform owner can reactivate a suspended tenant");
     assert_eq!(owner_status_change.status(), StatusCode::OK);
 
+    let owner_suspend_status_change = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "suspended",
+            "reason": "Authorized platform owner suspension",
+            "expected_version": 4
+        }))
+        .send()
+        .await
+        .expect("platform owner can suspend a tenant");
+    assert_eq!(owner_suspend_status_change.status(), StatusCode::OK);
+
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_security' WHERE id=$1")
+        .bind(operator_id)
+        .execute(&migration_pool)
+        .await
+        .expect("platform security role is selected for lifecycle reactivation");
+    let security_reactivation = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "active",
+            "reason": "Authorized platform security reactivation",
+            "expected_version": 5
+        }))
+        .send()
+        .await
+        .expect("platform security can reactivate a suspended tenant");
+    assert_eq!(security_reactivation.status(), StatusCode::OK);
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_owner' WHERE id=$1")
+        .bind(operator_id)
+        .execute(&migration_pool)
+        .await
+        .expect("platform owner role is restored for remaining lifecycle acceptance");
+
     // Invalid reasons and stale optimistic-lock versions must be rejected
     // before changing the tenant aggregate or its version. Read the committed
     // version instead of duplicating assumptions about prior transitions.
