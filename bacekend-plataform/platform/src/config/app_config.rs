@@ -366,8 +366,8 @@ mod tests {
             assert_eq!(
                 validate_config(&config),
                 Err(ConfigError::InvalidValue {
-                variable: "APP_ENV"
-            }),
+                    variable: "APP_ENV"
+                }),
                 "{environment}"
             );
         }
@@ -475,5 +475,4 @@ mod tests {
         assert!(validate_otlp_endpoint("http://collector.internal:4317"));
         assert!(validate_otlp_endpoint("https://collector.internal:4317"));
     }
-
 }
