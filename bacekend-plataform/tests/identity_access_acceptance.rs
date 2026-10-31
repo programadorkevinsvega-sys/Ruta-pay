@@ -1303,7 +1303,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         Sha256::digest(api_key_secret.as_bytes()).as_slice()
     );
 
-    let scoped_api_key_authorization = identity_client
+    let scoped_api_key_authorization = authorization_client
         .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
             secret: api_key_secret.to_owned(),
             tenant_id: created_tenant_id.to_string(),
@@ -1319,7 +1319,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         scoped_api_key_authorization.tenant_id,
         created_tenant_id.to_string()
     );
-    let denied_api_key_scope = identity_client
+    let denied_api_key_scope = authorization_client
         .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
             secret: api_key_secret.to_owned(),
             tenant_id: created_tenant_id.to_string(),
@@ -1330,7 +1330,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect_err("API key cannot authorize an operation outside its scopes");
     assert_eq!(denied_api_key_scope.code(), tonic::Code::PermissionDenied);
-    let wrong_environment_api_key = identity_client
+    let wrong_environment_api_key = authorization_client
         .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
             secret: api_key_secret.to_owned(),
             tenant_id: created_tenant_id.to_string(),
@@ -1341,7 +1341,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect_err("live API key cannot authorize test environment operations");
     assert_eq!(wrong_environment_api_key.code(), tonic::Code::Unauthenticated);
-    let cross_tenant_api_key = identity_client
+    let cross_tenant_api_key = authorization_client
         .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
             secret: api_key_secret.to_owned(),
             tenant_id: Uuid::new_v4().to_string(),
@@ -1421,7 +1421,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .await
     .expect("revocation persists in PostgreSQL");
     assert_eq!(revoked_key_status, "revoked");
-    let revoked_api_key_authorization = identity_client
+    let revoked_api_key_authorization = authorization_client
         .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
             secret: api_key_secret.to_owned(),
             tenant_id: created_tenant_id.to_string(),
