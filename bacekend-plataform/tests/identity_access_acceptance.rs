@@ -3679,6 +3679,39 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         wrong_version_type.status(),
         StatusCode::UNPROCESSABLE_ENTITY
     );
+    let invalid_status_dto_types = [
+        serde_json::json!({
+            "status": 7,
+            "reason": "Status must be a string",
+            "expected_version": current_status_version
+        }),
+        serde_json::json!({
+            "status": "suspended",
+            "reason": 7,
+            "expected_version": current_status_version
+        }),
+    ];
+    for (index, invalid_body) in invalid_status_dto_types.into_iter().enumerate() {
+        let response = client
+            .post(format!(
+                "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+            ))
+            .header(header::ORIGIN, &origin)
+            .header(
+                header::COOKIE,
+                format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+            )
+            .header("x-csrf-token", &matrix_operator_csrf_cookie)
+            .json(&invalid_body)
+            .send()
+            .await
+            .expect("wrong lifecycle DTO field type receives an HTTP response");
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "wrong lifecycle DTO type case {index} must be rejected"
+        );
+    }
 
     let invalid_status_value = client
         .post(format!(
