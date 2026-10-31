@@ -359,8 +359,9 @@ impl IdentityService {
             URL_SAFE_NO_PAD.encode(ip_digest)
         );
 
+        // The account and peer-IP counters share one fixed five-minute window.
         // Increment both counters and set their expirations atomically so concurrent
-        // registration requests cannot bypass the fixed-window limit.
+        // registration requests cannot bypass either ceiling.
         const RATE_LIMIT_SCRIPT: &str = r#"
             local account_count = redis.call('INCR', KEYS[1])
             if account_count == 1 then
