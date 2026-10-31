@@ -1,8 +1,8 @@
 use chrono::{Duration, Utc};
 use platform_catalog_pricing::application::catalog_service::CatalogService;
 use platform_entitlements_quotas::{
-    application::entitlement_service::EntitlementService,
-    domain::entitlement::{Capability, EntitlementError, EntitlementServiceError},
+    application::entitlement_service::{EntitlementService, EntitlementServiceError},
+    domain::entitlement::{Capability, EntitlementError},
 };
 use sqlx::postgres::PgPoolOptions;
 use std::{str::FromStr, time::Duration as StdDuration};
