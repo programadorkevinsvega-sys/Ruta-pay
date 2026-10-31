@@ -1894,29 +1894,25 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     );
     let concurrent_slug_a = concurrent_slug_a.expect("first slug race response arrives");
     let concurrent_slug_b = concurrent_slug_b.expect("second slug race response arrives");
-    let mut concurrent_slug_statuses = vec![
-        concurrent_slug_a.status(),
-        concurrent_slug_b.status(),
-    ];
+    let mut concurrent_slug_statuses = vec![concurrent_slug_a.status(), concurrent_slug_b.status()];
     concurrent_slug_statuses.sort();
     assert_eq!(
         concurrent_slug_statuses,
         vec![StatusCode::CREATED, StatusCode::CONFLICT],
         "concurrent slug registration has one winner and one conflict"
     );
-    let concurrent_slug_winner: serde_json::Value = if concurrent_slug_a.status()
-        == StatusCode::CREATED
-    {
-        concurrent_slug_a
-            .json()
-            .await
-            .expect("winning slug registration returns tenant metadata")
-    } else {
-        concurrent_slug_b
-            .json()
-            .await
-            .expect("winning slug registration returns tenant metadata")
-    };
+    let concurrent_slug_winner: serde_json::Value =
+        if concurrent_slug_a.status() == StatusCode::CREATED {
+            concurrent_slug_a
+                .json()
+                .await
+                .expect("winning slug registration returns tenant metadata")
+        } else {
+            concurrent_slug_b
+                .json()
+                .await
+                .expect("winning slug registration returns tenant metadata")
+        };
     let concurrent_slug_winner_id = Uuid::parse_str(
         concurrent_slug_winner["tenant_id"]
             .as_str()
@@ -1987,19 +1983,18 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         vec![StatusCode::CREATED, StatusCode::CONFLICT],
         "concurrent legal identity registration has one winner and one conflict"
     );
-    let concurrent_document_winner: serde_json::Value = if concurrent_document_a.status()
-        == StatusCode::CREATED
-    {
-        concurrent_document_a
-            .json()
-            .await
-            .expect("winning legal identity registration returns tenant metadata")
-    } else {
-        concurrent_document_b
-            .json()
-            .await
-            .expect("winning legal identity registration returns tenant metadata")
-    };
+    let concurrent_document_winner: serde_json::Value =
+        if concurrent_document_a.status() == StatusCode::CREATED {
+            concurrent_document_a
+                .json()
+                .await
+                .expect("winning legal identity registration returns tenant metadata")
+        } else {
+            concurrent_document_b
+                .json()
+                .await
+                .expect("winning legal identity registration returns tenant metadata")
+        };
     let concurrent_document_winner_id = Uuid::parse_str(
         concurrent_document_winner["tenant_id"]
             .as_str()
