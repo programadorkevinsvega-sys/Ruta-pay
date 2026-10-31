@@ -1102,7 +1102,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .expect("JetStream publish failures are rescheduled rather than aborting the relay batch");
     assert_eq!(failed_relay_count, 0);
     let deferred_events: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM tenant_registry.outbox_events WHERE published_at IS NULL AND last_error_code='jetstream_publish_unavailable' AND attempts > 0",
+        "SELECT count(*) FROM tenant_registry.outbox_events WHERE published_at IS NULL AND last_error_code IN ('jetstream_publish_unavailable','jetstream_ack_unavailable') AND attempts > 0",
     )
     .fetch_one(&migration_pool)
     .await
