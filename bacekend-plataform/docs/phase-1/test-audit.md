@@ -30,13 +30,35 @@ Esta auditoría cubre exclusivamente el runtime fundacional: configuración, val
 | Matriz de límites de cada variable de configuración | Unitario | Pendiente de inventario completo |
 | Build y browser E2E frontend | Build/E2E | No aplican a la superficie entregada en Fase 1; frontend real entra en Fase 2 |
 
+## Inventario de configuración y escenarios
+
+El inventario estático de `AppConfig::from_env` identifica estas variables y reglas:
+
+| Variable | Regla implementada | Escenarios automatizados / pendientes |
+|---|---|---|
+| `PLATFORM_DATABASE_URL` | Obligatoria; URL PostgreSQL con host, usuario y password; bloquea parámetros `password`/`sslpassword` y valores de query >32 caracteres | Positivo PostgreSQL; negativos de esquema, host/usuario/password ausentes, query sensible y longitud |
+| `PLATFORM_REDIS_URL` | Obligatoria; `redis`/`rediss`, host y password; sin query/fragment | Positivos ambos esquemas; negativos password ausente, esquema, query y fragment |
+| `PLATFORM_NATS_URL` | Opcional con default local; `nats`/`tls`, host, sin credenciales/query/fragment | Positivos ambos esquemas; negativos de esquema, credenciales embebidas, query y fragment |
+| `NATS_USER` | Obligatoria, no vacía/solo espacios | Validación vacía/espacios añadida |
+| `NATS_PASSWORD` | Obligatoria; mínimo 32 caracteres | 31 rechazado, 32 aceptado |
+| `APP_HTTP_ADDR` | Default `0.0.0.0:8080`; debe parsear como SocketAddr | Dirección inválida con error estable; límites de puerto/rango siguen pendientes |
+| `APP_MODULE_GRPC_ADDR` | Default loopback; debe ser loopback | Listener remoto rechazado; loopback aceptado |
+| `APP_METRICS_ADDR` | Default loopback; listener remoto exige token | Loopback sin token; remoto sin token/31 caracteres rechazado y 32 aceptado |
+| `APP_METRICS_BEARER_TOKEN` | Opcional; requerido con longitud mínima 32 para métricas remotas | Frontera 31/32 añadida |
+| `APP_ENV` | Default `development`; allowlist development/test/staging/production | Los cuatro aceptados; vacío, alias, case incorrecto y desconocido rechazados |
+| `APP_VERSION` | Default versión Cargo | No tiene validación semántica implementada; pendiente decidir si debe limitarse |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Opcional; HTTP/HTTPS, host, sin credenciales/query/fragment | Positivos HTTP/HTTPS y negativos de esquema, credenciales, query y fragment |
+| `SENTRY_DSN` | Opcional; parseo mediante tipo DSN de Sentry | La validación del parser existe; matriz unitaria de DSN válido/malformado pendiente |
+
+Se agregan pruebas unitarias puras en `platform/src/config/app_config.rs` para las reglas de entorno, credenciales NATS, límites de token de métricas, URL PostgreSQL/Redis/NATS y endpoint OTLP. Los tests nuevos usan configuración aislada y no dependen de modificar variables globales de entorno.
+
 ## Cambios de prueba en este PR
 
 Se amplía `CorrelationId` con pruebas explícitas de longitud mínima/máxima, longitud excedida, valor vacío, espacios, controles, separadores, Unicode y alfabeto permitido. Estos tests se ejecutan automáticamente mediante `cargo test --workspace`.
 
 ## Huecos pendientes y criterio de cierre de auditoría
 
-1. Crear inventario exhaustivo de cada variable de configuración y sus valores válidos, inválidos y límites.
+1. Completar límites de puerto/rango para `SocketAddr`, matriz de DSN Sentry y semántica de `APP_VERSION`; revisar si la longitud de password NATS debe medirse en bytes o caracteres.
 2. Determinar formalmente qué dependencias son críticas para readiness y probar cada combinación relevante de estados.
 3. Convertir las pruebas históricas de degradación del Collector y shutdown en verificaciones repetibles en CI o en una suite de aceptación controlada.
 4. Mantener el test de integración HTTP→BFF→gRPC como requisito obligatorio de CI.
