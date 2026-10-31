@@ -2825,7 +2825,18 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     assert_eq!(owner_status_change.status(), StatusCode::OK);
 
     // Invalid reasons and stale optimistic-lock versions must be rejected
-    // before changing the tenant aggregate or its version.
+    // before changing the tenant aggregate or its version. Read the committed
+    // version instead of duplicating assumptions about prior transitions.
+    let tenant_before_invalid_transitions: (String, i64) =
+        sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
+            .bind(created_tenant_id)
+            .fetch_one(&migration_pool)
+            .await
+            .expect("tenant state before invalid transitions is queryable");
+    assert_eq!(tenant_before_invalid_transitions.0, "active");
+    let current_status_version = tenant_before_invalid_transitions.1;
+    assert!(current_status_version > 0);
+
     let missing_status_reason = client
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
@@ -2840,7 +2851,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .json(&serde_json::json!({
             "status": "suspended",
             "reason": " ",
-            "expected_version": 4
+            "expected_version": current_status_version
         }))
         .send()
         .await
@@ -2861,7 +2872,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .json(&serde_json::json!({
             "status": "suspended",
             "reason": "This stale transition must not be applied",
-            "expected_version": 3
+            "expected_version": current_status_version - 1
         }))
         .send()
         .await
@@ -2875,7 +2886,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             .expect("tenant state after invalid transitions is queryable");
     assert_eq!(
         tenant_after_invalid_transitions,
-        ("active".to_owned(), 4),
+        tenant_before_invalid_transitions,
         "invalid reason and stale version leave tenant state unchanged"
     );
 
