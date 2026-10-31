@@ -2055,6 +2055,23 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("operator logout response arrives");
     assert_eq!(operator_logout.status(), StatusCode::NO_CONTENT);
+    let mut revoked_subscription = realtime_subscription;
+    let realtime_revocation_status = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            match revoked_subscription.message().await {
+                Err(status) => break status,
+                Ok(Some(_event)) => continue,
+                Ok(None) => panic!("realtime subscription must report authorization revocation"),
+            }
+        }
+    })
+    .await
+    .expect("realtime subscription revalidates operator authorization within 20 seconds");
+    assert_eq!(
+        realtime_revocation_status.code(),
+        tonic::Code::Unauthenticated
+    );
+
     let operator_logout_audited: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM identity_access.audit_events WHERE actor_id = $1 AND action = 'identity.session.revoked' AND correlation_id = 'corr_operator_logout')",
     )
@@ -2088,6 +2105,31 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("revoked operator session replay is rejected");
     assert_eq!(operator_replay.status(), StatusCode::UNAUTHORIZED);
+
+    // The preceding logout deliberately revoked the first operator session.
+    // Create a fresh session for the role/permission matrix that follows.
+    let matrix_operator_login = client
+        .post(format!("http://{http_addr}/v1/platform/identity/session"))
+        .header(header::ORIGIN, &origin)
+        .header("x-correlation-id", "corr_operator_matrix_login")
+        .json(&serde_json::json!({
+            "email": operator_email,
+            "password": operator_password
+        }))
+        .send()
+        .await
+        .expect("operator matrix login response arrives");
+    assert_eq!(matrix_operator_login.status(), StatusCode::OK);
+    let matrix_operator_cookies: Vec<String> = matrix_operator_login
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok().map(str::to_owned))
+        .collect();
+    let matrix_operator_session_cookie =
+        cookie_value(&matrix_operator_cookies, "payvia_platform_session");
+    let matrix_operator_csrf_cookie =
+        cookie_value(&matrix_operator_cookies, "payvia_platform_csrf");
 
     let rejected_csrf = client
         .delete(format!("http://{http_addr}/v1/identity/session"))
@@ -2422,8 +2464,8 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         ] {
             let decision = authorization_client
                 .authorize_operator_operation(AuthorizeOperatorOperationRequest {
-                    session_token: operator_session_cookie.clone(),
-                    csrf_token: operator_csrf_cookie.clone(),
+                    session_token: matrix_operator_session_cookie.clone(),
+                    csrf_token: matrix_operator_csrf_cookie.clone(),
                     permission: permission.to_owned(),
                     correlation_id: format!("corr_operator_role_{role}_{permission}"),
                 })
@@ -2447,7 +2489,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             .get(format!("http://{http_addr}/v1/platform/tenants?limit=10&offset=0"))
             .header(
                 header::COOKIE,
-                format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+                format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
             )
             .send()
             .await
@@ -2468,9 +2510,9 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .header(header::ORIGIN, &origin)
         .header(
             header::COOKIE,
-            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
         )
-        .header("x-csrf-token", &operator_csrf_cookie)
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
         .json(&serde_json::json!({
             "status": "suspended",
             "reason": "Support role must not change tenant lifecycle",
@@ -2500,9 +2542,9 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .header(header::ORIGIN, &origin)
         .header(
             header::COOKIE,
-            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
         )
-        .header("x-csrf-token", &operator_csrf_cookie)
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
         .json(&serde_json::json!({
             "status": "suspended",
             "reason": "Authorized platform security suspension",
@@ -2525,9 +2567,9 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .header(header::ORIGIN, &origin)
         .header(
             header::COOKIE,
-            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
         )
-        .header("x-csrf-token", &operator_csrf_cookie)
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
         .json(&serde_json::json!({
             "status": "active",
             "reason": "Authorized platform owner reactivation",
@@ -2666,46 +2708,33 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .expect("expired session receives an HTTP response");
     assert_eq!(expired_session_response.status(), StatusCode::UNAUTHORIZED);
 
-    let operator_logout = client
+    let matrix_operator_logout = client
         .delete(format!("http://{http_addr}/v1/platform/identity/session"))
         .header(header::ORIGIN, &origin)
         .header(
             header::COOKIE,
-            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+            format!(
+                "payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"
+            ),
         )
-        .header("x-csrf-token", &operator_csrf_cookie)
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
         .send()
         .await
-        .expect("operator can revoke its own session");
-    assert_eq!(operator_logout.status(), StatusCode::NO_CONTENT);
-    let mut revoked_subscription = realtime_subscription;
-    let realtime_revocation_status = tokio::time::timeout(Duration::from_secs(20), async {
-        loop {
-            match revoked_subscription.message().await {
-                Err(status) => break status,
-                Ok(Some(_event)) => continue,
-                Ok(None) => panic!("realtime subscription must report authorization revocation"),
-            }
-        }
-    })
-    .await
-    .expect("realtime subscription revalidates operator authorization within 20 seconds");
-    assert_eq!(
-        realtime_revocation_status.code(),
-        tonic::Code::Unauthenticated
-    );
-
-    let revoked_operator_session_response = client
+        .expect("operator matrix session can be revoked");
+    assert_eq!(matrix_operator_logout.status(), StatusCode::NO_CONTENT);
+    let revoked_matrix_session_response = client
         .get(format!("http://{http_addr}/v1/platform/identity/session"))
         .header(
             header::COOKIE,
-            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+            format!(
+                "payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"
+            ),
         )
         .send()
         .await
-        .expect("revoked operator session receives an HTTP response");
+        .expect("revoked matrix operator session receives an HTTP response");
     assert_eq!(
-        revoked_operator_session_response.status(),
+        revoked_matrix_session_response.status(),
         StatusCode::UNAUTHORIZED
     );
 
