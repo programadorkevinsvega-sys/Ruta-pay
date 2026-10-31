@@ -1042,10 +1042,37 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let event_namespace = format!("e2e_test_{}", Uuid::new_v4().simple());
     let event_topology = EventTopology::from_namespace(Some(&event_namespace))
         .expect("test event namespace is valid");
+
+    // Simulate JetStream unavailability by attempting delivery before the
+    // isolated stream exists. The relay must release its lease and reschedule
+    // every failed event without marking it published.
+    let failed_relay_count =
+        platform_tenant_registry::infrastructure::outbox_relay::relay_batch(
+            &runtime_pool,
+            &jetstream,
+            &event_topology.subject_prefix,
+        )
+        .await
+        .expect("JetStream publish failures are rescheduled rather than aborting the relay batch");
+    assert_eq!(failed_relay_count, 0);
+    let deferred_events: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM tenant_registry.outbox_events WHERE published_at IS NULL AND last_error_code='jetstream_publish_unavailable' AND attempts > 0",
+    )
+    .fetch_one(&migration_pool)
+    .await
+    .expect("failed JetStream deliveries remain pending in the Outbox");
+    assert!(deferred_events > 0);
+    sqlx::query(
+        "UPDATE tenant_registry.outbox_events SET available_at=now(),lease_token=NULL,lease_until=NULL WHERE published_at IS NULL",
+    )
+    .execute(&migration_pool)
+    .await
+    .expect("isolated acceptance makes deferred events eligible for deterministic retry");
+
     let stream = event_topology
         .ensure_stream(&jetstream)
         .await
-        .expect("isolated real JetStream stream is available");
+        .expect("isolated real JetStream stream is available after recovery");
     let event_stream_cleanup = EventStreamCleanup {
         jetstream: jetstream.clone(),
         namespace: event_namespace,
@@ -1080,8 +1107,18 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .expect("tenant outbox relay publishes through the real JetStream client");
     assert!(
         published_count > 0,
-        "outbox events are acknowledged durably"
+        "outbox events are acknowledged durably after dependency recovery"
     );
+    let retried_event_state: (Option<chrono::DateTime<chrono::Utc>>, Option<String>) =
+        sqlx::query_as(
+            "SELECT published_at,last_error_code FROM tenant_registry.outbox_events WHERE event_id=$1",
+        )
+        .bind(registration_event_id)
+        .fetch_one(&migration_pool)
+        .await
+        .expect("retried Outbox event state is queryable");
+    assert!(retried_event_state.0.is_some());
+    assert!(retried_event_state.1.is_none());
     let isolated_stream = jetstream
         .get_stream(&isolated_topology.stream_name)
         .await
