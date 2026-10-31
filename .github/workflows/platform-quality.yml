@@ -1,5 +1,9 @@
 name: Platform Rust quality
 
+concurrency:
+  group: platform-quality-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
 on:
   push:
     paths:
