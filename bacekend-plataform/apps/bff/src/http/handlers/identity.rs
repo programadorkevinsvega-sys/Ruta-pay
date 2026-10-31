@@ -99,6 +99,7 @@ pub struct ApiKeyMetadataResponse {
 #[utoipa::path(post, path = "/v1/identity/register", request_body = Credentials, responses((status = 201, body = RegisteredUser), (status = 409, body = ErrorEnvelope)))]
 pub async fn register(
     State(state): State<std::sync::Arc<AppState>>,
+    ConnectInfo(remote): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     Json(body): Json<Credentials>,
 ) -> Response {
@@ -117,6 +118,7 @@ pub async fn register(
         &state.identity_client,
         body.email,
         body.password,
+        remote.ip().to_string(),
         &correlation,
     )
     .await
