@@ -480,6 +480,64 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         identity_state_after_origin_rejection, identity_state_before_origin_rejection,
         "untrusted Origin must not create identities or sessions"
     );
+    let identities_before_invalid_credentials: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM identity_access.tenant_users")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("identity count before invalid credentials is queryable");
+    let invalid_credential_types = [
+        serde_json::json!({"email": 7, "password": "Valid-password-123!"}),
+        serde_json::json!({"email": "invalid@example.test", "password": 7}),
+        serde_json::json!({"email": "invalid@example.test"}),
+    ];
+    for (index, invalid_body) in invalid_credential_types.into_iter().enumerate() {
+        let response = client
+            .post(format!("http://{http_addr}/v1/identity/register"))
+            .header(header::ORIGIN, &origin)
+            .json(&invalid_body)
+            .send()
+            .await
+            .expect("invalid credentials DTO receives an HTTP response");
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "wrong credentials DTO type/shape case {index} must be rejected"
+        );
+    }
+    let invalid_email = client
+        .post(format!("http://{http_addr}/v1/identity/register"))
+        .header(header::ORIGIN, &origin)
+        .json(&serde_json::json!({
+            "email": format!("{}@example.test", "a".repeat(65)),
+            "password": "Valid-password-123!"
+        }))
+        .send()
+        .await
+        .expect("overlong email is rejected at the HTTP boundary");
+    assert_eq!(invalid_email.status(), StatusCode::BAD_REQUEST);
+    for invalid_password in ["Short-1!", &format!("{}A1!", "a".repeat(126))] {
+        let response = client
+            .post(format!("http://{http_addr}/v1/identity/register"))
+            .header(header::ORIGIN, &origin)
+            .json(&serde_json::json!({
+                "email": format!("invalid_password_{}@example.test", Uuid::new_v4().simple()),
+                "password": invalid_password
+            }))
+            .send()
+            .await
+            .expect("out-of-range password receives an HTTP response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+    let identities_after_invalid_credentials: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM identity_access.tenant_users")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("identity count after invalid credentials is queryable");
+    assert_eq!(
+        identities_after_invalid_credentials, identities_before_invalid_credentials,
+        "invalid credential values and types must not create identities"
+    );
+
     let weak_password_email = format!("weak_password_{}@example.test", Uuid::new_v4().simple());
     let weak_password_response = client
         .post(format!("http://{http_addr}/v1/identity/register"))
@@ -1436,6 +1494,78 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         created_tenant_id.to_string()
     );
     assert_eq!(memberships_body["memberships"][0]["role"], "tenant_owner");
+
+    let api_keys_before_invalid_dtos: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM identity_access.api_keys")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("API key count before invalid DTO checks is queryable");
+    let invalid_api_key_values = [
+        serde_json::json!({"name": "x", "environment": "test", "scopes": ["read"]}),
+        serde_json::json!({"name": "x".repeat(81), "environment": "test", "scopes": ["read"]}),
+        serde_json::json!({"name": "Valid key", "environment": "production", "scopes": ["read"]}),
+        serde_json::json!({"name": "Valid key", "environment": "test", "scopes": []}),
+        serde_json::json!({"name": "Valid key", "environment": "test", "scopes": ["Read"]}),
+        serde_json::json!({"name": "Valid key", "environment": "test", "scopes": ["a".repeat(65)]}),
+        serde_json::json!({"name": "Valid key", "environment": "test", "scopes": vec!["read"; 17]}),
+    ];
+    for (index, invalid_body) in invalid_api_key_values.into_iter().enumerate() {
+        let response = client
+            .post(format!(
+                "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
+            ))
+            .header(header::ORIGIN, &origin)
+            .header(
+                header::COOKIE,
+                format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+            )
+            .header("x-csrf-token", &csrf_cookie)
+            .json(&invalid_body)
+            .send()
+            .await
+            .expect("semantically invalid API key DTO receives an HTTP response");
+        assert_eq!(
+            response.status(),
+            StatusCode::BAD_REQUEST,
+            "invalid API key DTO case {index} must fail validation"
+        );
+    }
+    let invalid_api_key_types = [
+        serde_json::json!({"name": 7, "environment": "test", "scopes": ["read"]}),
+        serde_json::json!({"name": "Valid key", "environment": 7, "scopes": ["read"]}),
+        serde_json::json!({"name": "Valid key", "environment": "test", "scopes": "read"}),
+        serde_json::json!({"name": "Valid key", "environment": "test", "scopes": [7]}),
+    ];
+    for (index, invalid_body) in invalid_api_key_types.into_iter().enumerate() {
+        let response = client
+            .post(format!(
+                "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
+            ))
+            .header(header::ORIGIN, &origin)
+            .header(
+                header::COOKIE,
+                format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+            )
+            .header("x-csrf-token", &csrf_cookie)
+            .json(&invalid_body)
+            .send()
+            .await
+            .expect("incorrect API key DTO field type receives an HTTP response");
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "wrong API key DTO type case {index} must be rejected by the HTTP extractor"
+        );
+    }
+    let api_keys_after_invalid_dtos: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM identity_access.api_keys")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("API key count after invalid DTO checks is queryable");
+    assert_eq!(
+        api_keys_after_invalid_dtos, api_keys_before_invalid_dtos,
+        "invalid API key values and types must not persist API keys"
+    );
 
     let api_key_creation = client
         .post(format!(
@@ -3014,6 +3144,72 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             "invalid pagination query {invalid_query} must be rejected"
         );
     }
+
+    let tenants_before_invalid_dtos: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("tenant count before invalid DTO checks is queryable");
+    let invalid_tenant_values = [
+        serde_json::json!({"display_name": "A", "slug": "valid-slug", "legal_identification_type": "nit", "legal_identification_number": "12345"}),
+        serde_json::json!({"display_name": "Valid tenant", "slug": "a".repeat(65), "legal_identification_type": "nit", "legal_identification_number": "12345"}),
+        serde_json::json!({"display_name": "Valid tenant", "slug": "valid-slug", "legal_identification_type": "passport", "legal_identification_number": "12345"}),
+        serde_json::json!({"display_name": "Valid tenant", "slug": "valid-slug", "legal_identification_type": "nit", "legal_identification_number": "-12345"}),
+        serde_json::json!({"display_name": "Valid tenant", "slug": "valid-slug", "legal_identification_type": "nit", "legal_identification_number": "1".repeat(21)}),
+    ];
+    for (index, invalid_body) in invalid_tenant_values.into_iter().enumerate() {
+        let response = client
+            .post(format!("http://{http_addr}/v1/tenants"))
+            .header(header::ORIGIN, &origin)
+            .header(
+                header::COOKIE,
+                format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
+            )
+            .header("x-csrf-token", &second_csrf_cookie)
+            .json(&invalid_body)
+            .send()
+            .await
+            .expect("invalid tenant registration values receive an HTTP response");
+        assert_eq!(
+            response.status(),
+            StatusCode::BAD_REQUEST,
+            "invalid tenant registration value case {index} must fail validation"
+        );
+    }
+    let invalid_tenant_types = [
+        serde_json::json!({"display_name": 7, "slug": "valid-slug", "legal_identification_type": "nit", "legal_identification_number": "12345"}),
+        serde_json::json!({"display_name": "Valid tenant", "slug": 7, "legal_identification_type": "nit", "legal_identification_number": "12345"}),
+        serde_json::json!({"display_name": "Valid tenant", "slug": "valid-slug", "legal_identification_type": 7, "legal_identification_number": "12345"}),
+        serde_json::json!({"display_name": "Valid tenant", "slug": "valid-slug", "legal_identification_type": "nit", "legal_identification_number": 7}),
+    ];
+    for (index, invalid_body) in invalid_tenant_types.into_iter().enumerate() {
+        let response = client
+            .post(format!("http://{http_addr}/v1/tenants"))
+            .header(header::ORIGIN, &origin)
+            .header(
+                header::COOKIE,
+                format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
+            )
+            .header("x-csrf-token", &second_csrf_cookie)
+            .json(&invalid_body)
+            .send()
+            .await
+            .expect("incorrect tenant DTO field type receives an HTTP response");
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "wrong tenant DTO type case {index} must be rejected by the HTTP extractor"
+        );
+    }
+    let tenants_after_invalid_dtos: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("tenant count after invalid DTO checks is queryable");
+    assert_eq!(
+        tenants_after_invalid_dtos, tenants_before_invalid_dtos,
+        "invalid tenant values and types must not create tenant rows"
+    );
 
     let invalid_tenant_dto = client
         .post(format!("http://{http_addr}/v1/tenants"))
