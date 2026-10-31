@@ -18,6 +18,7 @@ La fase entrega registro/autenticación diferenciados para usuarios de tenant y 
 - El primer operador se crea mediante una operación local de bootstrap de un solo uso que exige una instalación sin operadores existentes y no publica credenciales en una ruta pública. No se insertan usuarios de demo o fixtures.
 - Todas las consultas tenant se filtran por contexto autorizado, usan claves/constraints compuestas y políticas RLS como defensa en profundidad. El rol runtime no será superusuario ni propietario bypass de las tablas sujetas a RLS.
 - Los errores de autenticación evitan enumerar cuentas. Los errores internos preservan diagnóstico seguro; jamás incluyen passwords, cookies, sesiones, API Keys completas, CSRF tokens ni datos personales innecesarios.
+- El registro público limita por correo normalizado a 5 intentos y por dirección IP de conexión a 20 intentos por ventana fija de 5 minutos. Redis incrementa ambos contadores y asigna TTL en una única operación Lua atómica; el límite se aplica antes de validar/hash de contraseña, falla cerrado si Redis no está disponible y el BFF responde `429` sin revelar si la cuenta existe. El IP es el peer TCP observado por Axum (`ConnectInfo`), no un `X-Forwarded-For` no confiable.
 
 ## Matriz de integración obligatoria
 
@@ -76,7 +77,7 @@ Las decisiones de experiencia y navegación están en [ADR frontend de registro]
 **Criterios de aceptación:** rutas `/register`, `/login` y redirección desde `/`; creación por BFF real con nombre y slug derivado, NIT/CC, contraseña confirmada y política aplicada también en backend; persistencia comprobada en PostgreSQL; rechazo de documentos duplicados/mal formados y contraseñas que incumplan; ausencia del documento en respuestas, Outbox/journal, WebSocket y logs; migración aditiva compatible con tenants existentes. Ejecutar pruebas unitarias, aceptación HTTP→BFF→gRPC→módulo y E2E del navegador con PostgreSQL, Redis y NATS reales.
 
 1. Crear usuario tenant, crear tenant pendiente, observar el evento durable y completar la membresía propietaria idempotente sin transacción SQL entre módulos.
-2. Login tenant y operador con cookies/audiencias distintas; logout, expiración, revocación, CSRF, origen inválido, cuenta inválida y límite de intentos.
+2. Registro y login tenant con límites por cuenta/IP; verificar `429` al superar 5 registros por cuenta o 20 por IP dentro de 5 minutos, sin ejecutar hashing adicional; login tenant y operador con cookies/audiencias distintas; logout, expiración, revocación, CSRF, origen inválido y cuenta inválida.
 3. Operador verifica y activa tenant con permiso y motivo; suspensión/cierre revocan acceso en cada request y generan auditoría/evento.
 4. Usuario autorizado crea API Key `test` o `live`, ve el secreto una vez, consulta metadata sin secreto, revoca y demuestra que la llave revocada no se puede usar/consultar. Scopes/env/tenant no se pueden alterar.
 5. Dos tenants y dos operadores independientes intentan leer, modificar, enumerar, revocar y recibir eventos de recursos ajenos. Se verifica directamente PostgreSQL con credenciales runtime de mínimo privilegio.
