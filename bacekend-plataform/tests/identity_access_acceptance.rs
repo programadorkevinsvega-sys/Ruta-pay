@@ -4143,6 +4143,42 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .expect("single concurrent status Outbox event is queryable");
     assert_eq!(race_outbox_count, 1);
 
+    // A retained-journal gap must surface as a conflict at the HTTP edge,
+    // not as a successful partial replay that silently skips an old event.
+    let first_platform_event: Uuid = sqlx::query_scalar(
+        "SELECT event_id FROM realtime.event_journal WHERE platform_cursor=1",
+    )
+    .fetch_one(&migration_pool)
+    .await
+    .expect("first platform journal event exists for gap injection");
+    sqlx::query("DELETE FROM realtime.event_journal WHERE event_id=$1")
+        .bind(first_platform_event)
+        .execute(&migration_pool)
+        .await
+        .expect("first platform journal event is removed to simulate a retained gap");
+    let platform_gap_replay = client
+        .get(format!(
+            "http://{http_addr}/v1/realtime/events?audience=platform&cursor=0"
+        ))
+        .header(
+            header::COOKIE,
+            format!(
+                "payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"
+            ),
+        )
+        .send()
+        .await
+        .expect("platform replay reports a retained journal gap");
+    assert_eq!(platform_gap_replay.status(), StatusCode::CONFLICT);
+    let platform_gap_body: serde_json::Value = platform_gap_replay
+        .json()
+        .await
+        .expect("realtime gap returns a safe error envelope");
+    assert_eq!(
+        platform_gap_body["error"]["code"],
+        "realtime_cursor_gap"
+    );
+
     let matrix_operator_logout = client
         .delete(format!("http://{http_addr}/v1/platform/identity/session"))
         .header(header::ORIGIN, &origin)
