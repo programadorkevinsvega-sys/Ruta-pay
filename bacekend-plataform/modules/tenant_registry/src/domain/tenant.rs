@@ -107,15 +107,20 @@ impl Tenant {
     }
 
     pub fn normalize_identification_number(value: &str) -> Result<String, TenantError> {
-        let mut digits = String::with_capacity(value.len());
-        for character in value.trim().chars() {
+        let normalized_input = value.trim();
+        let mut digits = String::with_capacity(normalized_input.len());
+        let mut previous_was_digit = false;
+        for character in normalized_input.chars() {
             if character.is_ascii_digit() {
                 digits.push(character);
-            } else if !matches!(character, ' ' | '.' | '-') {
+                previous_was_digit = true;
+            } else if matches!(character, ' ' | '.' | '-') && previous_was_digit {
+                previous_was_digit = false;
+            } else {
                 return Err(TenantError::InvalidLegalIdentification);
             }
         }
-        if !(5..=20).contains(&digits.len()) {
+        if !previous_was_digit || !(5..=20).contains(&digits.len()) {
             return Err(TenantError::InvalidLegalIdentification);
         }
         Ok(digits)
@@ -177,6 +182,73 @@ mod tests {
             Tenant::validate_registration("Valid tenant", "valid-slug", "cc", "12AB34"),
             Err(TenantError::InvalidLegalIdentification)
         );
+    }
+
+    #[test]
+    fn registration_enforces_display_name_and_slug_boundaries() {
+        assert_eq!(
+            Tenant::validate_registration("A", "valid-slug", "nit", "12345"),
+            Err(TenantError::InvalidDisplayName)
+        );
+        assert_eq!(
+            Tenant::validate_registration(&"a".repeat(121), "valid-slug", "nit", "12345"),
+            Err(TenantError::InvalidDisplayName)
+        );
+        assert!(Tenant::validate_registration("Valid tenant", "abc", "nit", "12345").is_ok());
+        assert!(Tenant::validate_registration(
+            "Valid tenant",
+            &"a".repeat(64),
+            "nit",
+            "12345"
+        )
+        .is_ok());
+        for invalid_slug in [
+            "ab",
+            &"a".repeat(65),
+            "-abc",
+            "abc-",
+            "a--b",
+            "Uppercase",
+            "under_score",
+            "ábc",
+        ] {
+            assert_eq!(
+                Tenant::validate_registration("Valid tenant", invalid_slug, "nit", "12345"),
+                Err(TenantError::InvalidSlug),
+                "must reject slug {invalid_slug:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn legal_identification_rejects_negative_and_malformed_separator_inputs() {
+        assert_eq!(
+            Tenant::normalize_identification_number("900.123.456-7"),
+            Ok("9001234567".to_owned())
+        );
+        assert_eq!(
+            Tenant::normalize_identification_number("12345"),
+            Ok("12345".to_owned())
+        );
+        assert_eq!(
+            Tenant::normalize_identification_number(&"1".repeat(20)),
+            Ok("1".repeat(20))
+        );
+        for invalid in [
+            "-12345",
+            "12345-",
+            "12--345",
+            "12..345",
+            "1234",
+            &"1".repeat(21),
+            "12A345",
+        ] {
+            assert_eq!(
+                Tenant::normalize_identification_number(invalid),
+                Err(TenantError::InvalidLegalIdentification),
+                "must reject legal identification {invalid:?}"
+            );
+        }
     }
 
     #[test]
