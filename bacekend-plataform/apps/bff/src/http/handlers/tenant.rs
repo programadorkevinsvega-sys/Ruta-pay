@@ -486,15 +486,19 @@ fn tenant_grpc_error(
             "validation",
             false,
         ),
-        tonic::Code::Aborted => (
+        tonic::Code::FailedPrecondition
+            if status.message().contains("realtime journal contains a cursor gap") =>
+        {
+            (
+                StatusCode::CONFLICT,
+                "realtime_cursor_gap",
+                "conflict",
+                false,
+            )
+        }
+        tonic::Code::Aborted | tonic::Code::FailedPrecondition => (
             StatusCode::CONFLICT,
             "tenant_state_conflict",
-            "conflict",
-            false,
-        ),
-        tonic::Code::FailedPrecondition => (
-            StatusCode::CONFLICT,
-            "realtime_cursor_gap",
             "conflict",
             false,
         ),
