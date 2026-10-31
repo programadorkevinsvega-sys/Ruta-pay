@@ -407,6 +407,89 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("HTTP registration response arrives");
     assert_eq!(register_response.status(), StatusCode::CREATED);
+
+    // Duplicate normalized email must be rejected at the HTTP boundary without
+    // creating a second identity or a second durable registration event.
+    let duplicate_registration = client
+        .post(format!("http://{http_addr}/v1/identity/register"))
+        .header(header::ORIGIN, &origin)
+        .header("x-correlation-id", "corr_identity_duplicate_email")
+        .json(&serde_json::json!({
+            "email": email.clone(),
+            "password": password.clone()
+        }))
+        .send()
+        .await
+        .expect("duplicate email registration receives a classified response");
+    assert_eq!(duplicate_registration.status(), StatusCode::CONFLICT);
+    let duplicate_envelope: serde_json::Value = duplicate_registration
+        .json()
+        .await
+        .expect("duplicate registration returns a safe error envelope");
+    assert_eq!(duplicate_envelope["error"]["code"], "identity_conflict");
+    let duplicate_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM identity_access.tenant_users WHERE email_normalized=$1",
+    )
+    .bind(email.to_ascii_lowercase())
+    .fetch_one(&migration_pool)
+    .await
+    .expect("duplicate identity count is queryable");
+    assert_eq!(duplicate_count, 1, "normalized email remains unique");
+    let duplicate_event_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM identity_access.outbox_events WHERE aggregate_id=$1 AND event_type='identity.tenant_user.registered'",
+    )
+    .bind(registered_user_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("registration event count is queryable");
+    assert_eq!(duplicate_event_count, 1, "duplicate registration emits no event");
+
+    // Two simultaneous registrations for the same normalized email must have
+    // exactly one winner, even when both requests pass the rate limiter.
+    let concurrent_email = format!("concurrent_{}@example.test", Uuid::new_v4().simple());
+    let concurrent_password = format!("Concurrent-password-{}!", Uuid::new_v4().simple());
+    let concurrent_url = format!("http://{http_addr}/v1/identity/register");
+    let first_request = client
+        .post(&concurrent_url)
+        .header(header::ORIGIN, &origin)
+        .header("x-correlation-id", "corr_identity_concurrent_first")
+        .json(&serde_json::json!({
+            "email": concurrent_email.clone(),
+            "password": concurrent_password.clone()
+        }))
+        .send();
+    let second_request = client
+        .post(&concurrent_url)
+        .header(header::ORIGIN, &origin)
+        .header("x-correlation-id", "corr_identity_concurrent_second")
+        .json(&serde_json::json!({
+            "email": concurrent_email.clone(),
+            "password": concurrent_password.clone()
+        }))
+        .send();
+    let (first_result, second_result) = tokio::join!(first_request, second_request);
+    let first_status = first_result
+        .expect("first concurrent registration response arrives")
+        .status();
+    let second_status = second_result
+        .expect("second concurrent registration response arrives")
+        .status();
+    let mut concurrent_statuses = vec![first_status, second_status];
+    concurrent_statuses.sort();
+    assert_eq!(
+        concurrent_statuses,
+        vec![StatusCode::CREATED, StatusCode::CONFLICT],
+        "one concurrent registration succeeds and the other conflicts"
+    );
+    let concurrent_identity_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM identity_access.tenant_users WHERE email_normalized=$1",
+    )
+    .bind(concurrent_email.to_ascii_lowercase())
+    .fetch_one(&migration_pool)
+    .await
+    .expect("concurrent identity count is queryable");
+    assert_eq!(concurrent_identity_count, 1);
+
     let registration: serde_json::Value = register_response
         .json()
         .await
