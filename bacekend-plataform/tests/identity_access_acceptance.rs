@@ -2885,8 +2885,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             .await
             .expect("tenant state after invalid transitions is queryable");
     assert_eq!(
-        tenant_after_invalid_transitions,
-        tenant_before_invalid_transitions,
+        tenant_after_invalid_transitions, tenant_before_invalid_transitions,
         "invalid reason and stale version leave tenant state unchanged"
     );
 
