@@ -222,11 +222,14 @@ pub async fn change_tenant_status(
     .await?
     .ok_or(TenantRepositoryError::NotFound)?;
     let mut tenant = map_tenant(&row)?;
-    Tenant::validate_transition(tenant.status, next, reason, actor_is_operator)
-        .map_err(TenantRepositoryError::Domain)?;
+    // The optimistic-lock version is authoritative. Check it before validating
+    // the transition so a concurrent stale request is always reported as a
+    // version conflict, even if the winning request changed the allowed state graph.
     if tenant.status_version != expected_version {
         return Err(TenantRepositoryError::VersionConflict);
     }
+    Tenant::validate_transition(tenant.status, next, reason, actor_is_operator)
+        .map_err(TenantRepositoryError::Domain)?;
     let previous = tenant.status;
     tenant.status_version += 1;
     tenant.status = next;
