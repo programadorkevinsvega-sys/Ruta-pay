@@ -1606,7 +1606,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
 
     // A separate set of accounts from the same peer proves the independent IP ceiling.
     for attempt in 6..20 {
-        let response = client
+        let response = rate_limit_client
             .post(format!("http://{http_addr}/v1/identity/register"))
             .header(header::ORIGIN, &origin)
             .json(&serde_json::json!({
