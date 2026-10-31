@@ -1,6 +1,7 @@
 use crate::module_public_api::RuntimeProbeApi;
 use platform_contracts::identity_access::identity_access_client::IdentityAccessClient as IdentityAccessGrpcClient;
 use platform_contracts::{
+    catalog_pricing::catalog_pricing_server::CatalogPricingServer,
     identity_access::identity_access_server::IdentityAccessServer,
     realtime::realtime_gateway_server::RealtimeGatewayServer,
     runtime::runtime_probe_server::RuntimeProbeServer,
@@ -16,6 +17,10 @@ use platform_tenant_registry::{
     infrastructure::grpc::{
         identity_access_adapter::IdentityAccessGrpcAdapter, tenant_registry_api::TenantRegistryApi,
     },
+};
+use platform_catalog_pricing::{
+    application::catalog_service::CatalogService,
+    infrastructure::grpc::catalog_api::CatalogPricingApi,
 };
 use redis::aio::ConnectionManager;
 use std::{future::Future, sync::Arc};
@@ -36,18 +41,16 @@ where
 {
     let identity_port = Arc::new(IdentityAccessGrpcAdapter::new(identity_client.clone()));
     let tenant_service = TenantService::new(pool.clone(), identity_port);
+    let catalog_api = CatalogPricingApi::new(CatalogService::new(pool.clone()), identity_client.clone());
     Server::builder()
         .add_service(RuntimeProbeServer::new(RuntimeProbeApi))
         .add_service(IdentityAccessServer::new(IdentityAccessApi::new(
             IdentityService::new(pool.clone(), redis),
         )))
-        .add_service(TenantRegistryServer::new(TenantRegistryApi::new(
-            tenant_service,
-        )))
+        .add_service(TenantRegistryServer::new(TenantRegistryApi::new(tenant_service)))
+        .add_service(CatalogPricingServer::new(catalog_api))
         .add_service(RealtimeGatewayServer::new(RealtimeGatewayApi::new(
-            pool.clone(),
-            redis_client,
-            identity_client,
+            pool.clone(), redis_client, identity_client,
         )))
         .serve_with_incoming_shutdown(TcpListenerStream::new(listener), shutdown)
         .await
