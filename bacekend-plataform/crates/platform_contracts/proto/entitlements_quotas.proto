@@ -1,0 +1,17 @@
+syntax = "proto3";
+package payvia.platform.entitlements_quotas.v1;
+service EntitlementsQuotas {
+  rpc SetPlanCapabilities (SetPlanCapabilitiesRequest) returns (SetPlanCapabilitiesResponse);
+  rpc AssignTenantPlan (AssignTenantPlanRequest) returns (AssignTenantPlanResponse);
+  rpc GetTenantEntitlement (GetTenantEntitlementRequest) returns (TenantEntitlementResponse);
+  rpc ConsumeQuota (ConsumeQuotaRequest) returns (ConsumeQuotaResponse);
+}
+message CapabilityInput { string capability_key=1; bool enabled=2; optional int64 limit_value=3; string unit=4; string overage_policy=5; string environment=6; string quota_period=7; }
+message SetPlanCapabilitiesRequest { string session_token=1; string csrf_token=2; string price_version_id=3; repeated CapabilityInput capabilities=4; string correlation_id=5; }
+message SetPlanCapabilitiesResponse { uint32 capabilities_saved=1; }
+message AssignTenantPlanRequest { string session_token=1; string csrf_token=2; string tenant_id=3; string price_version_id=4; string effective_from=5; string effective_until=6; string correlation_id=7; }
+message AssignTenantPlanResponse { string assignment_id=1; }
+message GetTenantEntitlementRequest { string session_token=1; string csrf_token=2; string tenant_id=3; string capability_key=4; string environment=5; string effective_at=6; string correlation_id=7; }
+message TenantEntitlementResponse { string tenant_id=1; string price_version_id=2; string capability_key=3; bool enabled=4; optional int64 limit_value=5; int64 consumed=6; optional int64 remaining=7; bool allowed=8; string reason=9; string environment=10; }
+message ConsumeQuotaRequest { string session_token=1; string csrf_token=2; string tenant_id=3; string capability_key=4; string environment=5; int64 quantity=6; string idempotency_key=7; string correlation_id=8; }
+message ConsumeQuotaResponse { TenantEntitlementResponse entitlement=1; bool replayed=2; }
