@@ -3577,11 +3577,11 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .json(&serde_json::json!({
             "status": "suspended",
             "reason": "A version must be positive",
-            "expected_version": 0
+            "expected_version": -1
         }))
         .send()
         .await
-        .expect("zero expected version is rejected as invalid input");
+        .expect("negative expected version is rejected as invalid input");
     assert_eq!(zero_expected_version.status(), StatusCode::BAD_REQUEST);
 
     let wrong_version_type = client
