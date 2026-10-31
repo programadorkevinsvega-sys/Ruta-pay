@@ -26,6 +26,13 @@ Pruebas unitarias y de propiedades aplican a la lógica; integración/aceptació
 
 ## Fase 0 — Auditoría, decisiones y workspace
 
+### Aceptación obligatoria de casos de uso y auditoría de pruebas
+
+Para cada caso de uso de esta fase, documentar y automatizar caminos positivos y negativos, entradas inválidas/tipos/límites, duplicados y concurrencia, permisos/aislamiento, estados, fallos de dependencias, integridad de persistencia/Outbox y redacción, según aplique. Cada caso debe enlazar requisito→escenario→test→ejecución CI. Fase 8 no sustituye estas pruebas.
+
+Auditoría de pruebas: [`docs/phase-0/test-audit.md`](docs/phase-0/test-audit.md). Estado: revisión documental; trazabilidad automatizada amenaza→control→prueba pendiente del PR #3.
+
+
 - [x] Auditar scaffold, dependencias, configuración, CI y documentación. Evidencia: [`docs/phase-0/initial-audit.md`](docs/phase-0/initial-audit.md).
 - [x] Registrar ADRs de contratos gRPC, concesiones firmadas, migraciones coordinadas, identidad de servicio, operación y pruebas cross-backend en [`docs/adr/`](docs/adr/).
 - [x] Diseñar bounded contexts: identity/access, tenant registry, catalog/pricing, entitlements/quotas, subscription billing, authorization, audit, BFF y realtime. Evidencia: [`docs/phase-0/bounded-contexts.md`](docs/phase-0/bounded-contexts.md).
@@ -46,6 +53,13 @@ El informe de auditoría conserva los comandos ejecutados y el inventario real. 
 
 ## Fase 1 — Fundaciones y observabilidad
 
+### Aceptación obligatoria de casos de uso y auditoría de pruebas
+
+Para cada caso de uso de esta fase, documentar y automatizar caminos positivos y negativos, entradas inválidas/tipos/límites, duplicados y concurrencia, permisos/aislamiento, estados, fallos de dependencias, integridad de persistencia/Outbox y redacción, según aplique. Cada caso debe enlazar requisito→escenario→test→ejecución CI. Fase 8 no sustituye estas pruebas.
+
+Auditoría de pruebas: [`docs/phase-1/test-audit.md`](docs/phase-1/test-audit.md). Estado: pruebas de runtime existentes y ampliación de límites en PR #4; matriz exhaustiva de configuración/readiness aún pendiente.
+
+
 La subfase 1.1 implementa el primer corte operativo: configuración tipada y validada; BFF Axum con OpenAPI y endpoints operacionales; contrato y servidor gRPC del módulo runtime; propagación W3C/correlation; errores tipados y envelopes seguros; logs JSON, OpenTelemetry/OTLP, métricas y Sentry con redacción; readiness verificada, apagado ordenado y diagnósticos de cada frontera. Su matriz previa, con N/A justificados, está en [`docs/phase-0/integration-matrix.md`](docs/phase-0/integration-matrix.md). El health endpoint es una interfaz operacional; por eso no crea una pantalla de producto ni requiere UI React. La aceptación debe usar cliente HTTP real y cruzar el límite de red gRPC. El Dockerfile y configuración de observabilidad son específicos del backend y se encuentran bajo `bacekend-plataform/deploy/`; su build usa la raíz como contexto Cargo, pero no contiene ni despliega el binario de pasarelas.
 
 Criterios de cierre 1.1: pruebas reales HTTP→BFF→gRPC→módulo; traza y correlation ID presentes en el servidor RPC; éxito, desconexión y timeout automatizados; validación/configuración y autorización donde corresponda; evento causal y respuesta HTTP correlacionados con código/categoría y duraciones; redacción verificada; health/readiness distinta y basada en dependencias existentes; apagado ordenado probado; formato, clippy y pruebas ejecutados. El timeout se verifica en el mismo recorrido HTTP con un fallo de transporte TCP controlado, sin respuestas gRPC simuladas. No se exige PostgreSQL, Redis, JetStream, Outbox ni realtime en este corte, según las justificaciones de la matriz. Sentry y OTLP se instrumentan y configuran desde el inicio; su recepción externa solo se reporta como comprobada con envío verificable, evidenciado en el documento de aceptación.
@@ -61,6 +75,13 @@ Criterios de cierre 1.1: pruebas reales HTTP→BFF→gRPC→módulo; traza y cor
 **Salida:** integración automatizada prueba contexto HTTP→gRPC→módulo, éxito, desconexión y timeout, eventos correlacionados y ausencia de secretos. Fase 1 cerrada con evidencia registrada en [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md).
 
 ## Fase 2 — Identidad, tenant registry y aislamiento
+
+### Aceptación obligatoria de casos de uso y auditoría de pruebas
+
+Para cada caso de uso de esta fase, documentar y automatizar caminos positivos y negativos, entradas inválidas/tipos/límites, duplicados y concurrencia, permisos/aislamiento, estados, fallos de dependencias, integridad de persistencia/Outbox y redacción, según aplique. Cada caso debe enlazar requisito→escenario→test→ejecución CI. Fase 8 no sustituye estas pruebas.
+
+Auditoría de pruebas: [`docs/phase-2/test-audit.md`](docs/phase-2/test-audit.md). Estado: pruebas Rust y frontend existentes; duplicidad/concurrencia de email y ejecución de suites frontend/Playwright se incorporan en PR #5, pendiente de CI.
+
 
 La implementación se ejecuta conforme a la matriz previa de [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md). El primer corte incluye identidad/sesiones separadas para tenants y operadores, revisión manual de tenant, ciclo de vida de API Keys y las fronteras PostgreSQL/gRPC/Redis/JetStream/realtime y ambas aplicaciones frontend que aplican a estos cambios visibles.
 
