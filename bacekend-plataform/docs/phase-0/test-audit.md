@@ -15,7 +15,7 @@ La Fase 0 es exclusivamente de auditoría, diseño, decisiones, ownership, amena
 | Integraciones futuras | Decisión/N/A justificado por frontera | Revisión de matriz de integración | Documentado |
 | Decisiones arquitectónicas | ADR con contexto, decisión, consecuencias y estado | Validación de inventario y enlaces | Documentado |
 | Reproducibilidad | Comandos exactos, versiones y resultados observados | Ejecución limpia en CI o evidencia verificable | Evidencia histórica; revalidación automatizada pendiente |
-| Consistencia documental | Roadmap, PROJECT_RULES, AGENTS y arquitectura sin contradicciones | Script/check automatizado + revisión | Pendiente de automatización |
+| Consistencia documental | Roadmap, PROJECT_RULES, AGENTS y arquitectura sin contradicciones | Revisión cruzada; el control automatizado actual valida inventario documental y ADRs, no demuestra ausencia total de contradicciones semánticas | Parcial |
 
 ## Reglas de evidencia
 
