@@ -35,7 +35,7 @@ test("el BFF recupera realtime tras reiniciar Redis y JetStream", async ({ brows
   const userPassword = `Recovery-password-${suffix}Aa!`;
   const tenantName = `Recovery tenant ${suffix}`;
   const tenantSlug = `recovery-${suffix}`;
-  const legalIdentificationNumber = `9${Date.now()}${suffix.slice(0, 10)}`.slice(0, 20);
+  const legalIdentificationNumber = Array.from(crypto.getRandomValues(new Uint8Array(20)), (value) => String(value % 10)).join("");
   const origin = process.env.PAYVIA_E2E_FRONTEND_ORIGIN ?? "http://localhost:4173";
   const registration = await request.post("/v1/identity/register", {
     headers: { Origin: origin, "X-Correlation-ID": crypto.randomUUID() },
