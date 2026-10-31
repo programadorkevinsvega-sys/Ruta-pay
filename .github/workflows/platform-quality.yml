@@ -24,7 +24,7 @@ on:
 
 jobs:
   quality:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:18-alpine
@@ -91,7 +91,7 @@ jobs:
         run: cargo test --workspace
       - uses: actions/setup-node@v4
         with:
-          node-version: 22.22.1
+          node-version: 22.22.2
           cache: npm
           cache-dependency-path: |
             frontends/frontend-pasarela/package-lock.json
