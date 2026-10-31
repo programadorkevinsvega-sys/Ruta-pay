@@ -375,6 +375,69 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .default_headers(default_headers)
         .build()
         .expect("HTTP acceptance client builds");
+    // The public registration endpoint is limited per normalized account and per peer IP.
+    // Invalid passwords still consume an attempt, preventing cheap validation probes from
+    // bypassing the protection around the expensive password-hashing path.
+    let limited_email = format!("limited_{}@example.test", Uuid::new_v4().simple());
+    for attempt in 0..5 {
+        let response = client
+            .post(format!("http://{http_addr}/v1/identity/register"))
+            .header(header::ORIGIN, &origin)
+            .json(&serde_json::json!({
+                "email": limited_email,
+                "password": "long-lowercase-password"
+            }))
+            .send()
+            .await
+            .expect("registration attempt reaches the BFF");
+        assert_eq!(
+            response.status(),
+            StatusCode::BAD_REQUEST,
+            "attempt {attempt} is below the per-account registration limit"
+        );
+    }
+    let account_limited = client
+        .post(format!("http://{http_addr}/v1/identity/register"))
+        .header(header::ORIGIN, &origin)
+        .json(&serde_json::json!({
+            "email": limited_email,
+            "password": "long-lowercase-password"
+        }))
+        .send()
+        .await
+        .expect("account-limited registration response arrives");
+    assert_eq!(account_limited.status(), StatusCode::TOO_MANY_REQUESTS);
+
+    // A separate set of accounts from the same peer proves the independent IP ceiling.
+    for attempt in 6..20 {
+        let response = client
+            .post(format!("http://{http_addr}/v1/identity/register"))
+            .header(header::ORIGIN, &origin)
+            .json(&serde_json::json!({
+                "email": format!("ip_limit_{attempt}_{}@example.test", Uuid::new_v4().simple()),
+                "password": "long-lowercase-password"
+            }))
+            .send()
+            .await
+            .expect("IP-limited registration attempt reaches the BFF");
+        assert_eq!(
+            response.status(),
+            StatusCode::BAD_REQUEST,
+            "IP attempt {attempt} is below the per-IP registration limit"
+        );
+    }
+    let ip_limited = client
+        .post(format!("http://{http_addr}/v1/identity/register"))
+        .header(header::ORIGIN, &origin)
+        .json(&serde_json::json!({
+            "email": format!("ip_limit_final_{}@example.test", Uuid::new_v4().simple()),
+            "password": "long-lowercase-password"
+        }))
+        .send()
+        .await
+        .expect("IP-limited registration response arrives");
+    assert_eq!(ip_limited.status(), StatusCode::TOO_MANY_REQUESTS);
+
     let email = format!("acceptance_{}@example.test", Uuid::new_v4().simple());
     let password = format!("A-valid-password-{}!", Uuid::new_v4().simple());
     let weak_password_email = format!("weak_password_{}@example.test", Uuid::new_v4().simple());
