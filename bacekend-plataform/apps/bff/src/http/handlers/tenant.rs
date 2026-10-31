@@ -487,7 +487,9 @@ fn tenant_grpc_error(
             false,
         ),
         tonic::Code::FailedPrecondition
-            if status.message().contains("realtime journal contains a cursor gap") =>
+            if status
+                .message()
+                .contains("realtime journal contains a cursor gap") =>
         {
             (
                 StatusCode::CONFLICT,
