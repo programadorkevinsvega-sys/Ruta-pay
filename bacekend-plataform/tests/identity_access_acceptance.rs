@@ -399,6 +399,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("realtime gRPC channel connects");
     let mut authorization_client = identity_client.clone();
+    let realtime_acceptance_client = realtime_client.clone();
     let http_listener = TcpListener::bind("127.0.0.1:0").await.expect("BFF bind");
     let http_addr = http_listener.local_addr().expect("BFF address");
     let origin = format!("http://localhost:{}", http_addr.port());
@@ -1930,7 +1931,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     );
     // Keep an authenticated realtime subscription open while the operator
     // session is revoked. The stream must re-check authorization and terminate.
-    let mut realtime_subscription_client = realtime_client.clone();
+    let mut realtime_subscription_client = realtime_acceptance_client.clone();
     let realtime_subscription = realtime_subscription_client
         .subscribe_events(SubscribeEventsRequest {
             session_token: operator_session_cookie.clone(),
