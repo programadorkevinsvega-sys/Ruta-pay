@@ -415,12 +415,12 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .header(header::ORIGIN, &origin)
         .header("x-correlation-id", "corr_identity_duplicate_email")
         .json(&serde_json::json!({
-            "email": email.clone(),
+            "email": format!(" {} ", email.to_ascii_uppercase()),
             "password": password.clone()
         }))
         .send()
         .await
-        .expect("duplicate email registration receives a classified response");
+        .expect("normalized duplicate email registration receives a classified response");
     assert_eq!(duplicate_registration.status(), StatusCode::CONFLICT);
     let duplicate_envelope: serde_json::Value = duplicate_registration
         .json()
