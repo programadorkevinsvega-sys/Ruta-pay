@@ -28,18 +28,19 @@ La auditoría cubre las capacidades realmente implementadas en Fase 2: registro/
 | Sesión tenant usada como operador | Integración | Cubierto |
 | Aislamiento tenant A/B | HTTP 403 y RLS | Cubierto en los flujos existentes |
 | Documento legal duplicado | Integración | Cubierto |
-| Slug duplicado | Prueba HTTP 409 y comprobación de una sola fila/evento añadida en este PR | CI pendiente |
-| Todos los roles × permisos × operaciones | Matriz de grants sembrados comprobada exactamente para 4 roles tenant y 3 roles operator; aceptación RPC comprueba un permiso permitido y uno denegado | Matriz de datos cubierta; combinaciones de comportamiento por endpoint/operación aún pendientes |
-| Sesión expirada/revocada/cookie/CSRF/Origin | Algunos controles documentados y ejercitados | Pendiente de matriz exhaustiva por endpoint |
-| API Key scopes vacíos/mal formados | Unitario | Positivos/negativos, nombre 2/80, scopes 1/16 y 64 bytes, caracteres inválidos y separación test/live añadidos en este PR; autorización HTTP por cada scope pendiente |
+| Slug duplicado | HTTP 409 secuencial y carrera concurrente: exactamente un 201/409, una fila y un evento Outbox | Añadido en este PR; CI del head actualizado pendiente |
+| Todos los roles × permisos × operaciones | RPC por permiso para 4 roles tenant y 3 operator; HTTP tenant read/API-key list/create/revoke por rol; HTTP operator list y lifecycle allowed/denied | Parcial: faltan todas las operaciones administrativas por cada rol y una matriz exhaustiva endpoint×actor |
+| Sesión expirada/revocada/cookie/CSRF/Origin | Expiración tenant, revocación tenant/operator, cookie, CSRF, Origin y cierre de stream realtime tras revocar operador | Parcial: falta cruzar cada endpoint mutante/lectura con ambos tipos de sesión, ausencia/expiración/revocación y Origin/CSRF |
+| API Key scopes y autorización | Unitario de sintaxis/límites; autorización gRPC positiva/negativa, ambiente incorrecto, tenant cruzado y clave revocada | Cubierto para la superficie de autorización de Fase 2. No existe endpoint HTTP de consumo de operaciones de pago en esta fase; validar scopes HTTP corresponde a la fase que exponga esas operaciones |
 | API Key test/live, secreto no repetido, revocación | Unitario + aceptación | Cubierto en flujos principales |
-| Eventos Outbox/JetStream duplicados y reintentos | Aceptación de consumo idempotente | Cubierto en flujo principal; faltan variantes fuera de orden/fallo intermedio |
-| Realtime cursor/replay/reconnect/huecos | E2E y aceptación de recuperación | Parcial; faltan matriz completa de cursores, autorización y reconexión |
-| Frontend unit/build | Scripts npm disponibles | Deben ejecutarse en CI |
-| Browser E2E comercio y administración | Playwright disponible | Deben ejecutarse en CI; la ejecución previa no los incluía |
+| Eventos Outbox/JetStream duplicados y reintentos | Outbox atómico, redelivery idempotente y journal deduplicado | Parcial: faltan fallos de publicación/ACK, lease vencido, reintentos y eventos fuera de orden |
+| Realtime cursor/replay/reconnect/huecos | Replay desde cursor, cursor actual vacío, cursor futuro HTTP 416, tenant cruzado, eventos de plataforma y cierre de suscripción al revocar operador; tests unitarios de secuencia/gaps y E2E multi-réplica | Parcial: falta cubrir cursor malformado/negativo, gaps/duplicados/antiguos en el borde HTTP, cambio de identidad y reconexión tras pérdida de autorización |
+| Frontend unit/build | Vitest y builds de ambas aplicaciones | Workflow CI configurado; falta evidencia verde en el SHA final del PR |
+| Browser E2E comercio y administración | Playwright para ambas aplicaciones y recuperación realtime multi-réplica | Workflow CI configurado; falta evidencia verde en el SHA final del PR |
 
 ## Pruebas añadidas en este PR
 
+- `identity_access_acceptance.rs`: registra dos solicitudes simultáneas con el mismo slug y dos con la misma identificación legal normalizada; cada carrera debe producir exactamente un HTTP 201 y un HTTP 409, una fila de tenant y un único evento Outbox para el agregado ganador.
 - `api_key.rs`: nombre mínimo/máximo, nombre inválido/control, scopes 1–16, scope de 64 bytes, exceso de longitud/cantidad, valores vacíos, mayúsculas, Unicode y separadores no permitidos; prefijos y secretos test/live distintos.
 - `tenant.rs`: matriz completa de 5 estados × 5 estados frente a las ocho transiciones permitidas; razones de 3/500 caracteres; actor operador obligatorio en transiciones sensibles; parseo de estados conocidos/desconocidos.
 - `identity_access_acceptance.rs`: comparación exacta de los grants sembrados para los cuatro roles tenant y tres roles operator. Además, se inyecta un fallo controlado en la escritura Outbox durante un registro HTTP y se verifica que no persistan identidad, evento Outbox ni auditoría: la transacción no deja efectos parciales.
