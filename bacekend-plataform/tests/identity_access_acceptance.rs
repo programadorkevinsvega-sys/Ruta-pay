@@ -442,6 +442,45 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .expect("HTTP acceptance client builds");
     let email = format!("acceptance_{}@example.test", Uuid::new_v4().simple());
     let password = format!("A-valid-password-{}!", Uuid::new_v4().simple());
+    let identity_state_before_origin_rejection: (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM identity_access.tenant_users),(SELECT count(*) FROM identity_access.sessions)",
+    )
+    .fetch_one(&migration_pool)
+    .await
+    .expect("identity and session counts before Origin rejection are queryable");
+    let invalid_origin_registration = client
+        .post(format!("http://{http_addr}/v1/identity/register"))
+        .header(header::ORIGIN, "https://attacker.example")
+        .json(&serde_json::json!({
+            "email": email.clone(),
+            "password": password.clone()
+        }))
+        .send()
+        .await
+        .expect("untrusted Origin registration receives an HTTP response");
+    assert_eq!(invalid_origin_registration.status(), StatusCode::FORBIDDEN);
+    let invalid_origin_tenant_login = client
+        .post(format!("http://{http_addr}/v1/identity/session"))
+        .header(header::ORIGIN, "https://attacker.example")
+        .json(&serde_json::json!({
+            "email": email.clone(),
+            "password": password.clone()
+        }))
+        .send()
+        .await
+        .expect("untrusted Origin tenant login receives an HTTP response");
+    assert_eq!(invalid_origin_tenant_login.status(), StatusCode::FORBIDDEN);
+    let identity_state_after_origin_rejection: (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM identity_access.tenant_users),(SELECT count(*) FROM identity_access.sessions)",
+    )
+    .fetch_one(&migration_pool)
+    .await
+    .expect("identity and session counts after Origin rejection are queryable");
+    assert_eq!(
+        identity_state_after_origin_rejection,
+        identity_state_before_origin_rejection,
+        "untrusted Origin must not create identities or sessions"
+    );
     let weak_password_email = format!("weak_password_{}@example.test", Uuid::new_v4().simple());
     let weak_password_response = client
         .post(format!("http://{http_addr}/v1/identity/register"))
@@ -793,6 +832,21 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     assert_eq!(
         tenant_session_used_for_operator.status(),
         StatusCode::UNAUTHORIZED
+    );
+
+    let invalid_origin_operator_login = client
+        .post(format!("http://{http_addr}/v1/platform/identity/session"))
+        .header(header::ORIGIN, "https://attacker.example")
+        .json(&serde_json::json!({
+            "email": operator_email.clone(),
+            "password": operator_password.clone()
+        }))
+        .send()
+        .await
+        .expect("untrusted Origin operator login receives an HTTP response");
+    assert_eq!(
+        invalid_origin_operator_login.status(),
+        StatusCode::FORBIDDEN
     );
 
     let operator_login = client
@@ -1455,6 +1509,14 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .await
     .expect("successful scoped authorization updates last_used_at");
     assert!(api_key_last_used);
+    let api_key_scope_audit_counts: (i64, i64) = sqlx::query_as(
+        "SELECT count(*) FILTER (WHERE outcome='allowed'),count(*) FILTER (WHERE outcome='denied') FROM identity_access.audit_events WHERE action='api_key.authorization.checked' AND resource_id=$1 AND correlation_id IN ('corr_api_key_scope_allowed','corr_api_key_scope_denied')",
+    )
+    .bind(api_key_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("API key scope authorization audit outcomes are queryable");
+    assert_eq!(api_key_scope_audit_counts, (1, 1));
 
     let foreign_api_key_list = client
         .get(format!(
@@ -1506,6 +1568,22 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("tenant owner can revoke its key through BFF and gRPC");
     assert_eq!(api_key_revoke.status(), StatusCode::NO_CONTENT);
+    let csrf_rejected_api_key_revoke = client
+        .delete(format!(
+            "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys/{api_key_id}"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("missing CSRF token rejects API key revocation");
+    assert_eq!(
+        csrf_rejected_api_key_revoke.status(),
+        StatusCode::FORBIDDEN
+    );
     let revoked_key_status: String = sqlx::query_scalar(
         "SELECT status FROM identity_access.api_keys WHERE tenant_id=$1 AND id=$2",
     )
@@ -1591,7 +1669,8 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             if allowed_permissions.contains(&permission) {
                 assert!(
                     decision.is_ok(),
-                    "role {role} must be allowed permission {permission}"
+                    "role {role} must be allowed permission {permission}: {:?}",
+                    decision.err()
                 );
             } else {
                 assert_eq!(
@@ -2579,6 +2658,154 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("platform owner can reactivate a suspended tenant");
     assert_eq!(owner_status_change.status(), StatusCode::OK);
+
+    // Exercise activation and both close transitions on a separate tenant.
+    // platform_support must be denied; platform_security may activate and close.
+    let second_tenant_initial_state: (String, i64) = sqlx::query_as(
+        "SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1",
+    )
+    .bind(second_tenant_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("second tenant lifecycle state is queryable");
+    assert_eq!(
+        second_tenant_initial_state,
+        ("pending_verification".to_owned(), 1)
+    );
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_support' WHERE id=$1")
+        .bind(operator_id)
+        .execute(&migration_pool)
+        .await
+        .expect("platform support role is selected for activation denial");
+    let support_activation = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{second_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "active",
+            "reason": "Support role must not activate a tenant",
+            "expected_version": 1
+        }))
+        .send()
+        .await
+        .expect("support activation receives an HTTP response");
+    assert_eq!(support_activation.status(), StatusCode::FORBIDDEN);
+
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_security' WHERE id=$1")
+        .bind(operator_id)
+        .execute(&migration_pool)
+        .await
+        .expect("platform security role is selected for activation");
+    let security_activation = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{second_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "active",
+            "reason": "Authorized platform security verification",
+            "expected_version": 1
+        }))
+        .send()
+        .await
+        .expect("platform security can activate a verified tenant");
+    assert_eq!(security_activation.status(), StatusCode::OK);
+
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_support' WHERE id=$1")
+        .bind(operator_id)
+        .execute(&migration_pool)
+        .await
+        .expect("platform support role is selected for close denial");
+    let support_close = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{second_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "closing",
+            "reason": "Support role must not close a tenant",
+            "expected_version": 2
+        }))
+        .send()
+        .await
+        .expect("support close receives an HTTP response");
+    assert_eq!(support_close.status(), StatusCode::FORBIDDEN);
+
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_security' WHERE id=$1")
+        .bind(operator_id)
+        .execute(&migration_pool)
+        .await
+        .expect("platform security role is selected for tenant close");
+    let security_closing = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{second_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "closing",
+            "reason": "Authorized platform security close",
+            "expected_version": 2
+        }))
+        .send()
+        .await
+        .expect("platform security can start tenant close");
+    assert_eq!(security_closing.status(), StatusCode::OK);
+    let security_closed = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{second_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "closed",
+            "reason": "Authorized platform security final close",
+            "expected_version": 3
+        }))
+        .send()
+        .await
+        .expect("platform security can finish tenant close");
+    assert_eq!(security_closed.status(), StatusCode::OK);
+    let second_tenant_closed_state: (String, i64) = sqlx::query_as(
+        "SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1",
+    )
+    .bind(second_tenant_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("closed tenant lifecycle state is queryable");
+    assert_eq!(
+        second_tenant_closed_state,
+        ("closed".to_owned(), 4)
+    );
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_owner' WHERE id=$1")
+        .bind(operator_id)
+        .execute(&migration_pool)
+        .await
+        .expect("platform owner role is restored after lifecycle matrix");
 
     // Mutating HTTP endpoints must reject missing CSRF tokens or untrusted origins
     // before reaching a module or changing durable state.
