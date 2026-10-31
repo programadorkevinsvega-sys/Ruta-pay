@@ -5,6 +5,12 @@ use utoipa::OpenApi;
 #[openapi(
     paths(
         super::health_live::handle,
+        super::catalog::create_plan,
+        super::catalog::list_plans,
+        super::catalog::publish_price,
+        super::catalog::set_capabilities,
+        super::catalog::assign_plan,
+        super::catalog::get_entitlement,
         super::health_ready::handle,
         super::identity::register,
         super::identity::login,
@@ -35,7 +41,15 @@ use utoipa::OpenApi;
         super::tenant::NewTenant,
         super::tenant::ChangeTenantStatus,
         super::tenant::TenantView,
-        super::tenant::TenantList
+        super::tenant::TenantList,
+        super::catalog::NewPlan,
+        super::catalog::NewPriceVersion,
+        super::catalog::CapabilityDefinition,
+        super::catalog::SetCapabilities,
+        super::catalog::AssignPlan,
+        super::catalog::PlanView,
+        super::catalog::PriceView,
+        super::catalog::EntitlementView
     ))
 )]
 pub struct ApiDocument;
