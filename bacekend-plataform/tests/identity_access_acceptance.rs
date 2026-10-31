@@ -408,6 +408,17 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .expect("HTTP registration response arrives");
     assert_eq!(register_response.status(), StatusCode::CREATED);
 
+    let registration: serde_json::Value = register_response
+        .json()
+        .await
+        .expect("registration response contains its resource identifier");
+    let registered_user_id = Uuid::parse_str(
+        registration["user_id"]
+            .as_str()
+            .expect("registration user id is present"),
+    )
+    .expect("registration user id is valid");
+
     // Duplicate normalized email must be rejected at the HTTP boundary without
     // creating a second identity or a second durable registration event.
     let duplicate_registration = client
@@ -493,16 +504,6 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .expect("concurrent identity count is queryable");
     assert_eq!(concurrent_identity_count, 1);
 
-    let registration: serde_json::Value = register_response
-        .json()
-        .await
-        .expect("registration response contains its resource identifier");
-    let registered_user_id = Uuid::parse_str(
-        registration["user_id"]
-            .as_str()
-            .expect("registration user id is present"),
-    )
-    .expect("registration user id is valid");
     let registration_event: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM identity_access.outbox_events WHERE aggregate_id = $1 AND event_type = 'identity.tenant_user.registered')",
     )
