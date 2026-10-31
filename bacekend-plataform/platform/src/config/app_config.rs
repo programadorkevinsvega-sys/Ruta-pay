@@ -365,7 +365,9 @@ mod tests {
             config.environment = environment.to_owned();
             assert_eq!(
                 validate_config(&config),
-                Err(ConfigError::InvalidValue { variable: "APP_ENV" }),
+                Err(ConfigError::InvalidValue {
+                variable: "APP_ENV"
+            }),
                 "{environment}"
             );
         }
@@ -377,14 +379,18 @@ mod tests {
         config.nats_username = "   ".to_owned();
         assert_eq!(
             validate_config(&config),
-            Err(ConfigError::InvalidValue { variable: "PLATFORM_NATS_URL" })
+            Err(ConfigError::InvalidValue {
+                variable: "PLATFORM_NATS_URL"
+            })
         );
 
         config = isolated_valid_config();
         config.nats_password = "x".repeat(31);
         assert_eq!(
             validate_config(&config),
-            Err(ConfigError::InvalidValue { variable: "PLATFORM_NATS_URL" })
+            Err(ConfigError::InvalidValue {
+                variable: "PLATFORM_NATS_URL"
+            })
         );
 
         config.nats_password = "x".repeat(32);
@@ -399,12 +405,16 @@ mod tests {
         config.metrics_addr = "0.0.0.0:9090".parse().expect("metrics address");
         assert_eq!(
             validate_config(&config),
-            Err(ConfigError::InvalidValue { variable: "APP_METRICS_BEARER_TOKEN" })
+            Err(ConfigError::InvalidValue {
+                variable: "APP_METRICS_BEARER_TOKEN"
+            })
         );
         config.metrics_token = Some("x".repeat(31));
         assert_eq!(
             validate_config(&config),
-            Err(ConfigError::InvalidValue { variable: "APP_METRICS_BEARER_TOKEN" })
+            Err(ConfigError::InvalidValue {
+                variable: "APP_METRICS_BEARER_TOKEN"
+            })
         );
         config.metrics_token = Some("x".repeat(32));
         assert_eq!(validate_config(&config), Ok(()));
