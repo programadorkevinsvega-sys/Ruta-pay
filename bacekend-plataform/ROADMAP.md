@@ -30,7 +30,7 @@ Pruebas unitarias y de propiedades aplican a la lógica; integración/aceptació
 
 Para cada caso de uso de esta fase, documentar y automatizar caminos positivos y negativos, entradas inválidas/tipos/límites, duplicados y concurrencia, permisos/aislamiento, estados, fallos de dependencias, integridad de persistencia/Outbox y redacción, según aplique. Cada caso debe enlazar requisito→escenario→test→ejecución CI. Fase 8 no sustituye estas pruebas.
 
-Auditoría de pruebas: [`docs/phase-0/test-audit.md`](docs/phase-0/test-audit.md). Estado: revisión documental; trazabilidad automatizada amenaza→control→prueba pendiente del PR #3.
+Auditoría de pruebas: [`docs/phase-0/test-audit.md`](docs/phase-0/test-audit.md). El PR #3 añade la matriz documental inicial; la automatización completa de trazabilidad amenaza→control→prueba sigue pendiente.
 
 
 - [x] Auditar scaffold, dependencias, configuración, CI y documentación. Evidencia: [`docs/phase-0/initial-audit.md`](docs/phase-0/initial-audit.md).
