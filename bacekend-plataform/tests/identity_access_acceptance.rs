@@ -439,7 +439,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .header(header::ORIGIN, &origin)
         .header("x-correlation-id", "corr_force_identity_outbox_failure")
         .json(&serde_json::json!({
-            "email": rollback_email,
+            "email": rollback_email.clone(),
             "password": format!("Rollback-password-{}!", Uuid::new_v4().simple())
         }))
         .send()
