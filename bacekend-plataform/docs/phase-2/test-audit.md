@@ -28,7 +28,7 @@ La auditoría cubre las capacidades realmente implementadas en Fase 2: registro/
 | Sesión tenant usada como operador | Integración | Cubierto |
 | Aislamiento tenant A/B | HTTP 403 y RLS | Cubierto en los flujos existentes |
 | Documento legal duplicado | Integración | Cubierto |
-| Slug duplicado | Criterio documentado; no confirmado en la prueba inspeccionada | Pendiente de prueba explícita |
+| Slug duplicado | Prueba HTTP 409 y comprobación de una sola fila/evento añadida en este PR | CI pendiente |
 | Todos los roles × permisos × operaciones | Solo subconjunto demostrado | Pendiente de matriz exhaustiva |
 | Sesión expirada/revocada/cookie/CSRF/Origin | Algunos controles documentados y ejercitados | Pendiente de matriz exhaustiva por endpoint |
 | API Key scopes vacíos/mal formados | Unitario | Cubierto parcialmente; faltan límites y combinaciones API |
@@ -49,7 +49,7 @@ Estas pruebas validan el comportamiento observable y la integridad de persistenc
 
 ## Huecos pendientes
 
-1. Probar explícitamente slug duplicado y todos los constraints únicos de tenant.
+1. Extender las pruebas de unicidad a todos los constraints relevantes y a concurrencia de slug/documento legal.
 2. Completar matriz por endpoint de autenticación, autorización, CSRF, Origin, cookie, expiración, revocación y rol.
 3. Probar todas las transiciones de estado desde API, incluidos motivos ausentes, actor no autorizado, versión obsoleta y carreras concurrentes.
 4. Completar límites numéricos/tamaño/tipo en cada request DTO; los campos que no acepten números negativos deben demostrar 400/422 y no mutar persistencia.
