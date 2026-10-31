@@ -4,7 +4,7 @@
 from pathlib import Path
 import sys
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
 PHASE0 = DOCS / "phase-0"
 
