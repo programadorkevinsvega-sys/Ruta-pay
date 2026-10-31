@@ -2,9 +2,9 @@ use payvia_platform_bff::{
     common::grpc::runtime_probe_client::RuntimeProbeClient, http::routes::router,
 };
 use payvia_platform_core::{config::AppConfig, metrics, shutdown_signal, telemetry};
-use platform_contracts::identity_access::identity_access_client::IdentityAccessClient as IdentityAccessGrpcClient;
 use platform_contracts::catalog_pricing::catalog_pricing_client::CatalogPricingClient as CatalogPricingGrpcClient;
 use platform_contracts::entitlements_quotas::entitlements_quotas_client::EntitlementsQuotasClient as EntitlementsQuotasGrpcClient;
+use platform_contracts::identity_access::identity_access_client::IdentityAccessClient as IdentityAccessGrpcClient;
 use platform_contracts::realtime::realtime_gateway_client::RealtimeGatewayClient as RealtimeGatewayGrpcClient;
 use platform_contracts::runtime::runtime_probe_client::RuntimeProbeClient as RuntimeProbeGrpcClient;
 use platform_contracts::tenant_registry::tenant_registry_client::TenantRegistryClient as TenantRegistryGrpcClient;
@@ -172,11 +172,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
         })?;
     let catalog_client = CatalogPricingGrpcClient::connect(
-        Endpoint::from_shared(format!("http://{runtime_addr}"))?.connect_timeout(Duration::from_secs(2)).timeout(Duration::from_secs(5))
-    ).await?;
+        Endpoint::from_shared(format!("http://{runtime_addr}"))?
+            .connect_timeout(Duration::from_secs(2))
+            .timeout(Duration::from_secs(5)),
+    )
+    .await?;
     let entitlements_client = EntitlementsQuotasGrpcClient::connect(
-        Endpoint::from_shared(format!("http://{runtime_addr}"))?.connect_timeout(Duration::from_secs(2)).timeout(Duration::from_secs(5))
-    ).await?;
+        Endpoint::from_shared(format!("http://{runtime_addr}"))?
+            .connect_timeout(Duration::from_secs(2))
+            .timeout(Duration::from_secs(5)),
+    )
+    .await?;
     let metrics_listener =
         bind_listener(config.metrics_addr, "platform_metrics", "bind_metrics").await?;
     let metrics_task = tokio::spawn(metrics::serve(
@@ -189,8 +195,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(event.name = "service.started", service = "payvia-platform", http_addr = %http_listener.local_addr()?, grpc_addr = %runtime_addr, metrics_addr = %config.metrics_addr);
     axum::serve(
         http_listener,
-        router(grpc_client, identity_client, tenant_client, realtime_client, catalog_client, entitlements_client)
-            .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        router(
+            grpc_client,
+            identity_client,
+            tenant_client,
+            realtime_client,
+            catalog_client,
+            entitlements_client,
+        )
+        .into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
     .with_graceful_shutdown(async move {
         shutdown_signal::wait_for_shutdown_signal().await;
