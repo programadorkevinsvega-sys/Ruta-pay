@@ -16,7 +16,7 @@ use platform_contracts::{
     catalog_pricing::{CreatePlanRequest, ListPlansRequest, PublishPriceVersionRequest},
     entitlements_quotas::{
         AssignTenantPlanRequest, CapabilityInput, GetTenantEntitlementRequest,
-        SetPlanCapabilitiesRequest,
+        SetPlanCapabilitiesRequest, ListTenantEntitlementsRequest,
     },
 };
 
@@ -163,6 +163,28 @@ pub async fn assign_plan(State(state): State<Arc<AppState>>, headers: HeaderMap,
     match state.entitlements_client.clone().assign_tenant_plan(tonic_request(request, &correlation)).await {
         Ok(response) => (StatusCode::CREATED, Json(serde_json::json!({"assignment_id":response.into_inner().assignment_id}))).into_response(),
         Err(status) => identity::grpc_error(status, "assign_tenant_plan", &correlation, started.elapsed().as_millis() as u64),
+    }
+}
+
+
+#[utoipa::path(get, path="/v1/tenants/{tenant_id}/entitlements", params(("tenant_id"=String,Path),("environment"=Option<String>,Query)), responses((status=200, body=Vec<EntitlementView>)))]
+pub async fn list_entitlements(State(state): State<Arc<AppState>>, Path(tenant_id): Path<String>, Query(query): Query<EntitlementQuery>, headers: HeaderMap) -> Response {
+    let correlation = correlation_id(&headers);
+    if headers.contains_key("origin") && !identity::valid_origin(&headers) {
+        return identity::error(StatusCode::FORBIDDEN, "origin_rejected", "authorization", false, correlation);
+    }
+    let (Some(session),Some(csrf)) = (identity::cookie_value(&headers,TENANT_SESSION),identity::cookie_value(&headers,TENANT_CSRF)) else {
+        return identity::error(StatusCode::UNAUTHORIZED, "authentication_failed", "authentication", false, correlation);
+    };
+    let request = ListTenantEntitlementsRequest {
+        session_token:session, csrf_token:csrf, tenant_id,
+        environment:query.environment.unwrap_or_else(||"test".to_owned()),
+        effective_at:Utc::now().to_rfc3339(), correlation_id:correlation.clone(),
+    };
+    let started = std::time::Instant::now();
+    match state.entitlements_client.clone().list_tenant_entitlements(tonic_request(request, &correlation)).await {
+        Ok(response) => Json(response.into_inner().entitlements.into_iter().map(entitlement_view).collect::<Vec<_>>()).into_response(),
+        Err(status) => identity::grpc_error(status, "list_tenant_entitlements", &correlation, started.elapsed().as_millis() as u64),
     }
 }
 

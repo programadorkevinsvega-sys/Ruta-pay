@@ -43,6 +43,7 @@ pub fn router(
         .route("/v1/platform/catalog/plans/{plan_id}/prices", post(catalog::publish_price))
         .route("/v1/platform/entitlements/capabilities", post(catalog::set_capabilities))
         .route("/v1/platform/entitlements/assignments", post(catalog::assign_plan))
+        .route("/v1/tenants/{tenant_id}/entitlements", get(catalog::list_entitlements))
         .route("/v1/tenants/{tenant_id}/entitlements/{capability_key}", get(catalog::get_entitlement))
         .route(
             "/v1/identity/memberships",

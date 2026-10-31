@@ -11,6 +11,7 @@ use utoipa::OpenApi;
         super::catalog::set_capabilities,
         super::catalog::assign_plan,
         super::catalog::get_entitlement,
+        super::catalog::list_entitlements,
         super::health_ready::handle,
         super::identity::register,
         super::identity::login,
