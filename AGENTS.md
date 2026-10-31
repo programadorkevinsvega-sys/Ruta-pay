@@ -31,6 +31,20 @@ Todo requisito aplicable de esos seis documentos rige **desde el día uno de imp
 
 Los documentos de calidad, observabilidad y arquitectura deben mantenerse sincronizados entre ambos backends. `ARCHITECTURE_RULES.md` fija la topología específica de Payvia y estos documentos completan, respectivamente, las obligaciones de ingeniería de calidad, observabilidad/monitoreo y diseño modular. Si se detecta una incompatibilidad real, explica y documenta el conflicto y resuélvelo antes de ejecutar el trabajo afectado; no ignores ni debilites una regla silenciosamente.
 
+## Pruebas obligatorias por caso de uso y fase
+
+Antes de planificar o modificar una fase/subfase, consulta [ARCHITECTURE_ROLES.md](ARCHITECTURE_ROLES.md) y aplica la matriz obligatoria de casos de uso positivos, negativos, límites, duplicados/concurrencia, autorización, estados, fallos, integridad y privacidad. No basta con añadir una prueba feliz ni con medir cobertura de líneas.
+
+El agente debe:
+- Inventariar cada acción/endpoint y sus actores, precondiciones, invariantes y efectos persistidos/externos.
+- Escribir la matriz de escenarios antes o junto con la implementación, incluyendo explícitamente números negativos/cero/límites cuando sean inputs posibles, correo/slug/documento duplicado, peticiones simultáneas, permisos insuficientes, sesión expirada, fallos de dependencia y ausencia de efectos parciales.
+- Implementar pruebas unitarias, integración con dependencias reales, contratos y E2E según la frontera afectada. Los mocks no sustituyen aceptación de integración.
+- Ejecutar las suites afectadas en CI; comprobar el workflow del commit exacto y todos los jobs/steps. No declarar aprobadas suites solo porque existan scripts o archivos de prueba.
+- Adjuntar trazabilidad requisito→caso→test→ejecución al acta de fase. Registrar cada N/A con justificación previa y propietario.
+- Mantener la Fase 8 como hardening transversal adicional; nunca posponer hasta Fase 8 las pruebas funcionales/negativas del comportamiento que se implementa en una fase anterior.
+
+Una fase no puede declararse terminada si una prueba obligatoria falta, no se ejecutó o falla. Los agentes no deben declarar “100 %” por porcentaje de cobertura: el criterio es que todos los casos de uso definidos y sus particiones aplicables tengan evidencia aprobada. No se exige enumerar infinitas entradas posibles.
+
 ## Ubicación del workspace y frontends
 
 El workspace Cargo de ambos backends debe tener un único manifiesto en `Cargo.toml` en la raíz del repositorio; no se crean workspaces Cargo anidados en `bacekend-plataform/` ni `bacekend-pasarela/`. El manifiesto raíz ya declara ambos backends como miembros y sus `Cargo.toml` de paquete heredan la configuración compartida. La Fase 0 verifica documentalmente la composición del workspace; la creación de crates/apps funcionales pertenece a las fases de implementación, sin workspaces anidados. Esta resolución compartida no mezcla sus bins, identidades, composición, ownership ni despliegues. Los frontends son aplicaciones independientes en `frontends/frontend-pasarela/` y `frontends/frontend-plataform/`.
