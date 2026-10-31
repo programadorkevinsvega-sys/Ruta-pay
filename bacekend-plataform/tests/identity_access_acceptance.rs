@@ -1538,6 +1538,27 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         cursor_replay_body["events"].as_array().map(Vec::len),
         Some(0)
     );
+
+    // A cursor ahead of the durable scope cursor is not an empty page: it is
+    // an invalid checkpoint and must be rejected so clients do not skip events.
+    let future_cursor = client
+        .get(format!(
+            "{replay_url}&cursor={}",
+            replay_cursor.saturating_add(100)
+        ))
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .header("x-correlation-id", "corr_realtime_future_cursor")
+        .send()
+        .await
+        .expect("future realtime cursor receives a classified response");
+    assert_eq!(
+        future_cursor.status(),
+        StatusCode::RANGE_NOT_SATISFIABLE
+    );
+
     let foreign_tenant_replay = client
         .get(format!(
             "http://{http_addr}/v1/realtime/events?audience=tenant&tenant_id={}&cursor=0",
