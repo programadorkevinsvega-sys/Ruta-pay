@@ -113,10 +113,12 @@ impl CatalogService {
         .bind(effective_until)
         .fetch_one(&mut *transaction)
         .await?;
-        sqlx::query("UPDATE catalog_pricing.plans SET status='active' WHERE id=$1 AND status='draft'")
-            .bind(plan_id)
-            .execute(&mut *transaction)
-            .await?;
+        sqlx::query(
+            "UPDATE catalog_pricing.plans SET status='active' WHERE id=$1 AND status='draft'",
+        )
+        .bind(plan_id)
+        .execute(&mut *transaction)
+        .await?;
         sqlx::query("INSERT INTO catalog_pricing.audit_events (event_id,actor_id,action,resource_id,outcome,correlation_id,trace_id,safe_details) VALUES ($1,$2,'catalog.price_version.published',$3,'completed',$4,$5,$6)")
             .bind(Uuid::new_v4()).bind(actor_id).bind(row.0).bind(correlation_id)
             .bind(payvia_observability::current_trace_id())
@@ -141,10 +143,7 @@ impl CatalogService {
         })
     }
 
-    pub async fn get_price_version(
-        &self,
-        id: Uuid,
-    ) -> Result<PriceVersion, CatalogServiceError> {
+    pub async fn get_price_version(&self, id: Uuid) -> Result<PriceVersion, CatalogServiceError> {
         let row = sqlx::query_as::<_, (Uuid, Uuid, i32, String, i64, String, i32, DateTime<Utc>, Option<DateTime<Utc>>, DateTime<Utc>)>(
             "SELECT id,plan_id,version,currency,amount_minor,period_unit,interval_count,effective_from,effective_until,published_at              FROM catalog_pricing.price_versions WHERE id=$1",
         )
@@ -175,10 +174,17 @@ impl CatalogService {
         .fetch_all(&mut *transaction)
         .await?;
         transaction.commit().await?;
-        Ok(rows.into_iter().map(|row| Plan {
-            id: row.0, slug: row.1, name: row.2, description: row.3,
-            status: row.4, created_at: row.5,
-        }).collect())
+        Ok(rows
+            .into_iter()
+            .map(|row| Plan {
+                id: row.0,
+                slug: row.1,
+                name: row.2,
+                description: row.3,
+                status: row.4,
+                created_at: row.5,
+            })
+            .collect())
     }
 }
 

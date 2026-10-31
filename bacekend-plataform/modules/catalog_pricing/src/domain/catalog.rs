@@ -43,7 +43,9 @@ pub enum CatalogError {
 impl Plan {
     pub fn validate(slug: &str, name: &str, description: &str) -> Result<(), CatalogError> {
         if !(3..=64).contains(&slug.len())
-            || !slug.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+            || !slug
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
             || slug.starts_with('-')
             || slug.ends_with('-')
             || slug.contains("--")
@@ -87,19 +89,43 @@ mod tests {
     fn plan_slug_and_name_are_strictly_validated() {
         assert_eq!(Plan::validate("starter-plan", "Starter Plan", ""), Ok(()));
         for slug in ["AB", "ab", "-abc", "abc-", "a--b", "a_b"] {
-            assert_eq!(Plan::validate(slug, "Valid Plan", ""), Err(CatalogError::InvalidPlan));
+            assert_eq!(
+                Plan::validate(slug, "Valid Plan", ""),
+                Err(CatalogError::InvalidPlan)
+            );
         }
-        assert_eq!(Plan::validate("valid", "x", ""), Err(CatalogError::InvalidPlan));
+        assert_eq!(
+            Plan::validate("valid", "x", ""),
+            Err(CatalogError::InvalidPlan)
+        );
     }
 
     #[test]
     fn price_versions_validate_currency_amount_period_and_dates() {
         let now = Utc::now();
-        assert_eq!(PriceVersion::validate("USD", 100, "month", 1, now, Some(now + Duration::days(30))), Ok(()));
-        assert_eq!(PriceVersion::validate("usd", 100, "month", 1, now, None), Err(CatalogError::InvalidPrice));
-        assert_eq!(PriceVersion::validate("USD", -1, "month", 1, now, None), Err(CatalogError::InvalidPrice));
-        assert_eq!(PriceVersion::validate("USD", 100, "minute", 1, now, None), Err(CatalogError::InvalidPrice));
-        assert_eq!(PriceVersion::validate("USD", 100, "month", 0, now, None), Err(CatalogError::InvalidPrice));
-        assert_eq!(PriceVersion::validate("USD", 100, "month", 1, now, Some(now)), Err(CatalogError::InvalidPrice));
+        assert_eq!(
+            PriceVersion::validate("USD", 100, "month", 1, now, Some(now + Duration::days(30))),
+            Ok(())
+        );
+        assert_eq!(
+            PriceVersion::validate("usd", 100, "month", 1, now, None),
+            Err(CatalogError::InvalidPrice)
+        );
+        assert_eq!(
+            PriceVersion::validate("USD", -1, "month", 1, now, None),
+            Err(CatalogError::InvalidPrice)
+        );
+        assert_eq!(
+            PriceVersion::validate("USD", 100, "minute", 1, now, None),
+            Err(CatalogError::InvalidPrice)
+        );
+        assert_eq!(
+            PriceVersion::validate("USD", 100, "month", 0, now, None),
+            Err(CatalogError::InvalidPrice)
+        );
+        assert_eq!(
+            PriceVersion::validate("USD", 100, "month", 1, now, Some(now)),
+            Err(CatalogError::InvalidPrice)
+        );
     }
 }
