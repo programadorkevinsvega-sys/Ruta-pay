@@ -41,6 +41,8 @@ jobs:
       NATS_PASSWORD: payvia-platform-${{ github.run_id }}-${{ github.run_attempt }}-integration
     steps:
       - uses: actions/checkout@v4
+      - name: Phase 0 documentary acceptance
+        run: python3 bacekend-plataform/scripts/audit_phase0_docs.py
       - name: Mask ephemeral service credentials
         run: |
           postgres_password="payvia-postgres-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-integration"
