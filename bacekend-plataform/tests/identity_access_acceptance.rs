@@ -368,8 +368,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
 
     // A dedicated ACL user can connect but cannot execute the Lua rate-limit
     // script. Registration and login must fail closed before touching PostgreSQL.
-    let restricted_redis_user =
-        format!("phase2_limited_{}", Uuid::new_v4().simple());
+    let restricted_redis_user = format!("phase2_limited_{}", Uuid::new_v4().simple());
     let restricted_redis_password = Uuid::new_v4().simple().to_string();
     let mut redis_acl_admin = redis_manager.clone();
     let _: String = redis::cmd("ACL")
@@ -394,10 +393,9 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .expect("restricted Redis password is valid");
     let restricted_redis_client =
         redis::Client::open(restricted_redis_url.as_str()).expect("restricted Redis URL parses");
-    let restricted_redis_manager =
-        redis::aio::ConnectionManager::new(restricted_redis_client)
-            .await
-            .expect("restricted Redis user can establish a connection");
+    let restricted_redis_manager = redis::aio::ConnectionManager::new(restricted_redis_client)
+        .await
+        .expect("restricted Redis user can establish a connection");
     let restricted_identity_service =
         platform_identity_access::application::identity_service::IdentityService::new(
             runtime_pool.clone(),
@@ -1100,7 +1098,10 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .send()
         .await
         .expect("tenant registration Outbox failure receives an HTTP response");
-    assert_eq!(tenant_outbox_failure.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        tenant_outbox_failure.status(),
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
     let tenants_after_outbox_failure: i64 =
         sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants")
             .fetch_one(&migration_pool)
@@ -1639,9 +1640,9 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .expect("identity JetStream stream is restored for retry");
     sqlx::query("UPDATE identity_access.outbox_events SET available_at=now() WHERE event_id=$1")
         .bind(identity_failed_event_id)
-    .execute(&migration_pool)
-    .await
-    .expect("identity failed event becomes eligible after dependency recovery");
+        .execute(&migration_pool)
+        .await
+        .expect("identity failed event becomes eligible after dependency recovery");
     let identity_retried_delivery =
         platform_identity_access::infrastructure::outbox_relay::relay_batch(
             &runtime_pool,
