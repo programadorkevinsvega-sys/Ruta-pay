@@ -29,9 +29,9 @@ La auditoría cubre las capacidades realmente implementadas en Fase 2: registro/
 | Aislamiento tenant A/B | HTTP 403 y RLS | Cubierto en los flujos existentes |
 | Documento legal duplicado | Integración | Cubierto |
 | Slug duplicado | Prueba HTTP 409 y comprobación de una sola fila/evento añadida en este PR | CI pendiente |
-| Todos los roles × permisos × operaciones | Solo subconjunto demostrado | Pendiente de matriz exhaustiva |
+| Todos los roles × permisos × operaciones | Matriz de grants sembrados comprobada exactamente para 4 roles tenant y 3 roles operator; aceptación RPC comprueba un permiso permitido y uno denegado | Matriz de datos cubierta; combinaciones de comportamiento por endpoint/operación aún pendientes |
 | Sesión expirada/revocada/cookie/CSRF/Origin | Algunos controles documentados y ejercitados | Pendiente de matriz exhaustiva por endpoint |
-| API Key scopes vacíos/mal formados | Unitario | Cubierto parcialmente; faltan límites y combinaciones API |
+| API Key scopes vacíos/mal formados | Unitario | Positivos/negativos, nombre 2/80, scopes 1/16 y 64 bytes, caracteres inválidos y separación test/live añadidos en este PR; autorización HTTP por cada scope pendiente |
 | API Key test/live, secreto no repetido, revocación | Unitario + aceptación | Cubierto en flujos principales |
 | Eventos Outbox/JetStream duplicados y reintentos | Aceptación de consumo idempotente | Cubierto en flujo principal; faltan variantes fuera de orden/fallo intermedio |
 | Realtime cursor/replay/reconnect/huecos | E2E y aceptación de recuperación | Parcial; faltan matriz completa de cursores, autorización y reconexión |
@@ -40,7 +40,11 @@ La auditoría cubre las capacidades realmente implementadas en Fase 2: registro/
 
 ## Pruebas añadidas en este PR
 
-En `identity_access_acceptance.rs` se agregan dos escenarios de persistencia real:
+- `api_key.rs`: nombre mínimo/máximo, nombre inválido/control, scopes 1–16, scope de 64 bytes, exceso de longitud/cantidad, valores vacíos, mayúsculas, Unicode y separadores no permitidos; prefijos y secretos test/live distintos.
+- `tenant.rs`: matriz completa de 5 estados × 5 estados frente a las ocho transiciones permitidas; razones de 3/500 caracteres; actor operador obligatorio en transiciones sensibles; parseo de estados conocidos/desconocidos.
+- `identity_access_acceptance.rs`: comparación exacta de los grants sembrados para los cuatro roles tenant y tres roles operator. Además, se inyecta un fallo controlado en la escritura Outbox durante un registro HTTP y se verifica que no persistan identidad, evento Outbox ni auditoría: la transacción no deja efectos parciales.
+
+En `identity_access_acceptance.rs` también se agregan dos escenarios de persistencia real:
 
 1. Tras crear una cuenta, intentar registrarla de nuevo con el mismo correo normalizado debe producir HTTP 409 con error seguro `identity_conflict`; la base debe conservar exactamente una identidad y un evento de registro.
 2. Dos peticiones simultáneas con el mismo correo deben producir exactamente un HTTP 201 y un HTTP 409, y persistir una sola identidad.
@@ -50,10 +54,10 @@ Estas pruebas validan el comportamiento observable y la integridad de persistenc
 ## Huecos pendientes
 
 1. Extender las pruebas de unicidad a todos los constraints relevantes y a concurrencia de slug/documento legal.
-2. Completar matriz por endpoint de autenticación, autorización, CSRF, Origin, cookie, expiración, revocación y rol.
+2. Completar matriz por endpoint de autenticación, autorización, CSRF, Origin, cookie, expiración, revocación y rol; la prueba actual de grants no sustituye probar cada operación real con cada rol.
 3. Probar todas las transiciones de estado desde API, incluidos motivos ausentes, actor no autorizado, versión obsoleta y carreras concurrentes.
 4. Completar límites numéricos/tamaño/tipo en cada request DTO; los campos que no acepten números negativos deben demostrar 400/422 y no mutar persistencia.
-5. Completar combinaciones de scopes y ambientes de API Keys, incluido acceso insuficiente y tenant cruzado.
+5. Completar combinaciones de scopes y ambientes de API Keys en la frontera HTTP, incluido acceso insuficiente, clave revocada y tenant cruzado; las validaciones del dominio ya cubren sintaxis y límites.
 6. Probar fallos de PostgreSQL/Redis/JetStream en cada operación con garantías de no dejar escrituras parciales.
 7. Completar recuperación realtime: cursor inválido, cursor futuro, duplicado, hueco, evento antiguo, cambio de identidad, pérdida de autorización, reconexión y múltiples réplicas.
 8. Verificar que Vitest, builds, Playwright de ambas apps y E2E de recuperación multi-réplica pasan en CI; resolver cada fallo antes de integrar.
