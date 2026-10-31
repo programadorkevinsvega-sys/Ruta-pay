@@ -85,6 +85,7 @@ impl IdentityAccessClient {
         client: &GrpcClient<Channel>,
         email: String,
         password: String,
+        source_ip: String,
         correlation_id: &str,
     ) -> Result<RegisterTenantUserResponse, tonic::Status> {
         let request = request_with_context(
@@ -92,6 +93,7 @@ impl IdentityAccessClient {
                 email,
                 password,
                 correlation_id: correlation_id.to_owned(),
+                source_ip,
             },
             correlation_id,
         )?;
