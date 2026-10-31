@@ -1080,8 +1080,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .await
     .expect("pending Outbox state after PostgreSQL failure is queryable");
     assert_eq!(
-        pending_after_database_failure,
-        pending_before_database_failure,
+        pending_after_database_failure, pending_before_database_failure,
         "failed PostgreSQL claim must not partially lease or consume events"
     );
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
@@ -1094,14 +1093,13 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     // Simulate JetStream unavailability by attempting delivery before the
     // isolated stream exists. The relay must release its lease and reschedule
     // every failed event without marking it published.
-    let failed_relay_count =
-        platform_tenant_registry::infrastructure::outbox_relay::relay_batch(
-            &runtime_pool,
-            &jetstream,
-            &event_topology.subject_prefix,
-        )
-        .await
-        .expect("JetStream publish failures are rescheduled rather than aborting the relay batch");
+    let failed_relay_count = platform_tenant_registry::infrastructure::outbox_relay::relay_batch(
+        &runtime_pool,
+        &jetstream,
+        &event_topology.subject_prefix,
+    )
+    .await
+    .expect("JetStream publish failures are rescheduled rather than aborting the relay batch");
     assert_eq!(failed_relay_count, 0);
     let deferred_events: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM tenant_registry.outbox_events WHERE published_at IS NULL AND last_error_code='jetstream_publish_unavailable' AND attempts > 0",
@@ -1340,7 +1338,10 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         })
         .await
         .expect_err("live API key cannot authorize test environment operations");
-    assert_eq!(wrong_environment_api_key.code(), tonic::Code::Unauthenticated);
+    assert_eq!(
+        wrong_environment_api_key.code(),
+        tonic::Code::Unauthenticated
+    );
     let cross_tenant_api_key = authorization_client
         .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
             secret: api_key_secret.to_owned(),
@@ -1501,7 +1502,9 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
                 );
             } else {
                 assert_eq!(
-                    decision.expect_err("ungranted tenant permission is denied").code(),
+                    decision
+                        .expect_err("ungranted tenant permission is denied")
+                        .code(),
                     tonic::Code::PermissionDenied,
                     "role {role} must be denied permission {permission}"
                 );
@@ -1587,7 +1590,9 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
                 .header(header::ORIGIN, &origin)
                 .header(
                     header::COOKIE,
-                    format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+                    format!(
+                        "payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"
+                    ),
                 )
                 .header("x-csrf-token", &csrf_cookie)
                 .send()
@@ -1873,10 +1878,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .send()
         .await
         .expect("future realtime cursor receives a classified response");
-    assert_eq!(
-        future_cursor.status(),
-        StatusCode::RANGE_NOT_SATISFIABLE
-    );
+    assert_eq!(future_cursor.status(), StatusCode::RANGE_NOT_SATISFIABLE);
 
     let foreign_tenant_replay = client
         .get(format!(
@@ -2340,7 +2342,9 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
                 );
             } else {
                 assert_eq!(
-                    decision.expect_err("ungranted operator permission is denied").code(),
+                    decision
+                        .expect_err("ungranted operator permission is denied")
+                        .code(),
                     tonic::Code::PermissionDenied,
                     "role {role} must be denied permission {permission}"
                 );
@@ -2383,13 +2387,12 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("support lifecycle mutation receives a response");
     assert_eq!(support_status_change.status(), StatusCode::FORBIDDEN);
-    let status_after_support_denial: (String, i64) = sqlx::query_as(
-        "SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1",
-    )
-    .bind(created_tenant_id)
-    .fetch_one(&migration_pool)
-    .await
-    .expect("tenant state after support denial is queryable");
+    let status_after_support_denial: (String, i64) =
+        sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
+            .bind(created_tenant_id)
+            .fetch_one(&migration_pool)
+            .await
+            .expect("tenant state after support denial is queryable");
     assert_eq!(status_after_support_denial, ("active".to_owned(), 2));
 
     sqlx::query("UPDATE identity_access.operator_users SET role='platform_security' WHERE id=$1")
@@ -2545,7 +2548,10 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .send()
         .await
         .expect("missing CSRF token rejects operator logout");
-    assert_eq!(csrf_rejected_operator_logout.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        csrf_rejected_operator_logout.status(),
+        StatusCode::FORBIDDEN
+    );
 
     // Expired and revoked sessions are rejected at the HTTP boundary.
     let expired_session_digest = Sha256::digest(session_cookie.as_bytes());
