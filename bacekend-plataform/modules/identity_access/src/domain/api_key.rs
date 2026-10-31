@@ -159,7 +159,14 @@ mod tests {
         let scope = "a".repeat(64);
         let scopes = vec![scope.clone(); 16];
         assert!(create_api_key("ab", ApiKeyEnvironment::Test, &["read".to_owned()]).is_ok());
-        assert!(create_api_key(&"n".repeat(80), ApiKeyEnvironment::Live, &["read".to_owned()]).is_ok());
+        assert!(
+            create_api_key(
+                &"n".repeat(80),
+                ApiKeyEnvironment::Live,
+                &["read".to_owned()]
+            )
+            .is_ok()
+        );
         assert!(create_api_key("valid name", ApiKeyEnvironment::Test, &scopes).is_ok());
 
         let too_long_name = "n".repeat(81);
@@ -186,7 +193,11 @@ mod tests {
     fn api_key_scopes_reject_empty_uppercase_unicode_and_unsupported_separators() {
         for invalid_scope in ["", "Read", "read-write", "read/write", "área", "read scope"] {
             assert_eq!(
-                create_api_key("valid name", ApiKeyEnvironment::Test, &[invalid_scope.to_owned()]),
+                create_api_key(
+                    "valid name",
+                    ApiKeyEnvironment::Test,
+                    &[invalid_scope.to_owned()]
+                ),
                 Err(ApiKeyError::InvalidScopes),
                 "must reject scope {invalid_scope:?}"
             );
@@ -212,5 +223,4 @@ mod tests {
         assert_ne!(test_key.secret, live_key.secret);
         assert_ne!(test_key.digest, live_key.digest);
     }
-
 }
