@@ -1213,7 +1213,9 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             .contains(&legal_identification_number)
     );
     let tenant_session_platform_list = client
-        .get(format!("http://{http_addr}/v1/platform/tenants?limit=10&offset=0"))
+        .get(format!(
+            "http://{http_addr}/v1/platform/tenants?limit=10&offset=0"
+        ))
         .header(
             header::COOKIE,
             format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
@@ -3705,10 +3707,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .send()
         .await
         .expect("oversized tenant search query receives an HTTP response");
-    assert_eq!(
-        oversized_tenant_query.status(),
-        StatusCode::BAD_REQUEST
-    );
+    assert_eq!(oversized_tenant_query.status(), StatusCode::BAD_REQUEST);
 
     let tenants_before_invalid_dtos: i64 =
         sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants")
@@ -4195,12 +4194,11 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
 
     // A retained-journal gap must surface as a conflict at the HTTP edge,
     // not as a successful partial replay that silently skips an old event.
-    let first_platform_event: Uuid = sqlx::query_scalar(
-        "SELECT event_id FROM realtime.event_journal WHERE platform_cursor=1",
-    )
-    .fetch_one(&migration_pool)
-    .await
-    .expect("first platform journal event exists for gap injection");
+    let first_platform_event: Uuid =
+        sqlx::query_scalar("SELECT event_id FROM realtime.event_journal WHERE platform_cursor=1")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("first platform journal event exists for gap injection");
     sqlx::query("DELETE FROM realtime.event_journal WHERE event_id=$1")
         .bind(first_platform_event)
         .execute(&migration_pool)
@@ -4224,10 +4222,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .json()
         .await
         .expect("realtime gap returns a safe error envelope");
-    assert_eq!(
-        platform_gap_body["error"]["code"],
-        "realtime_cursor_gap"
-    );
+    assert_eq!(platform_gap_body["error"]["code"], "realtime_cursor_gap");
 
     let matrix_operator_logout = client
         .delete(format!("http://{http_addr}/v1/platform/identity/session"))
