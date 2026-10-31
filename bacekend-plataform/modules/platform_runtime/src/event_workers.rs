@@ -8,6 +8,8 @@ use platform_identity_access::infrastructure::tenant_membership_consumer::{
     TenantMembershipConsumerError, consume_tenant_registered,
 };
 use platform_tenant_registry::infrastructure::outbox_relay as tenant_outbox;
+use platform_catalog_pricing::infrastructure::outbox_relay as catalog_outbox;
+use platform_entitlements_quotas::infrastructure::outbox_relay as entitlements_outbox;
 use sqlx::PgPool;
 use std::{env, time::Duration};
 use tokio::{sync::watch, time};
@@ -224,6 +226,12 @@ async fn run_relays(
                 }
                 if let Err(error) = tenant_outbox::relay_batch(&pool, &jetstream, &subject_prefix).await {
                     tracing::error!(event.name = "outbox.relay.failed", component = "tenant_registry", operation = "claim_or_mark_outbox", dependency = "postgresql", error_code = error.as_database_error().and_then(|cause| cause.code()).as_deref().unwrap_or("database_error"), error_category = "persistence", correlation_id = "unavailable", retryable = true);
+                }
+                if let Err(error) = catalog_outbox::relay_batch(&pool, &jetstream, &subject_prefix).await {
+                    tracing::error!(event.name = "outbox.relay.failed", component = "catalog_pricing", operation = "claim_or_mark_outbox", dependency = "postgresql", error_code = error.as_database_error().and_then(|cause| cause.code()).as_deref().unwrap_or("database_error"), error_category = "persistence", correlation_id = "unavailable", retryable = true);
+                }
+                if let Err(error) = entitlements_outbox::relay_batch(&pool, &jetstream, &subject_prefix).await {
+                    tracing::error!(event.name = "outbox.relay.failed", component = "entitlements_quotas", operation = "claim_or_mark_outbox", dependency = "postgresql", error_code = error.as_database_error().and_then(|cause| cause.code()).as_deref().unwrap_or("database_error"), error_category = "persistence", correlation_id = "unavailable", retryable = true);
                 }
             }
             result = shutdown.changed() => if result.is_err() || *shutdown.borrow() { return; }
