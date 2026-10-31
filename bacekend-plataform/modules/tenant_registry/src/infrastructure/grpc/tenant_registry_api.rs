@@ -217,6 +217,15 @@ fn map_error(
             Status::aborted("tenant changed; refresh and retry"),
         ),
         TenantServiceError::Repository(
+            crate::infrastructure::persistence::TenantRepositoryError::Domain(
+                crate::domain::tenant::TenantError::MissingReason,
+            ),
+        ) => (
+            "tenant_reason_invalid",
+            "validation",
+            Status::invalid_argument("tenant status change requires a valid reason"),
+        ),
+        TenantServiceError::Repository(
             crate::infrastructure::persistence::TenantRepositoryError::Domain(_),
         ) => (
             "tenant_transition_invalid",
