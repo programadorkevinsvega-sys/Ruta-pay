@@ -515,7 +515,11 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("overlong email is rejected at the HTTP boundary");
     assert_eq!(invalid_email.status(), StatusCode::BAD_REQUEST);
-    for invalid_password in ["Short-1!", &format!("{}A1!", "a".repeat(126))] {
+    let invalid_passwords = vec![
+        "Short-1!".to_owned(),
+        format!("{}A1!", "a".repeat(126)),
+    ];
+    for invalid_password in invalid_passwords {
         let response = client
             .post(format!("http://{http_addr}/v1/identity/register"))
             .header(header::ORIGIN, &origin)
@@ -2405,6 +2409,28 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             "invalid cursor {invalid_cursor} must be rejected at the HTTP boundary"
         );
     }
+    let invalid_realtime_scope = client
+        .get(format!(
+            "http://{http_addr}/v1/realtime/events?audience=unknown&cursor=0"
+        ))
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("unsupported realtime audience receives an HTTP response");
+    assert_eq!(invalid_realtime_scope.status(), StatusCode::BAD_REQUEST);
+    let malformed_realtime_tenant = client
+        .get("http://{http_addr}/v1/realtime/events?audience=tenant&tenant_id=not-a-uuid&cursor=0")
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("malformed realtime tenant scope receives an HTTP response");
+    assert_eq!(malformed_realtime_tenant.status(), StatusCode::BAD_REQUEST);
 
     let foreign_tenant_replay = client
         .get(format!(
