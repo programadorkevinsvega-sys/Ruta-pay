@@ -1073,7 +1073,13 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     );
     let tenant_slug = format!("acceptance-{}", Uuid::new_v4().simple());
     sqlx::raw_sql(
-        "CREATE OR REPLACE FUNCTION tenant_registry.reject_test_outbox_event() RETURNS trigger          LANGUAGE plpgsql AS $ BEGIN          IF NEW.correlation_id = 'corr_tenant_registration_outbox_failure' THEN              RAISE EXCEPTION 'injected tenant Outbox failure';          END IF; RETURN NEW; END; $;          CREATE TRIGGER reject_test_outbox_event BEFORE INSERT ON tenant_registry.outbox_events          FOR EACH ROW EXECUTE FUNCTION tenant_registry.reject_test_outbox_event();",
+        "CREATE OR REPLACE FUNCTION tenant_registry.reject_test_outbox_event() RETURNS trigger \
+         LANGUAGE plpgsql AS $tenant_register$ BEGIN \
+         IF NEW.correlation_id = 'corr_tenant_registration_outbox_failure' THEN \
+             RAISE EXCEPTION 'injected tenant Outbox failure'; \
+         END IF; RETURN NEW; END $tenant_register$; \
+         CREATE TRIGGER reject_test_outbox_event BEFORE INSERT ON tenant_registry.outbox_events \
+         FOR EACH ROW EXECUTE FUNCTION tenant_registry.reject_test_outbox_event();",
     )
     .execute(&migration_pool)
     .await
@@ -1267,7 +1273,13 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         tenant_list.json().await.expect("tenant list is JSON");
     assert_eq!(tenant_list_body["total"], 1);
     sqlx::raw_sql(
-        "CREATE OR REPLACE FUNCTION tenant_registry.reject_test_status_outbox_event() RETURNS trigger          LANGUAGE plpgsql AS $ BEGIN          IF NEW.correlation_id = 'corr_tenant_status_outbox_failure' THEN              RAISE EXCEPTION 'injected tenant status Outbox failure';          END IF; RETURN NEW; END; $;          CREATE TRIGGER reject_test_status_outbox_event BEFORE INSERT ON tenant_registry.outbox_events          FOR EACH ROW EXECUTE FUNCTION tenant_registry.reject_test_status_outbox_event();",
+        "CREATE OR REPLACE FUNCTION tenant_registry.reject_test_status_outbox_event() RETURNS trigger \
+         LANGUAGE plpgsql AS $tenant_status$ BEGIN \
+         IF NEW.correlation_id = 'corr_tenant_status_outbox_failure' THEN \
+             RAISE EXCEPTION 'injected tenant status Outbox failure'; \
+         END IF; RETURN NEW; END $tenant_status$; \
+         CREATE TRIGGER reject_test_status_outbox_event BEFORE INSERT ON tenant_registry.outbox_events \
+         FOR EACH ROW EXECUTE FUNCTION tenant_registry.reject_test_status_outbox_event();",
     )
     .execute(&migration_pool)
     .await
@@ -1915,7 +1927,13 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     );
 
     sqlx::raw_sql(
-        "CREATE OR REPLACE FUNCTION identity_access.reject_test_api_key_outbox_event() RETURNS trigger          LANGUAGE plpgsql AS $ BEGIN          IF NEW.correlation_id = 'corr_api_key_outbox_failure' THEN              RAISE EXCEPTION 'injected API key Outbox failure';          END IF; RETURN NEW; END; $;          CREATE TRIGGER reject_test_api_key_outbox_event BEFORE INSERT ON identity_access.outbox_events          FOR EACH ROW EXECUTE FUNCTION identity_access.reject_test_api_key_outbox_event();",
+        "CREATE OR REPLACE FUNCTION identity_access.reject_test_api_key_outbox_event() RETURNS trigger \
+         LANGUAGE plpgsql AS $api_key$ BEGIN \
+         IF NEW.correlation_id = 'corr_api_key_outbox_failure' THEN \
+             RAISE EXCEPTION 'injected API key Outbox failure'; \
+         END IF; RETURN NEW; END $api_key$; \
+         CREATE TRIGGER reject_test_api_key_outbox_event BEFORE INSERT ON identity_access.outbox_events \
+         FOR EACH ROW EXECUTE FUNCTION identity_access.reject_test_api_key_outbox_event();",
     )
     .execute(&migration_pool)
     .await
