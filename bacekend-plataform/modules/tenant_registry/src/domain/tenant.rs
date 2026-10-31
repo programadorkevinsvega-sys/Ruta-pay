@@ -331,8 +331,6 @@ mod tests {
             (Active, Suspended),
             (Suspended, Active),
             (PendingVerification, Closed),
-            (Active, Closed),
-            (Suspended, Closed),
             (Closing, Closed),
         ] {
             assert_eq!(
@@ -349,6 +347,23 @@ mod tests {
                 current.as_str(),
                 next.as_str()
             );
+        }
+
+        for (current, next) in [(Active, Closed), (Suspended, Closed)] {
+            for actor_is_operator in [false, true] {
+                assert_eq!(
+                    Tenant::validate_transition(
+                        current,
+                        next,
+                        "reviewed by operator",
+                        actor_is_operator,
+                    ),
+                    Err(TenantError::InvalidTransition),
+                    "operator authorization must not bypass invalid transition {} -> {}",
+                    current.as_str(),
+                    next.as_str()
+                );
+            }
         }
     }
 
