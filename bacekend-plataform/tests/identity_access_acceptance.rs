@@ -3,6 +3,8 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use opentelemetry::{global, trace::TracerProvider as _};
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerProvider};
 use platform_contracts::{
+    catalog_pricing::catalog_pricing_client::CatalogPricingClient as CatalogPricingGrpcClient,
+    entitlements_quotas::entitlements_quotas_client::EntitlementsQuotasClient as EntitlementsQuotasGrpcClient,
     identity_access::{
         AuthorizeApiKeyOperationRequest, AuthorizeOperatorOperationRequest,
         AuthorizeTenantOperationRequest, identity_access_client::IdentityAccessClient,
@@ -449,11 +451,12 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
 
     let grpc_listener = TcpListener::bind("127.0.0.1:0").await.expect("gRPC bind");
     let grpc_addr = grpc_listener.local_addr().expect("gRPC address");
-    let module_identity_client = IdentityAccessClient::new(
-        tonic::transport::Endpoint::from_shared(format!("http://{grpc_addr}"))
-            .expect("identity module endpoint parses")
-            .connect_lazy(),
-    );
+    let runtime_channel = tonic::transport::Endpoint::from_shared(format!("http://{grpc_addr}"))
+        .expect("identity module endpoint parses")
+        .connect_lazy();
+    let module_identity_client = IdentityAccessClient::new(runtime_channel.clone());
+    let module_catalog_client = CatalogPricingGrpcClient::new(runtime_channel.clone());
+    let module_tenant_client = TenantRegistryGrpcClient::new(runtime_channel);
     let (grpc_stop, grpc_signal) = oneshot::channel();
     let grpc_pool = runtime_pool.clone();
     let grpc_task = tokio::spawn(platform_runtime::module_config::serve(
@@ -462,6 +465,8 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         redis_manager.clone(),
         redis_client,
         module_identity_client,
+        module_catalog_client,
+        module_tenant_client,
         async move {
             let _ = grpc_signal.await;
         },
@@ -480,6 +485,12 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let realtime_client = RealtimeGatewayGrpcClient::connect(format!("http://{grpc_addr}"))
         .await
         .expect("realtime gRPC channel connects");
+    let catalog_client = CatalogPricingGrpcClient::connect(format!("http://{grpc_addr}"))
+        .await
+        .expect("catalog gRPC channel connects");
+    let entitlements_client = EntitlementsQuotasGrpcClient::connect(format!("http://{grpc_addr}"))
+        .await
+        .expect("entitlements gRPC channel connects");
     let mut authorization_client = identity_client.clone();
     let realtime_acceptance_client = realtime_client.clone();
     let http_listener = TcpListener::bind("127.0.0.1:0").await.expect("BFF bind");
@@ -494,6 +505,8 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
                 identity_client,
                 tenant_client,
                 realtime_client,
+                catalog_client,
+                entitlements_client,
             )
             .into_make_service_with_connect_info::<SocketAddr>(),
         )
