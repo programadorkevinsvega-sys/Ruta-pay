@@ -1560,9 +1560,23 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     // The public registration endpoint is limited per normalized account and per peer IP.
     // Invalid passwords still consume an attempt, preventing cheap validation probes from
     // bypassing the protection around the expensive password-hashing path.
+    // Use a dedicated loopback source IP so earlier registration requests in this
+    // end-to-end scenario cannot consume the IP budget being asserted here.
+    let rate_limit_source_id = Uuid::new_v4();
+    let rate_limit_source_bytes = rate_limit_source_id.as_bytes();
+    let rate_limit_source_ip = std::net::Ipv4Addr::new(
+        127,
+        rate_limit_source_bytes[0],
+        rate_limit_source_bytes[1],
+        rate_limit_source_bytes[2].max(1),
+    );
+    let rate_limit_client = Client::builder()
+        .local_address(std::net::IpAddr::V4(rate_limit_source_ip))
+        .build()
+        .expect("isolated rate-limit HTTP client builds");
     let limited_email = format!("limited_{}@example.test", Uuid::new_v4().simple());
     for attempt in 0..5 {
-        let response = client
+        let response = rate_limit_client
             .post(format!("http://{http_addr}/v1/identity/register"))
             .header(header::ORIGIN, &origin)
             .json(&serde_json::json!({
@@ -1578,7 +1592,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             "attempt {attempt} is below the per-account registration limit"
         );
     }
-    let account_limited = client
+    let account_limited = rate_limit_client
         .post(format!("http://{http_addr}/v1/identity/register"))
         .header(header::ORIGIN, &origin)
         .json(&serde_json::json!({
@@ -1608,7 +1622,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             "IP attempt {attempt} is below the per-IP registration limit"
         );
     }
-    let ip_limited = client
+    let ip_limited = rate_limit_client
         .post(format!("http://{http_addr}/v1/identity/register"))
         .header(header::ORIGIN, &origin)
         .json(&serde_json::json!({
