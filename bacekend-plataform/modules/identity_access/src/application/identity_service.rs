@@ -812,16 +812,33 @@ impl IdentityService {
             .bind(tenant_id.to_string())
             .execute(&mut *transaction)
             .await?;
-        let row = sqlx::query(
-            "SELECT s.subject_id FROM identity_access.sessions s JOIN identity_access.tenant_memberships m ON m.user_id=s.subject_id AND m.tenant_id=$2 AND m.status='active' JOIN identity_access.tenant_role_permissions p ON p.role=m.role AND p.permission='api_keys.manage' WHERE s.token_digest=$1 AND s.subject_kind='tenant_user' AND s.revoked_at IS NULL AND s.expires_at>now()",
+        let session = sqlx::query(
+            "SELECT subject_id FROM identity_access.sessions WHERE token_digest=$1 AND subject_kind='tenant_user' AND revoked_at IS NULL AND expires_at>now()",
         )
-        .bind(token_digest.as_slice()).bind(tenant_id).fetch_optional(&mut *transaction).await?;
-        let actor = row
+        .bind(token_digest.as_slice())
+        .fetch_optional(&mut *transaction)
+        .await?;
+        let actor_id = session
             .map(|row| row.try_get("subject_id").map_err(IdentityError::Database))
-            .transpose()?
-            .ok_or(IdentityError::AuthorizationDenied);
+            .transpose()?;
+        let has_api_key_permission = if let Some(actor_id) = actor_id {
+            sqlx::query(
+                "SELECT 1 FROM identity_access.tenant_memberships m JOIN identity_access.tenant_role_permissions p ON p.role=m.role WHERE m.user_id=$1 AND m.tenant_id=$2 AND m.status='active' AND p.permission='api_keys.manage'",
+            )
+            .bind(actor_id)
+            .bind(tenant_id)
+            .fetch_optional(&mut *transaction)
+            .await?
+            .is_some()
+        } else {
+            false
+        };
         transaction.commit().await?;
-        actor
+        let actor_id = actor_id.ok_or(IdentityError::AuthenticationFailed)?;
+        if !has_api_key_permission {
+            return Err(IdentityError::AuthorizationDenied);
+        }
+        Ok(actor_id)
     }
 }
 
