@@ -64,18 +64,20 @@ impl EntitlementsQuotasApi {
 impl EntitlementsQuotas for EntitlementsQuotasApi {
     async fn set_plan_capabilities(&self, request: Request<SetPlanCapabilitiesRequest>) -> Result<Response<SetPlanCapabilitiesResponse>, Status> {
         let body = request.into_inner();
+        let correlation_id = body.correlation_id.clone();
         let actor = self.authorize_operator(body.session_token, body.csrf_token, body.correlation_id).await?;
         let price_id = parse_uuid(&body.price_version_id)?;
         self.catalog.clone().get_price_version(Request::new(GetPriceVersionRequest {
             price_version_id: price_id.to_string(),
         })).await?;
         let capabilities = body.capabilities.into_iter().map(map_capability).collect::<Result<Vec<_>,_>>()?;
-        let saved = self.service.set_capabilities(actor, price_id, &capabilities).await.map_err(map_error)?;
+        let saved = self.service.set_capabilities(actor, price_id, &capabilities, &correlation_id).await.map_err(map_error)?;
         Ok(Response::new(SetPlanCapabilitiesResponse { capabilities_saved: saved }))
     }
 
     async fn assign_tenant_plan(&self, request: Request<AssignTenantPlanRequest>) -> Result<Response<AssignTenantPlanResponse>, Status> {
         let body = request.into_inner();
+        let correlation_id = body.correlation_id.clone();
         let actor = self.authorize_operator(body.session_token.clone(), body.csrf_token.clone(), body.correlation_id.clone()).await?;
         let tenant_id = parse_uuid(&body.tenant_id)?;
         let tenant = self.tenants.clone().get_tenant(Request::new(GetTenantRequest {
@@ -99,7 +101,7 @@ impl EntitlementsQuotas for EntitlementsQuotasApi {
         if from < price_from || price_until.is_some_and(|end| from >= end) || exceeds_price_end {
             return Err(Status::invalid_argument("assignment period is outside price validity"));
         }
-        let assignment = self.service.assign_plan(actor, tenant_id, price_id, from, until).await.map_err(map_error)?;
+        let assignment = self.service.assign_plan(actor, tenant_id, price_id, from, until, &correlation_id).await.map_err(map_error)?;
         Ok(Response::new(AssignTenantPlanResponse { assignment_id: assignment.to_string() }))
     }
 
@@ -115,8 +117,9 @@ impl EntitlementsQuotas for EntitlementsQuotasApi {
     async fn consume_quota(&self, request: Request<ConsumeQuotaRequest>) -> Result<Response<ConsumeQuotaResponse>, Status> {
         let body = request.into_inner();
         let tenant = parse_uuid(&body.tenant_id)?;
+        let correlation_id = body.correlation_id.clone();
         let actor = self.authorize_tenant(body.session_token, body.csrf_token, tenant, "usage.consume", body.correlation_id).await?;
-        let (entitlement, replayed) = self.service.consume(actor, tenant, &body.capability_key, &body.environment, body.quantity, &body.idempotency_key, Utc::now()).await.map_err(map_error)?;
+        let (entitlement, replayed) = self.service.consume(actor, tenant, &body.capability_key, &body.environment, body.quantity, &body.idempotency_key, Utc::now(), &correlation_id).await.map_err(map_error)?;
         Ok(Response::new(ConsumeQuotaResponse { entitlement: Some(entitlement_response(entitlement)), replayed }))
     }
 }

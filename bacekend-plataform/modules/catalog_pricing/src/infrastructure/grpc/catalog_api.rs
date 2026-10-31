@@ -41,8 +41,9 @@ impl CatalogPricingApi {
 impl CatalogPricing for CatalogPricingApi {
     async fn create_plan(&self, request: Request<CreatePlanRequest>) -> Result<Response<PlanResponse>, Status> {
         let body = request.into_inner();
+        let correlation_id = body.correlation_id.clone();
         let actor = self.authorize_operator(body.session_token, body.csrf_token, body.correlation_id).await?;
-        let plan = self.service.create_plan(actor, &body.slug, &body.name, &body.description)
+        let plan = self.service.create_plan(actor, &body.slug, &body.name, &body.description, &correlation_id)
             .await.map_err(map_error)?;
         Ok(Response::new(PlanResponse {
             plan_id: plan.id.to_string(), slug: plan.slug, name: plan.name,
@@ -52,13 +53,14 @@ impl CatalogPricing for CatalogPricingApi {
 
     async fn publish_price_version(&self, request: Request<PublishPriceVersionRequest>) -> Result<Response<PriceVersionResponse>, Status> {
         let body = request.into_inner();
+        let correlation_id = body.correlation_id.clone();
         let actor = self.authorize_operator(body.session_token, body.csrf_token, body.correlation_id).await?;
         let plan_id = parse_uuid(&body.plan_id)?;
         let from = parse_time(&body.effective_from)?;
         let until = if body.effective_until.is_empty() { None } else { Some(parse_time(&body.effective_until)?) };
         let interval = i32::try_from(body.interval_count).map_err(|_| Status::invalid_argument("interval_count is invalid"))?;
         let price = self.service.publish_price_version(actor, plan_id, &body.currency, body.amount_minor,
-            &body.period_unit, interval, from, until).await.map_err(map_error)?;
+            &body.period_unit, interval, from, until, &correlation_id).await.map_err(map_error)?;
         Ok(Response::new(price_response(price)))
     }
 

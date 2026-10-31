@@ -10,7 +10,7 @@ pub struct EntitlementService { pool: PgPool }
 impl EntitlementService {
     pub fn new(pool: PgPool) -> Self { Self { pool } }
 
-    pub async fn set_capabilities(&self, actor: Uuid, price_version: Uuid, capabilities: &[Capability]) -> Result<u32, EntitlementServiceError> {
+    pub async fn set_capabilities(&self, actor: Uuid, price_version: Uuid, capabilities: &[Capability], correlation_id: &str) -> Result<u32, EntitlementServiceError> {
         if capabilities.is_empty() || capabilities.len() > 100 { return Err(EntitlementError::InvalidCapability.into()); }
         let mut seen = std::collections::HashSet::new();
         for capability in capabilities {
@@ -28,11 +28,20 @@ impl EntitlementService {
                 .bind(&capability.unit).bind(&capability.overage_policy).bind(&capability.environment)
                 .bind(&capability.quota_period).bind(actor).execute(&mut *tx).await?;
         }
+        sqlx::query("INSERT INTO entitlements_quotas.audit_events (event_id,actor_id,tenant_id,action,resource_id,outcome,correlation_id,trace_id,safe_details) VALUES ($1,$2,NULL,'entitlement.capabilities.configured',$3,'completed',$4,$5,$6)")
+            .bind(Uuid::new_v4()).bind(actor).bind(price_version).bind(correlation_id)
+            .bind(payvia_observability::current_trace_id())
+            .bind(serde_json::json!({"capability_count": capabilities.len()}))
+            .execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO entitlements_quotas.outbox_events (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,traceparent,correlation_id) VALUES ($1,$2,1,'entitlement.capabilities.configured',1,'platform',$3,NULL,$4)")
+            .bind(Uuid::new_v4()).bind(price_version)
+            .bind(serde_json::json!({"price_version_id": price_version, "capability_count": capabilities.len()}))
+            .bind(correlation_id).execute(&mut *tx).await?;
         tx.commit().await?;
         Ok(capabilities.len() as u32)
     }
 
-    pub async fn assign_plan(&self, actor: Uuid, tenant: Uuid, price_version: Uuid, from: DateTime<Utc>, until: Option<DateTime<Utc>>) -> Result<Uuid, EntitlementServiceError> {
+    pub async fn assign_plan(&self, actor: Uuid, tenant: Uuid, price_version: Uuid, from: DateTime<Utc>, until: Option<DateTime<Utc>>, correlation_id: &str) -> Result<Uuid, EntitlementServiceError> {
         if until.is_some_and(|end| end <= from) { return Err(EntitlementError::PlanNotAssigned.into()); }
         let mut tx = self.pool.begin().await?;
         set_operator_context(&mut tx, actor).await?;
@@ -46,6 +55,15 @@ impl EntitlementService {
         let id = Uuid::new_v4();
         sqlx::query("INSERT INTO entitlements_quotas.tenant_plan_assignments (id,tenant_id,price_version_id,effective_from,effective_until,assigned_by) VALUES ($1,$2,$3,$4,$5,$6)")
             .bind(id).bind(tenant).bind(price_version).bind(from).bind(until).bind(actor).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO entitlements_quotas.audit_events (event_id,actor_id,tenant_id,action,resource_id,outcome,correlation_id,trace_id,safe_details) VALUES ($1,$2,$3,'tenant.plan.assigned',$4,'completed',$5,$6,$7)")
+            .bind(Uuid::new_v4()).bind(actor).bind(tenant).bind(id).bind(correlation_id)
+            .bind(payvia_observability::current_trace_id())
+            .bind(serde_json::json!({"price_version_id": price_version, "effective_from": from, "effective_until": until}))
+            .execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO entitlements_quotas.outbox_events (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,traceparent,correlation_id) VALUES ($1,$2,1,'tenant.plan.assigned',1,'tenant',$3,NULL,$4)")
+            .bind(Uuid::new_v4()).bind(id)
+            .bind(serde_json::json!({"tenant_id": tenant, "assignment_id": id, "price_version_id": price_version, "effective_from": from, "effective_until": until}))
+            .bind(correlation_id).execute(&mut *tx).await?;
         tx.commit().await?;
         Ok(id)
     }
@@ -69,7 +87,7 @@ impl EntitlementService {
         Ok(build_entitlement(tenant, price_version, key, enabled, limit, policy, allowed_environment, environment, consumed, period_start, period_end))
     }
 
-    pub async fn consume(&self, actor: Uuid, tenant: Uuid, key: &str, environment: &str, quantity: i64, idempotency_key: &str, now: DateTime<Utc>) -> Result<(Entitlement,bool), EntitlementServiceError> {
+    pub async fn consume(&self, actor: Uuid, tenant: Uuid, key: &str, environment: &str, quantity: i64, idempotency_key: &str, now: DateTime<Utc>, correlation_id: &str) -> Result<(Entitlement,bool), EntitlementServiceError> {
         validate_consumption(quantity,idempotency_key)?;
         validate_environment(environment)?;
         let mut tx = self.pool.begin().await?;
@@ -103,8 +121,18 @@ impl EntitlementService {
         if !enabled || !env_allowed || limit.is_some_and(|max| consumed.saturating_add(quantity)>max) && policy=="deny" {
             return Err(EntitlementError::QuotaExceeded.into());
         }
+        let usage_id = Uuid::new_v4();
         sqlx::query("INSERT INTO entitlements_quotas.usage_ledger (id,tenant_id,price_version_id,capability_key,environment,idempotency_key,quantity,period_start,period_end) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)")
-            .bind(Uuid::new_v4()).bind(tenant).bind(price_version).bind(key).bind(environment).bind(idempotency_key).bind(quantity).bind(period_start).bind(period_end).execute(&mut *tx).await?;
+            .bind(usage_id).bind(tenant).bind(price_version).bind(key).bind(environment).bind(idempotency_key).bind(quantity).bind(period_start).bind(period_end).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO entitlements_quotas.audit_events (event_id,actor_id,tenant_id,action,resource_id,outcome,correlation_id,trace_id,safe_details) VALUES ($1,$2,$3,'quota.consumed',$4,'completed',$5,$6,$7)")
+            .bind(Uuid::new_v4()).bind(actor).bind(tenant).bind(usage_id).bind(correlation_id)
+            .bind(payvia_observability::current_trace_id())
+            .bind(serde_json::json!({"capability_key": key, "quantity": quantity, "environment": environment, "idempotency_key": idempotency_key}))
+            .execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO entitlements_quotas.outbox_events (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,traceparent,correlation_id) VALUES ($1,$2,1,'quota.consumed',1,'tenant',$3,NULL,$4)")
+            .bind(Uuid::new_v4()).bind(usage_id)
+            .bind(serde_json::json!({"tenant_id": tenant, "usage_id": usage_id, "capability_key": key, "quantity": quantity, "period_start": period_start, "period_end": period_end}))
+            .bind(correlation_id).execute(&mut *tx).await?;
         tx.commit().await?;
         Ok((self.evaluate(actor,tenant,key,environment,now).await?,false))
     }

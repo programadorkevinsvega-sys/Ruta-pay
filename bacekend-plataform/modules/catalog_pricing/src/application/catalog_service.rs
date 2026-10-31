@@ -20,6 +20,7 @@ impl CatalogService {
         slug: &str,
         name: &str,
         description: &str,
+        correlation_id: &str,
     ) -> Result<Plan, CatalogServiceError> {
         Plan::validate(slug, name, description)?;
         let mut transaction = self.pool.begin().await?;
@@ -34,6 +35,15 @@ impl CatalogService {
         .bind(actor_id)
         .fetch_one(&mut *transaction)
         .await?;
+        sqlx::query("INSERT INTO catalog_pricing.audit_events (event_id,actor_id,action,resource_id,outcome,correlation_id,trace_id,safe_details) VALUES ($1,$2,'catalog.plan.created',$3,'completed',$4,$5,$6)")
+            .bind(Uuid::new_v4()).bind(actor_id).bind(row.0).bind(correlation_id)
+            .bind(payvia_observability::current_trace_id())
+            .bind(serde_json::json!({"slug": slug, "status": "draft"}))
+            .execute(&mut *transaction).await?;
+        sqlx::query("INSERT INTO catalog_pricing.outbox_events (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,traceparent,correlation_id) VALUES ($1,$2,1,'catalog.plan.created',1,'platform',$3,NULL,$4)")
+            .bind(Uuid::new_v4()).bind(row.0)
+            .bind(serde_json::json!({"plan_id": row.0, "slug": slug, "name": name.trim()}))
+            .bind(correlation_id).execute(&mut *transaction).await?;
         transaction.commit().await?;
         Ok(Plan {
             id: row.0,
@@ -55,6 +65,7 @@ impl CatalogService {
         interval_count: i32,
         effective_from: DateTime<Utc>,
         effective_until: Option<DateTime<Utc>>,
+        correlation_id: &str,
     ) -> Result<PriceVersion, CatalogServiceError> {
         PriceVersion::validate(
             currency,
@@ -106,6 +117,15 @@ impl CatalogService {
             .bind(plan_id)
             .execute(&mut *transaction)
             .await?;
+        sqlx::query("INSERT INTO catalog_pricing.audit_events (event_id,actor_id,action,resource_id,outcome,correlation_id,trace_id,safe_details) VALUES ($1,$2,'catalog.price_version.published',$3,'completed',$4,$5,$6)")
+            .bind(Uuid::new_v4()).bind(actor_id).bind(row.0).bind(correlation_id)
+            .bind(payvia_observability::current_trace_id())
+            .bind(serde_json::json!({"plan_id": plan_id, "version": version, "currency": currency, "amount_minor": amount_minor}))
+            .execute(&mut *transaction).await?;
+        sqlx::query("INSERT INTO catalog_pricing.outbox_events (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,traceparent,correlation_id) VALUES ($1,$2,1,'catalog.price_version.published',1,'platform',$3,NULL,$4)")
+            .bind(Uuid::new_v4()).bind(row.0)
+            .bind(serde_json::json!({"price_version_id": row.0, "plan_id": plan_id, "version": version}))
+            .bind(correlation_id).execute(&mut *transaction).await?;
         transaction.commit().await?;
         Ok(PriceVersion {
             id: row.0,
