@@ -231,11 +231,17 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             ("tenant_admin".to_owned(), "api_keys.manage".to_owned()),
             ("tenant_admin".to_owned(), "members.manage".to_owned()),
             ("tenant_admin".to_owned(), "tenant.read".to_owned()),
-            ("tenant_admin".to_owned(), "tenant.settings.manage".to_owned()),
+            (
+                "tenant_admin".to_owned(),
+                "tenant.settings.manage".to_owned()
+            ),
             ("tenant_owner".to_owned(), "api_keys.manage".to_owned()),
             ("tenant_owner".to_owned(), "members.manage".to_owned()),
             ("tenant_owner".to_owned(), "tenant.read".to_owned()),
-            ("tenant_owner".to_owned(), "tenant.settings.manage".to_owned()),
+            (
+                "tenant_owner".to_owned(),
+                "tenant.settings.manage".to_owned()
+            ),
             ("viewer".to_owned(), "tenant.read".to_owned()),
         ],
         "tenant role-to-permission grants must remain explicit and least-privilege"
@@ -249,13 +255,19 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     assert_eq!(
         operator_role_permissions,
         vec![
-            ("platform_owner".to_owned(), "operators.bootstrap".to_owned()),
+            (
+                "platform_owner".to_owned(),
+                "operators.bootstrap".to_owned()
+            ),
             ("platform_owner".to_owned(), "tenants.activate".to_owned()),
             ("platform_owner".to_owned(), "tenants.close".to_owned()),
             ("platform_owner".to_owned(), "tenants.read".to_owned()),
             ("platform_owner".to_owned(), "tenants.suspend".to_owned()),
             ("platform_owner".to_owned(), "tenants.verify".to_owned()),
-            ("platform_security".to_owned(), "tenants.activate".to_owned()),
+            (
+                "platform_security".to_owned(),
+                "tenants.activate".to_owned()
+            ),
             ("platform_security".to_owned(), "tenants.close".to_owned()),
             ("platform_security".to_owned(), "tenants.read".to_owned()),
             ("platform_security".to_owned(), "tenants.suspend".to_owned()),
@@ -493,7 +505,10 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .send()
         .await
         .expect("forced Outbox failure returns an HTTP response");
-    assert_eq!(rollback_response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        rollback_response.status(),
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
     let rollback_identity_count: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM identity_access.tenant_users WHERE email_normalized=$1",
     )
@@ -515,7 +530,10 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .fetch_one(&migration_pool)
     .await
     .expect("rollback Outbox count is queryable");
-    assert_eq!(rollback_outbox_count, 0, "Outbox insert must not be partial");
+    assert_eq!(
+        rollback_outbox_count, 0,
+        "Outbox insert must not be partial"
+    );
     sqlx::raw_sql(
         "DROP TRIGGER reject_test_outbox_event ON identity_access.outbox_events; \
          DROP FUNCTION identity_access.reject_test_outbox_event();",
