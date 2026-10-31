@@ -8,7 +8,7 @@
 >
 > Los backends comparten el workspace Cargo raíz solo para resolución/build. Cada uno tiene binario, imagen, configuración, secretos, red, artefactos operativos y despliegue independiente en su propia VM/VPS; los dos frontends también tienen despliegues separados. Los artefactos de esta aplicación pertenecen a `bacekend-plataform/deploy/`.
 >
-> Estado: Fases 0, 1 y 2 integradas y cerradas en `main`. La Fase 2 se integró mediante PR #2 tras pasar Format, Clippy y Tests en CI. El acta está en [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md); las fases posteriores siguen pendientes.
+> Estado: las implementaciones de Fases 0, 1 y 2 están integradas en `main`; la Fase 2 se integró mediante PR #2 tras pasar Format, Clippy y Tests en CI. Ese cierre histórico acredita el alcance implementado y aceptado entonces, pero no certifica la cobertura exhaustiva exigida por la nueva política de pruebas. La auditoría de calidad por casos de uso está abierta mediante PRs #3, #4 y #5; hasta que sus pruebas y CI estén aprobadas, no se declara conformidad completa con la nueva Definition of Done. Las fases posteriores siguen pendientes.
 
 ## Autoridad de dominio
 
@@ -45,7 +45,7 @@ Auditoría de pruebas: [`docs/phase-0/test-audit.md`](docs/phase-0/test-audit.md
 - [x] Definir las dos apps frontend separadas: `frontends/frontend-pasarela/` para tenant y `frontends/frontend-plataform/` para administración de plataforma. Evidencia: ADR-0001 y auditoría de sus documentos actuales.
 - [x] Documentar la matriz de integración y el plan de aceptación por fase en [`docs/phase-0/integration-matrix.md`](docs/phase-0/integration-matrix.md).
 
-**Salida:** auditoría, decisiones, ownership, autorización inter-backend, matrices, contratos conceptuales, amenazas y fases documentados. Las ADRs registran decisiones ya establecidas por las reglas normativas; las decisiones de detalle no definidas por ellas siguen abiertas y no se presentan como aprobadas. Fase 0 queda cerrada como fase documental conforme a la decisión de alcance del proyecto; no afirma integración runtime. Las pruebas runtime HTTP→BFF→gRPC→módulo son criterio de Fase 1.
+**Salida:** auditoría, decisiones, ownership, autorización inter-backend, matrices, contratos conceptuales, amenazas y fases documentados. Las ADRs registran decisiones ya establecidas por las reglas normativas; las decisiones de detalle no definidas por ellas siguen abiertas y no se presentan como aprobadas. El alcance documental de Fase 0 se cerró históricamente conforme a la decisión de alcance del proyecto; la auditoría adicional de trazabilidad y reproducibilidad está registrada en PR #3 y no afirma integración runtime. Las pruebas runtime HTTP→BFF→gRPC→módulo son criterio de Fase 1.
 
 ### Evidencia y límites de Fase 0
 
@@ -72,7 +72,7 @@ Criterios de cierre 1.1: pruebas reales HTTP→BFF→gRPC→módulo; traza y cor
 - [x] Health/readiness, apagado ordenado, dashboards/alertas y salud del pipeline de telemetría.
 - [x] Artefacto de despliegue exclusivo para `bacekend-plataform`, con configuración operativa bajo `bacekend-plataform/deploy/`; build y ejecución no inician el backend de pasarelas.
 
-**Salida:** integración automatizada prueba contexto HTTP→gRPC→módulo, éxito, desconexión y timeout, eventos correlacionados y ausencia de secretos. Fase 1 cerrada con evidencia registrada en [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md).
+**Salida:** integración automatizada prueba contexto HTTP→gRPC→módulo, éxito, desconexión y timeout, eventos correlacionados y ausencia de secretos. El alcance de implementación de Fase 1 se cerró históricamente con evidencia en [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md); su auditoría ampliada de casos de uso y límites está en PR #4 y queda sujeta a aprobación.
 
 ## Fase 2 — Identidad, tenant registry y aislamiento
 
@@ -94,7 +94,7 @@ La implementación se ejecuta conforme a la matriz previa de [`docs/phase-2/acce
 - [x] Outbox→JetStream, membresía idempotente, WebSocket autenticado, replay por cursor y recuperación REST.
 - [x] E2E Playwright de ambas apps y recuperación multi-réplica tras reiniciar Redis/NATS de desarrollo.
 
-**Salida:** cumplida. Aceptación HTTP→BFF→gRPC→módulo verifica identidad, permisos, tenant cruzado, API Keys, auditoría, errores y redacción con PostgreSQL/Redis/NATS reales de desarrollo; Playwright recorre ambas aplicaciones. Evidencia en [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md).
+**Salida funcional histórica:** cumplida dentro de los criterios implementados entonces. Aceptación HTTP→BFF→gRPC→módulo verifica identidad, permisos, tenant cruzado, API Keys, auditoría, errores y redacción con PostgreSQL/Redis/NATS reales de desarrollo; Playwright recorre ambas aplicaciones. Evidencia en [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md). La conformidad con la nueva matriz obligatoria de casos positivos/negativos, concurrencia y CI frontend/E2E queda pendiente del PR #5 y su ejecución aprobada.
 
 ## Fase 3 — Catálogo de planes, precios, límites y entitlement
 
