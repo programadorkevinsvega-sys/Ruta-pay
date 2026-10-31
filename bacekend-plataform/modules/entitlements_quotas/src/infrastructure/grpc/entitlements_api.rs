@@ -89,7 +89,14 @@ impl EntitlementsQuotas for EntitlementsQuotasApi {
         })).await?.into_inner();
         let from = parse_time(&body.effective_from)?;
         let until = if body.effective_until.is_empty() { None } else { Some(parse_time(&body.effective_until)?) };
-        if from < parse_time(&price.effective_from)? || until.is_some_and(|v| !price.effective_until.is_empty() && v > parse_time(&price.effective_until).unwrap_or(v)) {
+        let price_from = parse_time(&price.effective_from)?;
+        let price_until = if price.effective_until.is_empty() { None } else { Some(parse_time(&price.effective_until)?) };
+        let exceeds_price_end = match (until, price_until) {
+            (None, Some(_)) => true,
+            (Some(assignment_end), Some(price_end)) => assignment_end > price_end,
+            _ => false,
+        };
+        if from < price_from || price_until.is_some_and(|end| from >= end) || exceeds_price_end {
             return Err(Status::invalid_argument("assignment period is outside price validity"));
         }
         let assignment = self.service.assign_plan(actor, tenant_id, price_id, from, until).await.map_err(map_error)?;

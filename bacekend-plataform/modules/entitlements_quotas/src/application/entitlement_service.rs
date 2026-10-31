@@ -11,7 +11,7 @@ impl EntitlementService {
     pub fn new(pool: PgPool) -> Self { Self { pool } }
 
     pub async fn set_capabilities(&self, actor: Uuid, price_version: Uuid, capabilities: &[Capability]) -> Result<u32, EntitlementServiceError> {
-        if capabilities.len() > 100 { return Err(EntitlementError::InvalidCapability.into()); }
+        if capabilities.is_empty() || capabilities.len() > 100 { return Err(EntitlementError::InvalidCapability.into()); }
         let mut seen = std::collections::HashSet::new();
         for capability in capabilities {
             capability.validate()?;
@@ -36,6 +36,8 @@ impl EntitlementService {
         if until.is_some_and(|end| end <= from) { return Err(EntitlementError::PlanNotAssigned.into()); }
         let mut tx = self.pool.begin().await?;
         set_operator_context(&mut tx, actor).await?;
+        let tenant_lock = format!("tenant-plan-assignment:{tenant}");
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))").bind(tenant_lock).execute(&mut *tx).await?;
         let overlap: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM entitlements_quotas.tenant_plan_assignments WHERE tenant_id=$1 AND tstzrange(effective_from,effective_until,'[)') && tstzrange($2,$3,'[)'))")
             .bind(tenant).bind(from).bind(until).fetch_one(&mut *tx).await?;
         if overlap { return Err(EntitlementError::AssignmentConflict.into()); }
@@ -70,6 +72,8 @@ impl EntitlementService {
         validate_environment(environment)?;
         let mut tx = self.pool.begin().await?;
         set_tenant_context(&mut tx, tenant, actor).await?;
+        let idempotency_lock = format!("usage-idempotency:{tenant}:{idempotency_key}");
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))").bind(idempotency_lock).execute(&mut *tx).await?;
         let existing = sqlx::query("SELECT capability_key,quantity,environment FROM entitlements_quotas.usage_ledger WHERE tenant_id=$1 AND idempotency_key=$2")
             .bind(tenant).bind(idempotency_key).fetch_optional(&mut *tx).await?;
         if let Some(row) = existing {
