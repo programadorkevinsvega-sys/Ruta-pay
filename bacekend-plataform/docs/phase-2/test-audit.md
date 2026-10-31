@@ -10,6 +10,7 @@ La auditoría cubre las capacidades realmente implementadas en Fase 2: registro/
 - `tests/http_grpc_acceptance.rs` cubre el recorrido fundacional de runtime.
 - Hay pruebas unitarias de dominio para correo, contraseñas, API Keys, tenant slug, identificación legal y transiciones de estado.
 - La aceptación comprueba registro, contraseña débil, login incorrecto, rate limits, alta de tenant, documento duplicado, API Keys, revocación, auditoría, Outbox, JetStream, aislamiento entre tenants, RLS y realtime.
+- Este PR incorpora a CI Vitest, builds y Playwright de ambas aplicaciones, además del E2E de recuperación realtime multi-réplica; la aprobación depende del run del commit final del PR.
 - Existen suites Vitest y Playwright para ambos frontends, pero el workflow previo solo ejecutaba Rust; la existencia de archivos E2E no equivalía a ejecución CI.
 - La matriz de aceptación documenta más escenarios que los que se demostraban en una única ejecución automatizada.
 
@@ -55,6 +56,6 @@ Estas pruebas validan el comportamiento observable y la integridad de persistenc
 5. Completar combinaciones de scopes y ambientes de API Keys, incluido acceso insuficiente y tenant cruzado.
 6. Probar fallos de PostgreSQL/Redis/JetStream en cada operación con garantías de no dejar escrituras parciales.
 7. Completar recuperación realtime: cursor inválido, cursor futuro, duplicado, hueco, evento antiguo, cambio de identidad, pérdida de autorización, reconexión y múltiples réplicas.
-8. Incorporar Vitest, builds y Playwright de ambas apps al workflow obligatorio y revisar cada fallo hasta dejar CI verde.
+8. Verificar que Vitest, builds, Playwright de ambas apps y E2E de recuperación multi-réplica pasan en CI; resolver cada fallo antes de integrar.
 
 No se declara 100 % de cobertura funcional. La Fase 2 mantiene pruebas reales valiosas, pero su cierre de calidad requiere completar los huecos enumerados y ejecutar cada suite desde CI.
