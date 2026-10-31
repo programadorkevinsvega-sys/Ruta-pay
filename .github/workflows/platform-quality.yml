@@ -116,7 +116,7 @@ jobs:
           npm ci
           npm test
           npm run build
-      - name: Install Chromium for browser acceptance
+      - name: Install Playwright Chromium headless shell for browser acceptance
         working-directory: frontends/frontend-pasarela
         env:
           PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: 120000
