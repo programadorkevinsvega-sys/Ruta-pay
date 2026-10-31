@@ -7,7 +7,10 @@ use platform_contracts::{
         AuthorizeApiKeyOperationRequest, AuthorizeOperatorOperationRequest,
         AuthorizeTenantOperationRequest, identity_access_client::IdentityAccessClient,
     },
-    realtime::realtime_gateway_client::RealtimeGatewayClient as RealtimeGatewayGrpcClient,
+    realtime::{
+        SubscribeEventsRequest,
+        realtime_gateway_client::RealtimeGatewayClient as RealtimeGatewayGrpcClient,
+    },
     runtime::runtime_probe_client::RuntimeProbeClient,
     tenant_registry::tenant_registry_client::TenantRegistryClient as TenantRegistryGrpcClient,
 };
@@ -1925,6 +1928,22 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
                     .any(|event| event["event_type"] == "tenant.status.changed")
             })
     );
+    // Keep an authenticated realtime subscription open while the operator
+    // session is revoked. The stream must re-check authorization and terminate.
+    let mut realtime_subscription_client = realtime_client.clone();
+    let realtime_subscription = realtime_subscription_client
+        .subscribe_events(SubscribeEventsRequest {
+            session_token: operator_session_cookie.clone(),
+            csrf_token: operator_csrf_cookie.clone(),
+            audience: "platform".to_owned(),
+            tenant_id: String::new(),
+            after_cursor: 0,
+            correlation_id: "corr_realtime_revocation_subscription".to_owned(),
+        })
+        .await
+        .expect("authorized operator can subscribe to platform realtime")
+        .into_inner();
+
     let operator_logout = client
         .delete(format!("http://{http_addr}/v1/platform/identity/session"))
         .header(header::ORIGIN, &origin)
@@ -2559,6 +2578,23 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("operator can revoke its own session");
     assert_eq!(operator_logout.status(), StatusCode::NO_CONTENT);
+    let mut revoked_subscription = realtime_subscription;
+    let realtime_revocation_status = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            match revoked_subscription.message().await {
+                Err(status) => break status,
+                Ok(Some(_event)) => continue,
+                Ok(None) => panic!("realtime subscription must report authorization revocation"),
+            }
+        }
+    })
+    .await
+    .expect("realtime subscription revalidates operator authorization within 20 seconds");
+    assert_eq!(
+        realtime_revocation_status.code(),
+        tonic::Code::Unauthenticated
+    );
+
     let revoked_operator_session_response = client
         .get(format!("http://{http_addr}/v1/platform/identity/session"))
         .header(
