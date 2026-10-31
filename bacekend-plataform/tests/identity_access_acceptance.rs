@@ -4,9 +4,13 @@ use opentelemetry::{global, trace::TracerProvider as _};
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerProvider};
 use platform_contracts::{
     identity_access::{
-        AuthorizeOperatorOperationRequest, identity_access_client::IdentityAccessClient,
+        AuthorizeApiKeyOperationRequest, AuthorizeOperatorOperationRequest,
+        AuthorizeTenantOperationRequest, identity_access_client::IdentityAccessClient,
     },
-    realtime::realtime_gateway_client::RealtimeGatewayClient as RealtimeGatewayGrpcClient,
+    realtime::{
+        SubscribeEventsRequest,
+        realtime_gateway_client::RealtimeGatewayClient as RealtimeGatewayGrpcClient,
+    },
     runtime::runtime_probe_client::RuntimeProbeClient,
     tenant_registry::tenant_registry_client::TenantRegistryClient as TenantRegistryGrpcClient,
 };
@@ -217,6 +221,66 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .run(&migration_pool)
         .await
         .expect("realtime journal migration applies to real PostgreSQL");
+    let tenant_role_permissions: Vec<(String, String)> = sqlx::query_as(
+        "SELECT role, permission FROM identity_access.tenant_role_permissions ORDER BY role, permission",
+    )
+    .fetch_all(&migration_pool)
+    .await
+    .expect("tenant role permission matrix is queryable");
+    assert_eq!(
+        tenant_role_permissions,
+        vec![
+            ("developer".to_owned(), "api_keys.manage".to_owned()),
+            ("developer".to_owned(), "tenant.read".to_owned()),
+            ("tenant_admin".to_owned(), "api_keys.manage".to_owned()),
+            ("tenant_admin".to_owned(), "members.manage".to_owned()),
+            ("tenant_admin".to_owned(), "tenant.read".to_owned()),
+            (
+                "tenant_admin".to_owned(),
+                "tenant.settings.manage".to_owned()
+            ),
+            ("tenant_owner".to_owned(), "api_keys.manage".to_owned()),
+            ("tenant_owner".to_owned(), "members.manage".to_owned()),
+            ("tenant_owner".to_owned(), "tenant.read".to_owned()),
+            (
+                "tenant_owner".to_owned(),
+                "tenant.settings.manage".to_owned()
+            ),
+            ("viewer".to_owned(), "tenant.read".to_owned()),
+        ],
+        "tenant role-to-permission grants must remain explicit and least-privilege"
+    );
+    let operator_role_permissions: Vec<(String, String)> = sqlx::query_as(
+        "SELECT role, permission FROM identity_access.operator_role_permissions ORDER BY role, permission",
+    )
+    .fetch_all(&migration_pool)
+    .await
+    .expect("operator role permission matrix is queryable");
+    assert_eq!(
+        operator_role_permissions,
+        vec![
+            (
+                "platform_owner".to_owned(),
+                "operators.bootstrap".to_owned()
+            ),
+            ("platform_owner".to_owned(), "tenants.activate".to_owned()),
+            ("platform_owner".to_owned(), "tenants.close".to_owned()),
+            ("platform_owner".to_owned(), "tenants.read".to_owned()),
+            ("platform_owner".to_owned(), "tenants.suspend".to_owned()),
+            ("platform_owner".to_owned(), "tenants.verify".to_owned()),
+            (
+                "platform_security".to_owned(),
+                "tenants.activate".to_owned()
+            ),
+            ("platform_security".to_owned(), "tenants.close".to_owned()),
+            ("platform_security".to_owned(), "tenants.read".to_owned()),
+            ("platform_security".to_owned(), "tenants.suspend".to_owned()),
+            ("platform_security".to_owned(), "tenants.verify".to_owned()),
+            ("platform_support".to_owned(), "tenants.read".to_owned()),
+        ],
+        "operator role-to-permission grants must remain explicit and least-privilege"
+    );
+
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
         "CREATE ROLE \"{runtime_role}\" LOGIN PASSWORD '{runtime_password}'"
     )))
@@ -297,10 +361,92 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         "operator bootstrap is durable for realtime"
     );
 
-    let redis_client = redis::Client::open(redis_url).expect("Redis URL parses");
+    let redis_client = redis::Client::open(redis_url.clone()).expect("Redis URL parses");
     let redis_manager = redis::aio::ConnectionManager::new(redis_client.clone())
         .await
         .expect("real development Redis accepts a connection");
+
+    // A dedicated ACL user can connect but cannot execute the Lua rate-limit
+    // script. Registration and login must fail closed before touching PostgreSQL.
+    let restricted_redis_user = format!("phase2_limited_{}", Uuid::new_v4().simple());
+    let restricted_redis_password = Uuid::new_v4().simple().to_string();
+    let mut redis_acl_admin = redis_manager.clone();
+    let _: String = redis::cmd("ACL")
+        .arg("SETUSER")
+        .arg(&restricted_redis_user)
+        .arg("on")
+        .arg(format!(">{restricted_redis_password}"))
+        .arg("~*")
+        .arg("&*")
+        .arg("+@connection")
+        .arg("+SELECT")
+        .query_async(&mut redis_acl_admin)
+        .await
+        .expect("isolated Redis user is created with connection-only permissions");
+    let mut restricted_redis_url =
+        url::Url::parse(&redis_url).expect("Redis URL parses for isolated ACL user");
+    restricted_redis_url
+        .set_username(&restricted_redis_user)
+        .expect("restricted Redis username is valid");
+    restricted_redis_url
+        .set_password(Some(&restricted_redis_password))
+        .expect("restricted Redis password is valid");
+    let restricted_redis_client =
+        redis::Client::open(restricted_redis_url.as_str()).expect("restricted Redis URL parses");
+    let restricted_redis_manager = redis::aio::ConnectionManager::new(restricted_redis_client)
+        .await
+        .expect("restricted Redis user can establish a connection");
+    let restricted_identity_service =
+        platform_identity_access::application::identity_service::IdentityService::new(
+            runtime_pool.clone(),
+            restricted_redis_manager,
+        );
+    let users_before_redis_failure: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM identity_access.tenant_users")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("tenant identity count before Redis failure is queryable");
+    let redis_registration_failure = restricted_identity_service
+        .register_tenant_user(
+            &format!("redis_failure_{}@example.test", Uuid::new_v4().simple()),
+            "Valid-password-123!",
+            "127.0.0.1",
+            "corr_identity_redis_registration_failure",
+            None,
+        )
+        .await
+        .expect_err("registration fails when Redis rate limiting is unavailable");
+    assert!(matches!(
+        redis_registration_failure,
+        platform_identity_access::application::identity_service::IdentityError::Redis(_)
+    ));
+    let redis_login_failure = match restricted_identity_service
+        .create_tenant_session(&operator_email, &operator_password, "127.0.0.1")
+        .await
+    {
+        Err(error) => error,
+        Ok(_) => panic!("login must fail when Redis rate limiting is unavailable"),
+    };
+    assert!(matches!(
+        redis_login_failure,
+        platform_identity_access::application::identity_service::IdentityError::Redis(_)
+    ));
+    let users_after_redis_failure: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM identity_access.tenant_users")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("tenant identity count after Redis failure is queryable");
+    assert_eq!(
+        users_after_redis_failure, users_before_redis_failure,
+        "Redis rate-limit dependency failure must not create identities"
+    );
+    let _: i64 = redis::cmd("ACL")
+        .arg("DELUSER")
+        .arg(&restricted_redis_user)
+        .query_async(&mut redis_acl_admin)
+        .await
+        .expect("isolated restricted Redis user is removed");
+
     let grpc_listener = TcpListener::bind("127.0.0.1:0").await.expect("gRPC bind");
     let grpc_addr = grpc_listener.local_addr().expect("gRPC address");
     let module_identity_client = IdentityAccessClient::new(
@@ -335,6 +481,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("realtime gRPC channel connects");
     let mut authorization_client = identity_client.clone();
+    let realtime_acceptance_client = realtime_client.clone();
     let http_listener = TcpListener::bind("127.0.0.1:0").await.expect("BFF bind");
     let http_addr = http_listener.local_addr().expect("BFF address");
     let origin = format!("http://localhost:{}", http_addr.port());
@@ -377,6 +524,103 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .expect("HTTP acceptance client builds");
     let email = format!("acceptance_{}@example.test", Uuid::new_v4().simple());
     let password = format!("A-valid-password-{}!", Uuid::new_v4().simple());
+    let identity_state_before_origin_rejection: (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM identity_access.tenant_users),(SELECT count(*) FROM identity_access.sessions)",
+    )
+    .fetch_one(&migration_pool)
+    .await
+    .expect("identity and session counts before Origin rejection are queryable");
+    let invalid_origin_registration = client
+        .post(format!("http://{http_addr}/v1/identity/register"))
+        .header(header::ORIGIN, "https://attacker.example")
+        .json(&serde_json::json!({
+            "email": email.clone(),
+            "password": password.clone()
+        }))
+        .send()
+        .await
+        .expect("untrusted Origin registration receives an HTTP response");
+    assert_eq!(invalid_origin_registration.status(), StatusCode::FORBIDDEN);
+    let invalid_origin_tenant_login = client
+        .post(format!("http://{http_addr}/v1/identity/session"))
+        .header(header::ORIGIN, "https://attacker.example")
+        .json(&serde_json::json!({
+            "email": email.clone(),
+            "password": password.clone()
+        }))
+        .send()
+        .await
+        .expect("untrusted Origin tenant login receives an HTTP response");
+    assert_eq!(invalid_origin_tenant_login.status(), StatusCode::FORBIDDEN);
+    let identity_state_after_origin_rejection: (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM identity_access.tenant_users),(SELECT count(*) FROM identity_access.sessions)",
+    )
+    .fetch_one(&migration_pool)
+    .await
+    .expect("identity and session counts after Origin rejection are queryable");
+    assert_eq!(
+        identity_state_after_origin_rejection, identity_state_before_origin_rejection,
+        "untrusted Origin must not create identities or sessions"
+    );
+    let identities_before_invalid_credentials: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM identity_access.tenant_users")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("identity count before invalid credentials is queryable");
+    let invalid_credential_types = [
+        serde_json::json!({"email": 7, "password": "Valid-password-123!"}),
+        serde_json::json!({"email": "invalid@example.test", "password": 7}),
+        serde_json::json!({"email": "invalid@example.test"}),
+    ];
+    for (index, invalid_body) in invalid_credential_types.into_iter().enumerate() {
+        let response = client
+            .post(format!("http://{http_addr}/v1/identity/register"))
+            .header(header::ORIGIN, &origin)
+            .json(&invalid_body)
+            .send()
+            .await
+            .expect("invalid credentials DTO receives an HTTP response");
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "wrong credentials DTO type/shape case {index} must be rejected"
+        );
+    }
+    let invalid_email = client
+        .post(format!("http://{http_addr}/v1/identity/register"))
+        .header(header::ORIGIN, &origin)
+        .json(&serde_json::json!({
+            "email": format!("{}@example.test", "a".repeat(65)),
+            "password": "Valid-password-123!"
+        }))
+        .send()
+        .await
+        .expect("overlong email is rejected at the HTTP boundary");
+    assert_eq!(invalid_email.status(), StatusCode::BAD_REQUEST);
+    let invalid_passwords = vec!["Short-1!".to_owned(), format!("{}A1!", "a".repeat(126))];
+    for invalid_password in invalid_passwords {
+        let response = client
+            .post(format!("http://{http_addr}/v1/identity/register"))
+            .header(header::ORIGIN, &origin)
+            .json(&serde_json::json!({
+                "email": format!("invalid_password_{}@example.test", Uuid::new_v4().simple()),
+                "password": invalid_password
+            }))
+            .send()
+            .await
+            .expect("out-of-range password receives an HTTP response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+    let identities_after_invalid_credentials: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM identity_access.tenant_users")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("identity count after invalid credentials is queryable");
+    assert_eq!(
+        identities_after_invalid_credentials, identities_before_invalid_credentials,
+        "invalid credential values and types must not create identities"
+    );
+
     let weak_password_email = format!("weak_password_{}@example.test", Uuid::new_v4().simple());
     let weak_password_response = client
         .post(format!("http://{http_addr}/v1/identity/register"))
@@ -407,6 +651,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("HTTP registration response arrives");
     assert_eq!(register_response.status(), StatusCode::CREATED);
+
     let registration: serde_json::Value = register_response
         .json()
         .await
@@ -417,6 +662,155 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             .expect("registration user id is present"),
     )
     .expect("registration user id is valid");
+
+    // Force the Outbox insert to fail after the identity INSERT. The transaction
+    // must roll back the identity and audit writes rather than leave partial state.
+    sqlx::raw_sql(
+        "CREATE OR REPLACE FUNCTION identity_access.reject_test_outbox_event() RETURNS trigger \
+         LANGUAGE plpgsql AS $phase2$ BEGIN \
+         IF NEW.correlation_id = 'corr_force_identity_outbox_failure' THEN \
+           RAISE EXCEPTION 'forced acceptance failure'; \
+         END IF; RETURN NEW; END $phase2$; \
+         CREATE TRIGGER reject_test_outbox_event BEFORE INSERT ON identity_access.outbox_events \
+         FOR EACH ROW EXECUTE FUNCTION identity_access.reject_test_outbox_event();",
+    )
+    .execute(&migration_pool)
+    .await
+    .expect("temporary failure trigger is installed in the isolated acceptance database");
+    let rollback_email = format!("rollback_{}@example.test", Uuid::new_v4().simple());
+    let rollback_response = client
+        .post(format!("http://{http_addr}/v1/identity/register"))
+        .header(header::ORIGIN, &origin)
+        .header("x-correlation-id", "corr_force_identity_outbox_failure")
+        .json(&serde_json::json!({
+            "email": rollback_email.clone(),
+            "password": format!("Rollback-password-{}!", Uuid::new_v4().simple())
+        }))
+        .send()
+        .await
+        .expect("forced Outbox failure returns an HTTP response");
+    assert_eq!(
+        rollback_response.status(),
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    let rollback_identity_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM identity_access.tenant_users WHERE email_normalized=$1",
+    )
+    .bind(rollback_email.to_ascii_lowercase())
+    .fetch_one(&migration_pool)
+    .await
+    .expect("rollback identity count is queryable");
+    assert_eq!(rollback_identity_count, 0, "identity insert must roll back");
+    let rollback_audit_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM identity_access.audit_events WHERE correlation_id='corr_force_identity_outbox_failure'",
+    )
+    .fetch_one(&migration_pool)
+    .await
+    .expect("rollback audit count is queryable");
+    assert_eq!(rollback_audit_count, 0, "audit insert must not be partial");
+    let rollback_outbox_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM identity_access.outbox_events WHERE correlation_id='corr_force_identity_outbox_failure'",
+    )
+    .fetch_one(&migration_pool)
+    .await
+    .expect("rollback Outbox count is queryable");
+    assert_eq!(
+        rollback_outbox_count, 0,
+        "Outbox insert must not be partial"
+    );
+    sqlx::raw_sql(
+        "DROP TRIGGER reject_test_outbox_event ON identity_access.outbox_events; \
+         DROP FUNCTION identity_access.reject_test_outbox_event();",
+    )
+    .execute(&migration_pool)
+    .await
+    .expect("temporary failure trigger is removed");
+
+    // Duplicate normalized email must be rejected at the HTTP boundary without
+    // creating a second identity or a second durable registration event.
+    let duplicate_registration = client
+        .post(format!("http://{http_addr}/v1/identity/register"))
+        .header(header::ORIGIN, &origin)
+        .header("x-correlation-id", "corr_identity_duplicate_email")
+        .json(&serde_json::json!({
+            "email": format!(" {} ", email.to_ascii_uppercase()),
+            "password": password.clone()
+        }))
+        .send()
+        .await
+        .expect("normalized duplicate email registration receives a classified response");
+    assert_eq!(duplicate_registration.status(), StatusCode::CONFLICT);
+    let duplicate_envelope: serde_json::Value = duplicate_registration
+        .json()
+        .await
+        .expect("duplicate registration returns a safe error envelope");
+    assert_eq!(duplicate_envelope["error"]["code"], "identity_conflict");
+    let duplicate_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM identity_access.tenant_users WHERE email_normalized=$1",
+    )
+    .bind(email.to_ascii_lowercase())
+    .fetch_one(&migration_pool)
+    .await
+    .expect("duplicate identity count is queryable");
+    assert_eq!(duplicate_count, 1, "normalized email remains unique");
+    let duplicate_event_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM identity_access.outbox_events WHERE aggregate_id=$1 AND event_type='identity.tenant_user.registered'",
+    )
+    .bind(registered_user_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("registration event count is queryable");
+    assert_eq!(
+        duplicate_event_count, 1,
+        "duplicate registration emits no event"
+    );
+
+    // Two simultaneous registrations for the same normalized email must have
+    // exactly one winner, even when both requests pass the rate limiter.
+    let concurrent_email = format!("concurrent_{}@example.test", Uuid::new_v4().simple());
+    let concurrent_password = format!("Concurrent-password-{}!", Uuid::new_v4().simple());
+    let concurrent_url = format!("http://{http_addr}/v1/identity/register");
+    let first_request = client
+        .post(&concurrent_url)
+        .header(header::ORIGIN, &origin)
+        .header("x-correlation-id", "corr_identity_concurrent_first")
+        .json(&serde_json::json!({
+            "email": concurrent_email.clone(),
+            "password": concurrent_password.clone()
+        }))
+        .send();
+    let second_request = client
+        .post(&concurrent_url)
+        .header(header::ORIGIN, &origin)
+        .header("x-correlation-id", "corr_identity_concurrent_second")
+        .json(&serde_json::json!({
+            "email": concurrent_email.clone(),
+            "password": concurrent_password.clone()
+        }))
+        .send();
+    let (first_result, second_result) = tokio::join!(first_request, second_request);
+    let first_status = first_result
+        .expect("first concurrent registration response arrives")
+        .status();
+    let second_status = second_result
+        .expect("second concurrent registration response arrives")
+        .status();
+    let mut concurrent_statuses = vec![first_status, second_status];
+    concurrent_statuses.sort();
+    assert_eq!(
+        concurrent_statuses,
+        vec![StatusCode::CREATED, StatusCode::CONFLICT],
+        "one concurrent registration succeeds and the other conflicts"
+    );
+    let concurrent_identity_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM identity_access.tenant_users WHERE email_normalized=$1",
+    )
+    .bind(concurrent_email.to_ascii_lowercase())
+    .fetch_one(&migration_pool)
+    .await
+    .expect("concurrent identity count is queryable");
+    assert_eq!(concurrent_identity_count, 1);
+
     let registration_event: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM identity_access.outbox_events WHERE aggregate_id = $1 AND event_type = 'identity.tenant_user.registered')",
     )
@@ -580,13 +974,28 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         StatusCode::UNAUTHORIZED
     );
 
+    let invalid_origin_operator_login = client
+        .post(format!("http://{http_addr}/v1/platform/identity/session"))
+        .header(header::ORIGIN, "https://attacker.example")
+        .json(&serde_json::json!({
+            "email": operator_email.clone(),
+            "password": operator_password.clone()
+        }))
+        .send()
+        .await
+        .expect("untrusted Origin operator login receives an HTTP response");
+    assert_eq!(
+        invalid_origin_operator_login.status(),
+        StatusCode::FORBIDDEN
+    );
+
     let operator_login = client
         .post(format!("http://{http_addr}/v1/platform/identity/session"))
         .header(header::ORIGIN, &origin)
         .header("x-correlation-id", "corr_operator_login")
         .json(&serde_json::json!({
-            "email": operator_email,
-            "password": operator_password
+            "email": operator_email.clone(),
+            "password": operator_password.clone()
         }))
         .send()
         .await
@@ -662,6 +1071,68 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         "9{:018}",
         Uuid::new_v4().as_u128() % 1_000_000_000_000_000_000
     );
+    let tenant_slug = format!("acceptance-{}", Uuid::new_v4().simple());
+    sqlx::raw_sql(
+        "CREATE OR REPLACE FUNCTION tenant_registry.reject_test_outbox_event() RETURNS trigger \
+         LANGUAGE plpgsql AS $tenant_register$ BEGIN \
+         IF NEW.correlation_id = 'corr_tenant_registration_outbox_failure' THEN \
+             RAISE EXCEPTION 'injected tenant Outbox failure'; \
+         END IF; RETURN NEW; END $tenant_register$; \
+         CREATE TRIGGER reject_test_outbox_event BEFORE INSERT ON tenant_registry.outbox_events \
+         FOR EACH ROW EXECUTE FUNCTION tenant_registry.reject_test_outbox_event();",
+    )
+    .execute(&migration_pool)
+    .await
+    .expect("tenant Outbox failure trigger is installed");
+    let tenants_before_outbox_failure: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("tenant count before Outbox failure is queryable");
+    let tenant_outbox_failure = client
+        .post(format!("http://{http_addr}/v1/tenants"))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .header("x-csrf-token", &csrf_cookie)
+        .header("x-correlation-id", "corr_tenant_registration_outbox_failure")
+        .json(&serde_json::json!({
+            "display_name": "Tenant rollback acceptance",
+            "slug": format!("rollback-{}", Uuid::new_v4().simple()),
+            "legal_identification_type": "nit",
+            "legal_identification_number": format!("7{:018}", Uuid::new_v4().as_u128() % 1_000_000_000_000_000_000)
+        }))
+        .send()
+        .await
+        .expect("tenant registration Outbox failure receives an HTTP response");
+    assert_eq!(
+        tenant_outbox_failure.status(),
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    let tenants_after_outbox_failure: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("tenant count after Outbox failure is queryable");
+    assert_eq!(
+        tenants_after_outbox_failure, tenants_before_outbox_failure,
+        "tenant registration must roll back when its Outbox write fails"
+    );
+    let failed_tenant_outbox_rows: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM tenant_registry.outbox_events WHERE correlation_id='corr_tenant_registration_outbox_failure'",
+    )
+    .fetch_one(&migration_pool)
+    .await
+    .expect("failed tenant Outbox write leaves no row");
+    assert_eq!(failed_tenant_outbox_rows, 0);
+    sqlx::raw_sql(
+        "DROP TRIGGER reject_test_outbox_event ON tenant_registry.outbox_events;          DROP FUNCTION tenant_registry.reject_test_outbox_event();",
+    )
+    .execute(&migration_pool)
+    .await
+    .expect("tenant registration failure trigger is removed");
     let tenant_create = client
         .post(format!("http://{http_addr}/v1/tenants"))
         .header(header::ORIGIN, &origin)
@@ -673,7 +1144,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .header("x-correlation-id", "corr_tenant_onboarding")
         .json(&serde_json::json!({
             "display_name": "Acceptance tenant",
-            "slug": format!("acceptance-{}", Uuid::new_v4().simple()),
+            "slug": tenant_slug.clone(),
             "legal_identification_type": "nit",
             "legal_identification_number": legal_identification_number.clone()
         }))
@@ -750,6 +1221,43 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             .to_string()
             .contains(&legal_identification_number)
     );
+    let tenant_session_platform_list = client
+        .get(format!(
+            "http://{http_addr}/v1/platform/tenants?limit=10&offset=0"
+        ))
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("tenant session cannot enumerate platform tenants");
+    assert_eq!(
+        tenant_session_platform_list.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let tenant_session_platform_mutation = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .header("x-csrf-token", &csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "active",
+            "reason": "Tenant cannot administer platform state",
+            "expected_version": 1
+        }))
+        .send()
+        .await
+        .expect("tenant session cannot mutate platform tenant state");
+    assert_eq!(
+        tenant_session_platform_mutation.status(),
+        StatusCode::FORBIDDEN
+    );
     let tenant_list = client
         .get(format!("http://{http_addr}/v1/platform/tenants?query=Acceptance&limit=10&offset=0"))
         .header(
@@ -764,6 +1272,72 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let tenant_list_body: serde_json::Value =
         tenant_list.json().await.expect("tenant list is JSON");
     assert_eq!(tenant_list_body["total"], 1);
+    sqlx::raw_sql(
+        "CREATE OR REPLACE FUNCTION tenant_registry.reject_test_status_outbox_event() RETURNS trigger \
+         LANGUAGE plpgsql AS $tenant_status$ BEGIN \
+         IF NEW.correlation_id = 'corr_tenant_status_outbox_failure' THEN \
+             RAISE EXCEPTION 'injected tenant status Outbox failure'; \
+         END IF; RETURN NEW; END $tenant_status$; \
+         CREATE TRIGGER reject_test_status_outbox_event BEFORE INSERT ON tenant_registry.outbox_events \
+         FOR EACH ROW EXECUTE FUNCTION tenant_registry.reject_test_status_outbox_event();",
+    )
+    .execute(&migration_pool)
+    .await
+    .expect("tenant status Outbox failure trigger is installed");
+    let tenant_before_status_outbox_failure: (String, i64) =
+        sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
+            .bind(created_tenant_id)
+            .fetch_one(&migration_pool)
+            .await
+            .expect("tenant state before status Outbox failure is queryable");
+    let status_outbox_failure = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &operator_csrf_cookie)
+        .header("x-correlation-id", "corr_tenant_status_outbox_failure")
+        .json(&serde_json::json!({
+            "status": "active",
+            "reason": "Injected Outbox failure must roll back",
+            "expected_version": tenant_before_status_outbox_failure.1
+        }))
+        .send()
+        .await
+        .expect("tenant status Outbox failure receives an HTTP response");
+    assert_eq!(
+        status_outbox_failure.status(),
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    let tenant_after_status_outbox_failure: (String, i64) =
+        sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
+            .bind(created_tenant_id)
+            .fetch_one(&migration_pool)
+            .await
+            .expect("tenant state after status Outbox failure is queryable");
+    assert_eq!(
+        tenant_after_status_outbox_failure, tenant_before_status_outbox_failure,
+        "status and version must roll back when the Outbox write fails"
+    );
+    let failed_status_history_rows: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM tenant_registry.status_history WHERE tenant_id=$1 AND version=$2",
+    )
+    .bind(created_tenant_id)
+    .bind(tenant_before_status_outbox_failure.1 + 1)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("failed status Outbox write leaves no history row");
+    assert_eq!(failed_status_history_rows, 0);
+    sqlx::raw_sql(
+        "DROP TRIGGER reject_test_status_outbox_event ON tenant_registry.outbox_events;          DROP FUNCTION tenant_registry.reject_test_status_outbox_event();",
+    )
+    .execute(&migration_pool)
+    .await
+    .expect("tenant status failure trigger is removed");
     let tenant_admin_status = client
         .post(format!("http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"))
         .header(header::ORIGIN, &origin)
@@ -814,7 +1388,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _cleanup = EventStreamCleanup {
             jetstream: jetstream.clone(),
-            namespace: failed_namespace,
+            namespace: failed_namespace.clone(),
             armed: true,
         };
         panic!("exercise E2E stream cleanup during test unwinding");
@@ -830,6 +1404,284 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let event_namespace = format!("e2e_test_{}", Uuid::new_v4().simple());
     let event_topology = EventTopology::from_namespace(Some(&event_namespace))
         .expect("test event namespace is valid");
+
+    // Simulate a transient PostgreSQL write failure in the Outbox relay.
+    // The failed claim must not consume or mutate events; restoring privileges
+    // lets the same pending events be processed by the next relay attempt.
+    let pending_before_database_failure: (i64, i64) = sqlx::query_as(
+        "SELECT count(*),coalesce(sum(attempts),0) FROM tenant_registry.outbox_events WHERE published_at IS NULL",
+    )
+    .fetch_one(&migration_pool)
+    .await
+    .expect("pending Outbox state before PostgreSQL failure is queryable");
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+        "REVOKE UPDATE ON tenant_registry.outbox_events FROM \"{runtime_role}\""
+    )))
+    .execute(&migration_pool)
+    .await
+    .expect("isolated runtime role loses Outbox update privilege for failure injection");
+    let postgres_relay_failure =
+        platform_tenant_registry::infrastructure::outbox_relay::relay_batch(
+            &runtime_pool,
+            &jetstream,
+            &event_topology.subject_prefix,
+        )
+        .await;
+    assert!(
+        postgres_relay_failure.is_err(),
+        "PostgreSQL permission failure is surfaced to the relay worker"
+    );
+    let pending_after_database_failure: (i64, i64) = sqlx::query_as(
+        "SELECT count(*),coalesce(sum(attempts),0) FROM tenant_registry.outbox_events WHERE published_at IS NULL",
+    )
+    .fetch_one(&migration_pool)
+    .await
+    .expect("pending Outbox state after PostgreSQL failure is queryable");
+    assert_eq!(
+        pending_after_database_failure, pending_before_database_failure,
+        "failed PostgreSQL claim must not partially lease or consume events"
+    );
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+        "GRANT UPDATE ON tenant_registry.outbox_events TO \"{runtime_role}\""
+    )))
+    .execute(&migration_pool)
+    .await
+    .expect("isolated runtime role regains Outbox update privilege");
+
+    let pending_identity_before_database_failure: (i64, i64) = sqlx::query_as(
+        "SELECT count(*),coalesce(sum(attempts),0) FROM identity_access.outbox_events WHERE published_at IS NULL",
+    )
+    .fetch_one(&migration_pool)
+    .await
+    .expect("identity Outbox state before PostgreSQL failure is queryable");
+    assert!(pending_identity_before_database_failure.0 > 0);
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+        "REVOKE UPDATE ON identity_access.outbox_events FROM \"{runtime_role}\""
+    )))
+    .execute(&migration_pool)
+    .await
+    .expect("identity Outbox update privilege is revoked for failure injection");
+    let identity_postgres_relay_failure =
+        platform_identity_access::infrastructure::outbox_relay::relay_batch(
+            &runtime_pool,
+            &jetstream,
+            &event_topology.subject_prefix,
+        )
+        .await;
+    assert!(
+        identity_postgres_relay_failure.is_err(),
+        "identity relay surfaces a PostgreSQL claim failure"
+    );
+    let pending_identity_after_database_failure: (i64, i64) = sqlx::query_as(
+        "SELECT count(*),coalesce(sum(attempts),0) FROM identity_access.outbox_events WHERE published_at IS NULL",
+    )
+    .fetch_one(&migration_pool)
+    .await
+    .expect("identity Outbox state after PostgreSQL failure is queryable");
+    assert_eq!(
+        pending_identity_after_database_failure, pending_identity_before_database_failure,
+        "identity Outbox PostgreSQL failure must not partially claim or consume events"
+    );
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+        "GRANT UPDATE ON identity_access.outbox_events TO \"{runtime_role}\""
+    )))
+    .execute(&migration_pool)
+    .await
+    .expect("identity Outbox update privilege is restored");
+
+    // Exercise a deterministic JetStream failure without racing the
+    // application's background relay: the synthetic Outbox row is leased
+    // while the missing-stream publish is attempted.
+    let failed_event_id = Uuid::new_v4();
+    let failed_aggregate_id = Uuid::new_v4();
+    let failed_lease_token = Uuid::new_v4();
+    let failed_correlation_id = "corr_jetstream_publish_retry";
+    let failed_payload = serde_json::json!({"tenant_id": created_tenant_id});
+    sqlx::query(
+        "INSERT INTO tenant_registry.outbox_events (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,correlation_id,lease_token,lease_until,attempts) VALUES ($1,$2,1,'tenant.registered',1,'tenant_and_platform',$3,$4,$5,now()+interval '30 seconds',1)",
+    )
+    .bind(failed_event_id)
+    .bind(failed_aggregate_id)
+    .bind(&failed_payload)
+    .bind(failed_correlation_id)
+    .bind(failed_lease_token)
+    .execute(&migration_pool)
+    .await
+    .expect("synthetic Outbox event is leased for deterministic failure injection");
+    let failed_event = platform_tenant_registry::infrastructure::persistence::PendingOutboxEvent {
+        event_id: failed_event_id,
+        aggregate_id: failed_aggregate_id,
+        aggregate_version: 1,
+        event_type: "tenant.registered".to_owned(),
+        schema_version: 1,
+        audience: "tenant_and_platform".to_owned(),
+        payload: failed_payload.clone(),
+        traceparent: None,
+        correlation_id: failed_correlation_id.to_owned(),
+        lease_token: failed_lease_token,
+    };
+    let jetstream_error_code =
+        platform_tenant_registry::infrastructure::outbox_relay::publish_event(
+            &jetstream,
+            &failed_event,
+            &failed_topology.subject_prefix,
+        )
+        .await
+        .expect_err("publishing without a matching stream fails retryably");
+    assert!(matches!(
+        jetstream_error_code,
+        "jetstream_publish_unavailable" | "jetstream_ack_unavailable"
+    ));
+    assert!(
+        platform_tenant_registry::infrastructure::persistence::reschedule_outbox_event(
+            &runtime_pool,
+            failed_event_id,
+            failed_lease_token,
+            jetstream_error_code,
+        )
+        .await
+        .expect("failed JetStream event is rescheduled"),
+        "the failed event lease is released for retry"
+    );
+    let deferred_event_state: (Option<String>, bool) = sqlx::query_as(
+        "SELECT last_error_code,published_at IS NULL FROM tenant_registry.outbox_events WHERE event_id=$1",
+    )
+    .bind(failed_event_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("deferred JetStream event state is queryable");
+    assert_eq!(
+        deferred_event_state.0.as_deref(),
+        Some(jetstream_error_code)
+    );
+    assert!(deferred_event_state.1);
+
+    let failed_stream = failed_topology
+        .ensure_stream(&jetstream)
+        .await
+        .expect("JetStream stream is restored for retry");
+    let mut failed_stream_cleanup = EventStreamCleanup {
+        jetstream: jetstream.clone(),
+        namespace: failed_namespace,
+        armed: true,
+    };
+    let retry_lease_token = Uuid::new_v4();
+    sqlx::query(
+        "UPDATE tenant_registry.outbox_events SET available_at=now(),lease_token=$2,lease_until=now()+interval '30 seconds' WHERE event_id=$1 AND published_at IS NULL",
+    )
+    .bind(failed_event_id)
+    .bind(retry_lease_token)
+    .execute(&migration_pool)
+    .await
+    .expect("deferred event is leased again after JetStream recovery");
+    let retry_event = platform_tenant_registry::infrastructure::persistence::PendingOutboxEvent {
+        lease_token: retry_lease_token,
+        ..failed_event
+    };
+    platform_tenant_registry::infrastructure::outbox_relay::publish_event(
+        &jetstream,
+        &retry_event,
+        &failed_topology.subject_prefix,
+    )
+    .await
+    .expect("JetStream retry succeeds after stream recovery");
+    assert!(
+        platform_tenant_registry::infrastructure::persistence::mark_outbox_published(
+            &runtime_pool,
+            failed_event_id,
+            retry_lease_token,
+        )
+        .await
+        .expect("successful retry is acknowledged in PostgreSQL"),
+        "successful JetStream retry marks the event published"
+    );
+    let retried_jetstream_state: (bool, Option<String>) = sqlx::query_as(
+        "SELECT published_at IS NOT NULL,last_error_code FROM tenant_registry.outbox_events WHERE event_id=$1",
+    )
+    .bind(failed_event_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("successful JetStream retry state is queryable");
+    assert!(retried_jetstream_state.0);
+    assert!(retried_jetstream_state.1.is_none());
+    drop(failed_stream);
+    failed_stream_cleanup.cleanup().await;
+
+    // Exercise the identity_access Outbox worker against a real JetStream
+    // publish failure and recovery, independently of tenant_registry.
+    sqlx::query(
+        "UPDATE identity_access.outbox_events SET available_at=now()+interval '1 hour' WHERE published_at IS NULL",
+    )
+    .execute(&migration_pool)
+    .await
+    .expect("existing identity Outbox events are deferred for isolated retry acceptance");
+    let identity_failure_namespace = format!("e2e_identity_{}", Uuid::new_v4().simple());
+    let identity_failure_topology =
+        EventTopology::from_namespace(Some(&identity_failure_namespace))
+            .expect("identity failure namespace is valid");
+    let identity_failed_event_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO identity_access.outbox_events          (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,correlation_id)          VALUES ($1,$2,1,'identity.session.revoked',1,'platform_operator',$3,'corr_identity_jetstream_retry')",
+    )
+    .bind(identity_failed_event_id)
+    .bind(Uuid::new_v4())
+    .bind(serde_json::json!({"session_id": Uuid::new_v4()}))
+    .execute(&migration_pool)
+    .await
+    .expect("identity Outbox retry event is inserted");
+    let failed_identity_delivery =
+        platform_identity_access::infrastructure::outbox_relay::relay_batch(
+            &runtime_pool,
+            &jetstream,
+            &identity_failure_topology.subject_prefix,
+        )
+        .await
+        .expect("identity relay classifies and reschedules JetStream publish failure");
+    assert_eq!(failed_identity_delivery, 0);
+    let identity_deferred_state: (Option<String>, bool, bool) = sqlx::query_as(
+        "SELECT last_error_code,published_at IS NULL,lease_token IS NULL FROM identity_access.outbox_events WHERE event_id=$1",
+    )
+    .bind(identity_failed_event_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("identity deferred Outbox state is queryable");
+    assert_eq!(
+        identity_deferred_state.0.as_deref(),
+        Some("jetstream_ack_unavailable")
+    );
+    assert!(identity_deferred_state.1);
+    assert!(identity_deferred_state.2);
+    identity_failure_topology
+        .ensure_stream(&jetstream)
+        .await
+        .expect("identity JetStream stream is restored for retry");
+    sqlx::query("UPDATE identity_access.outbox_events SET available_at=now() WHERE event_id=$1")
+        .bind(identity_failed_event_id)
+        .execute(&migration_pool)
+        .await
+        .expect("identity failed event becomes eligible after dependency recovery");
+    let identity_retried_delivery =
+        platform_identity_access::infrastructure::outbox_relay::relay_batch(
+            &runtime_pool,
+            &jetstream,
+            &identity_failure_topology.subject_prefix,
+        )
+        .await
+        .expect("identity relay retries the durable event after JetStream recovery");
+    assert_eq!(identity_retried_delivery, 1);
+    let identity_retried_state: (bool, Option<String>) = sqlx::query_as(
+        "SELECT published_at IS NOT NULL,last_error_code FROM identity_access.outbox_events WHERE event_id=$1",
+    )
+    .bind(identity_failed_event_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("identity successful retry state is queryable");
+    assert!(identity_retried_state.0);
+    assert!(identity_retried_state.1.is_none());
+    delete_e2e_stream(&jetstream, &identity_failure_namespace)
+        .await
+        .expect("identity failure stream cleanup removes only its isolated stream");
+
     let stream = event_topology
         .ensure_stream(&jetstream)
         .await
@@ -868,8 +1720,17 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .expect("tenant outbox relay publishes through the real JetStream client");
     assert!(
         published_count > 0,
-        "outbox events are acknowledged durably"
+        "outbox events are acknowledged durably after dependency recovery"
     );
+    let retried_event_state: (bool, Option<String>) = sqlx::query_as(
+        "SELECT published_at IS NOT NULL,last_error_code FROM tenant_registry.outbox_events WHERE event_id=$1",
+    )
+    .bind(registration_event_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("retried Outbox event state is queryable");
+    assert!(retried_event_state.0);
+    assert!(retried_event_state.1.is_none());
     let isolated_stream = jetstream
         .get_stream(&isolated_topology.stream_name)
         .await
@@ -955,6 +1816,178 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     );
     assert_eq!(memberships_body["memberships"][0]["role"], "tenant_owner");
 
+    let operator_session_api_key_list = client
+        .get(format!(
+            "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
+        ))
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("operator session cannot use tenant API key endpoints");
+    assert_eq!(
+        operator_session_api_key_list.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let operator_session_api_key_create = client
+        .post(format!(
+            "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .header("x-csrf-token", &csrf_cookie)
+        .json(&serde_json::json!({
+            "name": "Wrong actor",
+            "environment": "test",
+            "scopes": ["payment_intents.create"]
+        }))
+        .send()
+        .await
+        .expect("operator session cannot create tenant API keys");
+    assert_eq!(
+        operator_session_api_key_create.status(),
+        StatusCode::UNAUTHORIZED
+    );
+
+    let api_keys_before_invalid_dtos: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM identity_access.api_keys")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("API key count before invalid DTO checks is queryable");
+    let invalid_api_key_values = [
+        serde_json::json!({"name": "x", "environment": "test", "scopes": ["read"]}),
+        serde_json::json!({"name": "x".repeat(81), "environment": "test", "scopes": ["read"]}),
+        serde_json::json!({"name": "Valid key", "environment": "production", "scopes": ["read"]}),
+        serde_json::json!({"name": "Valid key", "environment": "test", "scopes": []}),
+        serde_json::json!({"name": "Valid key", "environment": "test", "scopes": ["Read"]}),
+        serde_json::json!({"name": "Valid key", "environment": "test", "scopes": ["a".repeat(65)]}),
+        serde_json::json!({"name": "Valid key", "environment": "test", "scopes": vec!["read"; 17]}),
+    ];
+    for (index, invalid_body) in invalid_api_key_values.into_iter().enumerate() {
+        let response = client
+            .post(format!(
+                "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
+            ))
+            .header(header::ORIGIN, &origin)
+            .header(
+                header::COOKIE,
+                format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+            )
+            .header("x-csrf-token", &csrf_cookie)
+            .json(&invalid_body)
+            .send()
+            .await
+            .expect("semantically invalid API key DTO receives an HTTP response");
+        assert_eq!(
+            response.status(),
+            StatusCode::BAD_REQUEST,
+            "invalid API key DTO case {index} must fail validation"
+        );
+    }
+    let invalid_api_key_types = [
+        serde_json::json!({"name": 7, "environment": "test", "scopes": ["read"]}),
+        serde_json::json!({"name": "Valid key", "environment": 7, "scopes": ["read"]}),
+        serde_json::json!({"name": "Valid key", "environment": "test", "scopes": "read"}),
+        serde_json::json!({"name": "Valid key", "environment": "test", "scopes": [7]}),
+    ];
+    for (index, invalid_body) in invalid_api_key_types.into_iter().enumerate() {
+        let response = client
+            .post(format!(
+                "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
+            ))
+            .header(header::ORIGIN, &origin)
+            .header(
+                header::COOKIE,
+                format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+            )
+            .header("x-csrf-token", &csrf_cookie)
+            .json(&invalid_body)
+            .send()
+            .await
+            .expect("incorrect API key DTO field type receives an HTTP response");
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "wrong API key DTO type case {index} must be rejected by the HTTP extractor"
+        );
+    }
+    let api_keys_after_invalid_dtos: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM identity_access.api_keys")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("API key count after invalid DTO checks is queryable");
+    assert_eq!(
+        api_keys_after_invalid_dtos, api_keys_before_invalid_dtos,
+        "invalid API key values and types must not persist API keys"
+    );
+
+    sqlx::raw_sql(
+        "CREATE OR REPLACE FUNCTION identity_access.reject_test_api_key_outbox_event() RETURNS trigger \
+         LANGUAGE plpgsql AS $api_key$ BEGIN \
+         IF NEW.correlation_id = 'corr_api_key_outbox_failure' THEN \
+             RAISE EXCEPTION 'injected API key Outbox failure'; \
+         END IF; RETURN NEW; END $api_key$; \
+         CREATE TRIGGER reject_test_api_key_outbox_event BEFORE INSERT ON identity_access.outbox_events \
+         FOR EACH ROW EXECUTE FUNCTION identity_access.reject_test_api_key_outbox_event();",
+    )
+    .execute(&migration_pool)
+    .await
+    .expect("API key Outbox failure trigger is installed");
+    let api_keys_before_outbox_failure: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM identity_access.api_keys")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("API key count before Outbox failure is queryable");
+    let api_key_outbox_failure = client
+        .post(format!(
+            "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .header("x-csrf-token", &csrf_cookie)
+        .header("x-correlation-id", "corr_api_key_outbox_failure")
+        .json(&serde_json::json!({
+            "name": "Rollback API key",
+            "environment": "test",
+            "scopes": ["payment_intents.create"]
+        }))
+        .send()
+        .await
+        .expect("API key Outbox failure receives an HTTP response");
+    assert_eq!(
+        api_key_outbox_failure.status(),
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    let api_keys_after_outbox_failure: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM identity_access.api_keys")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("API key count after Outbox failure is queryable");
+    assert_eq!(
+        api_keys_after_outbox_failure, api_keys_before_outbox_failure,
+        "API key creation must roll back when its Outbox write fails"
+    );
+    let failed_api_key_audit_rows: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM identity_access.audit_events WHERE correlation_id='corr_api_key_outbox_failure'",
+    )
+    .fetch_one(&migration_pool)
+    .await
+    .expect("failed API key transaction leaves no audit row");
+    assert_eq!(failed_api_key_audit_rows, 0);
+    sqlx::raw_sql(
+        "DROP TRIGGER reject_test_api_key_outbox_event ON identity_access.outbox_events;          DROP FUNCTION identity_access.reject_test_api_key_outbox_event();",
+    )
+    .execute(&migration_pool)
+    .await
+    .expect("API key failure trigger is removed");
     let api_key_creation = client
         .post(format!(
             "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
@@ -1007,6 +2040,76 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         Sha256::digest(api_key_secret.as_bytes()).as_slice()
     );
 
+    let scoped_api_key_authorization = authorization_client
+        .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
+            secret: api_key_secret.to_owned(),
+            tenant_id: created_tenant_id.to_string(),
+            environment: "live".to_owned(),
+            required_scope: "payment_intents.create".to_owned(),
+            correlation_id: "corr_api_key_scope_allowed".to_owned(),
+        })
+        .await
+        .expect("API key with the requested scope authorizes the operation")
+        .into_inner();
+    assert_eq!(scoped_api_key_authorization.key_id, api_key_id.to_string());
+    assert_eq!(
+        scoped_api_key_authorization.tenant_id,
+        created_tenant_id.to_string()
+    );
+    let denied_api_key_scope = authorization_client
+        .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
+            secret: api_key_secret.to_owned(),
+            tenant_id: created_tenant_id.to_string(),
+            environment: "live".to_owned(),
+            required_scope: "payment_intents.capture".to_owned(),
+            correlation_id: "corr_api_key_scope_denied".to_owned(),
+        })
+        .await
+        .expect_err("API key cannot authorize an operation outside its scopes");
+    assert_eq!(denied_api_key_scope.code(), tonic::Code::PermissionDenied);
+    let wrong_environment_api_key = authorization_client
+        .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
+            secret: api_key_secret.to_owned(),
+            tenant_id: created_tenant_id.to_string(),
+            environment: "test".to_owned(),
+            required_scope: "payment_intents.create".to_owned(),
+            correlation_id: "corr_api_key_wrong_environment".to_owned(),
+        })
+        .await
+        .expect_err("live API key cannot authorize test environment operations");
+    assert_eq!(
+        wrong_environment_api_key.code(),
+        tonic::Code::Unauthenticated
+    );
+    let cross_tenant_api_key = authorization_client
+        .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
+            secret: api_key_secret.to_owned(),
+            tenant_id: Uuid::new_v4().to_string(),
+            environment: "live".to_owned(),
+            required_scope: "payment_intents.create".to_owned(),
+            correlation_id: "corr_api_key_cross_tenant".to_owned(),
+        })
+        .await
+        .expect_err("API key cannot authorize a different tenant");
+    assert_eq!(cross_tenant_api_key.code(), tonic::Code::Unauthenticated);
+    let api_key_last_used: bool = sqlx::query_scalar(
+        "SELECT last_used_at IS NOT NULL FROM identity_access.api_keys WHERE tenant_id=$1 AND id=$2",
+    )
+    .bind(created_tenant_id)
+    .bind(api_key_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("successful scoped authorization updates last_used_at");
+    assert!(api_key_last_used);
+    let api_key_scope_audit_counts: (i64, i64) = sqlx::query_as(
+        "SELECT count(*) FILTER (WHERE outcome='allowed'),count(*) FILTER (WHERE outcome='denied') FROM identity_access.audit_events WHERE action='api_key.authorization.checked' AND resource_id=$1 AND correlation_id IN ('corr_api_key_scope_allowed','corr_api_key_scope_denied')",
+    )
+    .bind(api_key_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("API key scope authorization audit outcomes are queryable");
+    assert_eq!(api_key_scope_audit_counts, (1, 1));
+
     let foreign_api_key_list = client
         .get(format!(
             "http://{http_addr}/v1/tenants/{}/api-keys",
@@ -1057,6 +2160,19 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("tenant owner can revoke its key through BFF and gRPC");
     assert_eq!(api_key_revoke.status(), StatusCode::NO_CONTENT);
+    let csrf_rejected_api_key_revoke = client
+        .delete(format!(
+            "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys/{api_key_id}"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("missing CSRF token rejects API key revocation");
+    assert_eq!(csrf_rejected_api_key_revoke.status(), StatusCode::FORBIDDEN);
     let revoked_key_status: String = sqlx::query_scalar(
         "SELECT status FROM identity_access.api_keys WHERE tenant_id=$1 AND id=$2",
     )
@@ -1066,6 +2182,20 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .await
     .expect("revocation persists in PostgreSQL");
     assert_eq!(revoked_key_status, "revoked");
+    let revoked_api_key_authorization = authorization_client
+        .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
+            secret: api_key_secret.to_owned(),
+            tenant_id: created_tenant_id.to_string(),
+            environment: "live".to_owned(),
+            required_scope: "payment_intents.create".to_owned(),
+            correlation_id: "corr_api_key_revoked_denied".to_owned(),
+        })
+        .await
+        .expect_err("revoked API key cannot authorize future operations");
+    assert_eq!(
+        revoked_api_key_authorization.code(),
+        tonic::Code::Unauthenticated
+    );
     let api_key_audit: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM identity_access.audit_events WHERE resource_id=$1 AND action='api_key.created' AND outcome='completed') AND EXISTS (SELECT 1 FROM identity_access.audit_events WHERE resource_id=$1 AND action='api_key.revoked' AND outcome='completed')",
     )
@@ -1074,6 +2204,172 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .await
     .expect("API key creation and revocation are audited");
     assert!(api_key_audit);
+
+    // Exercise the complete seeded tenant-role permission matrix through the
+    // real authorization RPC, then verify the exposed tenant/API-key operations.
+    let role_matrix = [
+        ("developer", &["tenant.read", "api_keys.manage"][..]),
+        (
+            "tenant_admin",
+            &[
+                "tenant.read",
+                "api_keys.manage",
+                "members.manage",
+                "tenant.settings.manage",
+            ][..],
+        ),
+        (
+            "tenant_owner",
+            &[
+                "tenant.read",
+                "api_keys.manage",
+                "members.manage",
+                "tenant.settings.manage",
+            ][..],
+        ),
+        ("viewer", &["tenant.read"][..]),
+    ];
+    for (role, allowed_permissions) in role_matrix {
+        sqlx::query(
+            "UPDATE identity_access.tenant_memberships SET role=$1 WHERE tenant_id=$2 AND user_id=$3",
+        )
+        .bind(role)
+        .bind(created_tenant_id)
+        .bind(registered_user_id)
+        .execute(&migration_pool)
+        .await
+        .expect("tenant membership role can be switched for isolated acceptance");
+
+        for permission in [
+            "tenant.read",
+            "api_keys.manage",
+            "members.manage",
+            "tenant.settings.manage",
+        ] {
+            let decision = authorization_client
+                .authorize_tenant_operation(AuthorizeTenantOperationRequest {
+                    session_token: session_cookie.clone(),
+                    csrf_token: csrf_cookie.clone(),
+                    tenant_id: created_tenant_id.to_string(),
+                    permission: permission.to_owned(),
+                    correlation_id: format!("corr_role_{role}_{permission}"),
+                })
+                .await;
+            if allowed_permissions.contains(&permission) {
+                assert!(
+                    decision.is_ok(),
+                    "role {role} must be allowed permission {permission}: {:?}",
+                    decision.err()
+                );
+            } else {
+                assert_eq!(
+                    decision
+                        .expect_err("ungranted tenant permission is denied")
+                        .code(),
+                    tonic::Code::PermissionDenied,
+                    "role {role} must be denied permission {permission}"
+                );
+            }
+        }
+
+        let tenant_read = client
+            .get(format!("http://{http_addr}/v1/tenants/{created_tenant_id}"))
+            .header(
+                header::COOKIE,
+                format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+            )
+            .send()
+            .await
+            .expect("tenant read operation returns a response for the current role");
+        assert_eq!(
+            tenant_read.status(),
+            StatusCode::OK,
+            "role {role} has tenant.read"
+        );
+
+        let api_key_list_for_role = client
+            .get(format!(
+                "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
+            ))
+            .header(
+                header::COOKIE,
+                format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+            )
+            .send()
+            .await
+            .expect("API key list operation returns a response for the current role");
+        let can_manage_keys = allowed_permissions.contains(&"api_keys.manage");
+        assert_eq!(
+            api_key_list_for_role.status(),
+            if can_manage_keys {
+                StatusCode::OK
+            } else {
+                StatusCode::FORBIDDEN
+            },
+            "role {role} API key list permission is enforced at HTTP boundary"
+        );
+
+        let create_key_for_role = client
+            .post(format!(
+                "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
+            ))
+            .header(header::ORIGIN, &origin)
+            .header(
+                header::COOKIE,
+                format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+            )
+            .header("x-csrf-token", &csrf_cookie)
+            .json(&serde_json::json!({
+                "name": format!("Role matrix {role}"),
+                "environment": "test",
+                "scopes": ["payment_intents.create"]
+            }))
+            .send()
+            .await
+            .expect("API key create operation returns a response for the current role");
+        assert_eq!(
+            create_key_for_role.status(),
+            if can_manage_keys {
+                StatusCode::CREATED
+            } else {
+                StatusCode::FORBIDDEN
+            },
+            "role {role} API key create permission is enforced at HTTP boundary"
+        );
+        if can_manage_keys {
+            let created_for_role: serde_json::Value = create_key_for_role
+                .json()
+                .await
+                .expect("authorized role receives API key metadata");
+            let key_id = created_for_role["key_id"]
+                .as_str()
+                .expect("role matrix key id is present");
+            let revoke_for_role = client
+                .delete(format!(
+                    "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys/{key_id}"
+                ))
+                .header(header::ORIGIN, &origin)
+                .header(
+                    header::COOKIE,
+                    format!(
+                        "payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"
+                    ),
+                )
+                .header("x-csrf-token", &csrf_cookie)
+                .send()
+                .await
+                .expect("authorized role can revoke its own tenant API key");
+            assert_eq!(revoke_for_role.status(), StatusCode::NO_CONTENT);
+        }
+    }
+    sqlx::query(
+        "UPDATE identity_access.tenant_memberships SET role='tenant_owner' WHERE tenant_id=$1 AND user_id=$2",
+    )
+    .bind(created_tenant_id)
+    .bind(registered_user_id)
+    .execute(&migration_pool)
+    .await
+    .expect("tenant owner role is restored after the role matrix");
 
     let second_email = format!("second_tenant_{}@example.test", Uuid::new_v4().simple());
     let second_password = format!("Second-tenant-password-{}!", Uuid::new_v4().simple());
@@ -1107,6 +2403,214 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         "8{:018}",
         Uuid::new_v4().as_u128() % 1_000_000_000_000_000_000
     );
+    let duplicate_slug_identification = format!(
+        "8{:018}",
+        Uuid::new_v4().as_u128() % 1_000_000_000_000_000_000
+    );
+    let conflicting_slug = client
+        .post(format!("http://{http_addr}/v1/tenants"))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &second_csrf_cookie)
+        .header("x-correlation-id", "corr_duplicate_tenant_slug")
+        .json(&serde_json::json!({
+            "display_name": "Duplicate slug tenant",
+            "slug": tenant_slug.clone(),
+            "legal_identification_type": "cc",
+            "legal_identification_number": duplicate_slug_identification
+        }))
+        .send()
+        .await
+        .expect("duplicate tenant slug returns a conflict");
+    assert_eq!(conflicting_slug.status(), StatusCode::CONFLICT);
+    let duplicate_slug_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants WHERE slug=$1")
+            .bind(&tenant_slug)
+            .fetch_one(&migration_pool)
+            .await
+            .expect("duplicate slug count is queryable");
+    assert_eq!(duplicate_slug_count, 1, "tenant slug remains unique");
+    let duplicate_slug_event_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM tenant_registry.outbox_events WHERE aggregate_id=$1 AND event_type='tenant.registered'",
+    )
+    .bind(created_tenant_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("tenant registration event count is queryable");
+    assert_eq!(duplicate_slug_event_count, 1);
+
+    // Concurrent tenant registration with the same slug must commit exactly
+    // one aggregate and one durable registration event.
+    let concurrent_slug = format!("concurrent-slug-{}", Uuid::new_v4().simple());
+    let concurrent_slug_document_a = format!(
+        "7{:018}",
+        Uuid::new_v4().as_u128() % 1_000_000_000_000_000_000
+    );
+    let concurrent_slug_document_b = format!(
+        "7{:018}",
+        Uuid::new_v4().as_u128() % 1_000_000_000_000_000_000
+    );
+    let concurrent_slug_url = format!("http://{http_addr}/v1/tenants");
+    let concurrent_slug_cookie = format!(
+        "payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"
+    );
+    let (concurrent_slug_a, concurrent_slug_b) = tokio::join!(
+        client
+            .post(&concurrent_slug_url)
+            .header(header::ORIGIN, &origin)
+            .header(header::COOKIE, &concurrent_slug_cookie)
+            .header("x-csrf-token", &second_csrf_cookie)
+            .header("x-correlation-id", "corr_tenant_slug_race_a")
+            .json(&serde_json::json!({
+                "display_name": "Concurrent slug A",
+                "slug": concurrent_slug,
+                "legal_identification_type": "cc",
+                "legal_identification_number": concurrent_slug_document_a
+            }))
+            .send(),
+        client
+            .post(&concurrent_slug_url)
+            .header(header::ORIGIN, &origin)
+            .header(header::COOKIE, &concurrent_slug_cookie)
+            .header("x-csrf-token", &second_csrf_cookie)
+            .header("x-correlation-id", "corr_tenant_slug_race_b")
+            .json(&serde_json::json!({
+                "display_name": "Concurrent slug B",
+                "slug": concurrent_slug,
+                "legal_identification_type": "cc",
+                "legal_identification_number": concurrent_slug_document_b
+            }))
+            .send()
+    );
+    let concurrent_slug_a = concurrent_slug_a.expect("first slug race response arrives");
+    let concurrent_slug_b = concurrent_slug_b.expect("second slug race response arrives");
+    let mut concurrent_slug_statuses = vec![concurrent_slug_a.status(), concurrent_slug_b.status()];
+    concurrent_slug_statuses.sort();
+    assert_eq!(
+        concurrent_slug_statuses,
+        vec![StatusCode::CREATED, StatusCode::CONFLICT],
+        "concurrent slug registration has one winner and one conflict"
+    );
+    let concurrent_slug_winner: serde_json::Value =
+        if concurrent_slug_a.status() == StatusCode::CREATED {
+            concurrent_slug_a
+                .json()
+                .await
+                .expect("winning slug registration returns tenant metadata")
+        } else {
+            concurrent_slug_b
+                .json()
+                .await
+                .expect("winning slug registration returns tenant metadata")
+        };
+    let concurrent_slug_winner_id = Uuid::parse_str(
+        concurrent_slug_winner["tenant_id"]
+            .as_str()
+            .expect("winning slug tenant id is present"),
+    )
+    .expect("winning slug tenant id is a UUID");
+    let concurrent_slug_rows: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants WHERE slug=$1")
+            .bind(&concurrent_slug)
+            .fetch_one(&migration_pool)
+            .await
+            .expect("concurrent slug row count is queryable");
+    assert_eq!(concurrent_slug_rows, 1);
+    let concurrent_slug_events: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM tenant_registry.outbox_events WHERE aggregate_id=$1 AND event_type='tenant.registered'",
+    )
+    .bind(concurrent_slug_winner_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("concurrent slug Outbox count is queryable");
+    assert_eq!(concurrent_slug_events, 1);
+
+    // The legal-identity unique constraint must provide the same guarantee
+    // when requests use different slugs but the same normalized document.
+    let concurrent_document = format!(
+        "6{:018}",
+        Uuid::new_v4().as_u128() % 1_000_000_000_000_000_000
+    );
+    let (concurrent_document_a, concurrent_document_b) = tokio::join!(
+        client
+            .post(&concurrent_slug_url)
+            .header(header::ORIGIN, &origin)
+            .header(header::COOKIE, &concurrent_slug_cookie)
+            .header("x-csrf-token", &second_csrf_cookie)
+            .header("x-correlation-id", "corr_tenant_document_race_a")
+            .json(&serde_json::json!({
+                "display_name": "Concurrent document A",
+                "slug": format!("concurrent-document-a-{}", Uuid::new_v4().simple()),
+                "legal_identification_type": "cc",
+                "legal_identification_number": concurrent_document
+            }))
+            .send(),
+        client
+            .post(&concurrent_slug_url)
+            .header(header::ORIGIN, &origin)
+            .header(header::COOKIE, &concurrent_slug_cookie)
+            .header("x-csrf-token", &second_csrf_cookie)
+            .header("x-correlation-id", "corr_tenant_document_race_b")
+            .json(&serde_json::json!({
+                "display_name": "Concurrent document B",
+                "slug": format!("concurrent-document-b-{}", Uuid::new_v4().simple()),
+                "legal_identification_type": "cc",
+                "legal_identification_number": concurrent_document
+            }))
+            .send()
+    );
+    let concurrent_document_a =
+        concurrent_document_a.expect("first legal identity race response arrives");
+    let concurrent_document_b =
+        concurrent_document_b.expect("second legal identity race response arrives");
+    let mut concurrent_document_statuses = vec![
+        concurrent_document_a.status(),
+        concurrent_document_b.status(),
+    ];
+    concurrent_document_statuses.sort();
+    assert_eq!(
+        concurrent_document_statuses,
+        vec![StatusCode::CREATED, StatusCode::CONFLICT],
+        "concurrent legal identity registration has one winner and one conflict"
+    );
+    let concurrent_document_winner: serde_json::Value =
+        if concurrent_document_a.status() == StatusCode::CREATED {
+            concurrent_document_a
+                .json()
+                .await
+                .expect("winning legal identity registration returns tenant metadata")
+        } else {
+            concurrent_document_b
+                .json()
+                .await
+                .expect("winning legal identity registration returns tenant metadata")
+        };
+    let concurrent_document_winner_id = Uuid::parse_str(
+        concurrent_document_winner["tenant_id"]
+            .as_str()
+            .expect("winning legal identity tenant id is present"),
+    )
+    .expect("winning legal identity tenant id is a UUID");
+    let concurrent_document_rows: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM tenant_registry.tenants WHERE legal_identification_type='cc' AND legal_identification_number=$1",
+    )
+    .bind(&concurrent_document)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("concurrent legal identity row count is queryable");
+    assert_eq!(concurrent_document_rows, 1);
+    let concurrent_document_events: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM tenant_registry.outbox_events WHERE aggregate_id=$1 AND event_type='tenant.registered'",
+    )
+    .bind(concurrent_document_winner_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("concurrent legal identity Outbox count is queryable");
+    assert_eq!(concurrent_document_events, 1);
+
     let second_tenant_create = client
         .post(format!("http://{http_addr}/v1/tenants"))
         .header(header::ORIGIN, &origin)
@@ -1288,6 +2792,70 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         cursor_replay_body["events"].as_array().map(Vec::len),
         Some(0)
     );
+
+    // A cursor ahead of the durable scope cursor is not an empty page: it is
+    // an invalid checkpoint and must be rejected so clients do not skip events.
+    let future_cursor = client
+        .get(format!(
+            "{replay_url}&cursor={}",
+            replay_cursor.saturating_add(100)
+        ))
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .header("x-correlation-id", "corr_realtime_future_cursor")
+        .send()
+        .await
+        .expect("future realtime cursor receives a classified response");
+    assert_eq!(future_cursor.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+
+    for invalid_cursor in [
+        "-1",
+        "not-a-number",
+        "9223372036854775808",
+        "18446744073709551616",
+    ] {
+        let invalid_cursor_response = client
+            .get(format!("{replay_url}&cursor={invalid_cursor}"))
+            .header(
+                header::COOKIE,
+                format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+            )
+            .send()
+            .await
+            .expect("malformed or negative realtime cursor receives an HTTP response");
+        assert_eq!(
+            invalid_cursor_response.status(),
+            StatusCode::BAD_REQUEST,
+            "invalid cursor {invalid_cursor} must be rejected at the HTTP boundary"
+        );
+    }
+    let invalid_realtime_scope = client
+        .get(format!(
+            "http://{http_addr}/v1/realtime/events?audience=unknown&cursor=0"
+        ))
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("unsupported realtime audience receives an HTTP response");
+    assert_eq!(invalid_realtime_scope.status(), StatusCode::BAD_REQUEST);
+    let malformed_realtime_tenant = client
+        .get(format!(
+            "http://{http_addr}/v1/realtime/events?audience=tenant&tenant_id=not-a-uuid&cursor=0"
+        ))
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("malformed realtime tenant scope receives an HTTP response");
+    assert_eq!(malformed_realtime_tenant.status(), StatusCode::BAD_REQUEST);
+
     let foreign_tenant_replay = client
         .get(format!(
             "http://{http_addr}/v1/realtime/events?audience=tenant&tenant_id={}&cursor=0",
@@ -1339,6 +2907,22 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
                     .any(|event| event["event_type"] == "tenant.status.changed")
             })
     );
+    // Keep an authenticated realtime subscription open while the operator
+    // session is revoked. The stream must re-check authorization and terminate.
+    let mut realtime_subscription_client = realtime_acceptance_client.clone();
+    let realtime_subscription = realtime_subscription_client
+        .subscribe_events(SubscribeEventsRequest {
+            session_token: operator_session_cookie.clone(),
+            csrf_token: operator_csrf_cookie.clone(),
+            audience: "platform".to_owned(),
+            tenant_id: String::new(),
+            after_cursor: 0,
+            correlation_id: "corr_realtime_revocation_subscription".to_owned(),
+        })
+        .await
+        .expect("authorized operator can subscribe to platform realtime")
+        .into_inner();
+
     let operator_logout = client
         .delete(format!("http://{http_addr}/v1/platform/identity/session"))
         .header(header::ORIGIN, &origin)
@@ -1354,6 +2938,23 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("operator logout response arrives");
     assert_eq!(operator_logout.status(), StatusCode::NO_CONTENT);
+    let mut revoked_subscription = realtime_subscription;
+    let realtime_revocation_status = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            match revoked_subscription.message().await {
+                Err(status) => break status,
+                Ok(Some(_event)) => continue,
+                Ok(None) => panic!("realtime subscription must report authorization revocation"),
+            }
+        }
+    })
+    .await
+    .expect("realtime subscription revalidates operator authorization within 20 seconds");
+    assert_eq!(
+        realtime_revocation_status.code(),
+        tonic::Code::Unauthenticated
+    );
+
     let operator_logout_audited: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM identity_access.audit_events WHERE actor_id = $1 AND action = 'identity.session.revoked' AND correlation_id = 'corr_operator_logout')",
     )
@@ -1388,6 +2989,31 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .expect("revoked operator session replay is rejected");
     assert_eq!(operator_replay.status(), StatusCode::UNAUTHORIZED);
 
+    // The preceding logout deliberately revoked the first operator session.
+    // Create a fresh session for the role/permission matrix that follows.
+    let matrix_operator_login = client
+        .post(format!("http://{http_addr}/v1/platform/identity/session"))
+        .header(header::ORIGIN, &origin)
+        .header("x-correlation-id", "corr_operator_matrix_login")
+        .json(&serde_json::json!({
+            "email": operator_email.clone(),
+            "password": operator_password.clone()
+        }))
+        .send()
+        .await
+        .expect("operator matrix login response arrives");
+    assert_eq!(matrix_operator_login.status(), StatusCode::OK);
+    let matrix_operator_cookies: Vec<String> = matrix_operator_login
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok().map(str::to_owned))
+        .collect();
+    let matrix_operator_session_cookie =
+        cookie_value(&matrix_operator_cookies, "payvia_platform_session");
+    let matrix_operator_csrf_cookie =
+        cookie_value(&matrix_operator_cookies, "payvia_platform_csrf");
+
     let rejected_csrf = client
         .delete(format!("http://{http_addr}/v1/identity/session"))
         .header(header::ORIGIN, &origin)
@@ -1400,6 +3026,20 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("CSRF rejection response arrives");
     assert_eq!(rejected_csrf.status(), StatusCode::FORBIDDEN);
+
+    let mut tenant_realtime_subscription_client = realtime_acceptance_client.clone();
+    let mut tenant_realtime_subscription = tenant_realtime_subscription_client
+        .subscribe_events(SubscribeEventsRequest {
+            session_token: session_cookie.clone(),
+            csrf_token: csrf_cookie.clone(),
+            audience: "tenant".to_owned(),
+            tenant_id: created_tenant_id.to_string(),
+            after_cursor: replay_cursor,
+            correlation_id: "corr_realtime_tenant_revocation_subscription".to_owned(),
+        })
+        .await
+        .expect("authorized tenant can subscribe to its realtime stream")
+        .into_inner();
 
     let logout = client
         .delete(format!("http://{http_addr}/v1/identity/session"))
@@ -1414,6 +3054,23 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("valid logout response arrives");
     assert_eq!(logout.status(), StatusCode::NO_CONTENT);
+    let tenant_revocation_status = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            match tenant_realtime_subscription.message().await {
+                Err(status) => break status,
+                Ok(Some(_event)) => continue,
+                Ok(None) => {
+                    panic!("tenant realtime subscription must report authorization revocation")
+                }
+            }
+        }
+    })
+    .await
+    .expect("tenant realtime subscription revalidates session revocation");
+    assert_eq!(
+        tenant_revocation_status.code(),
+        tonic::Code::Unauthenticated
+    );
     let tenant_logout_audited: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM identity_access.audit_events WHERE actor_id = $1 AND action = 'identity.session.revoked' AND correlation_id = 'corr_identity_logout')",
     )
@@ -1677,6 +3334,1119 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             .iter()
             .any(|value| value.contains(&second_legal_identification_number))
     );
+
+    // Exercise operator grants and real tenant administration endpoints for
+    // platform_owner, platform_security, and platform_support.
+    let operator_role_matrix = [
+        (
+            "platform_owner",
+            &[
+                "tenants.read",
+                "tenants.verify",
+                "tenants.activate",
+                "tenants.suspend",
+                "tenants.close",
+                "operators.bootstrap",
+            ][..],
+        ),
+        (
+            "platform_security",
+            &[
+                "tenants.read",
+                "tenants.verify",
+                "tenants.activate",
+                "tenants.suspend",
+                "tenants.close",
+            ][..],
+        ),
+        ("platform_support", &["tenants.read"][..]),
+    ];
+    for (role, allowed_permissions) in operator_role_matrix {
+        sqlx::query("UPDATE identity_access.operator_users SET role=$1 WHERE id=$2")
+            .bind(role)
+            .bind(operator_id)
+            .execute(&migration_pool)
+            .await
+            .expect("operator role can be switched for isolated acceptance");
+        for permission in [
+            "tenants.read",
+            "tenants.verify",
+            "tenants.activate",
+            "tenants.suspend",
+            "tenants.close",
+            "operators.bootstrap",
+        ] {
+            let decision = authorization_client
+                .authorize_operator_operation(AuthorizeOperatorOperationRequest {
+                    session_token: matrix_operator_session_cookie.clone(),
+                    csrf_token: matrix_operator_csrf_cookie.clone(),
+                    permission: permission.to_owned(),
+                    correlation_id: format!("corr_operator_role_{role}_{permission}"),
+                })
+                .await;
+            if allowed_permissions.contains(&permission) {
+                assert!(
+                    decision.is_ok(),
+                    "role {role} must be allowed permission {permission}"
+                );
+            } else {
+                assert_eq!(
+                    decision
+                        .expect_err("ungranted operator permission is denied")
+                        .code(),
+                    tonic::Code::PermissionDenied,
+                    "role {role} must be denied permission {permission}"
+                );
+            }
+        }
+        let operator_tenant_list = client
+            .get(format!("http://{http_addr}/v1/platform/tenants?limit=10&offset=0"))
+            .header(
+                header::COOKIE,
+                format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+            )
+            .send()
+            .await
+            .expect("operator tenant listing responds for each role");
+        assert_eq!(
+            operator_tenant_list.status(),
+            StatusCode::OK,
+            "all operator roles have tenants.read"
+        );
+        let operator_tenant_detail = client
+            .get(format!(
+                "http://{http_addr}/v1/tenants/{created_tenant_id}"
+            ))
+            .header(
+                header::COOKIE,
+                format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+            )
+            .send()
+            .await
+            .expect("operator tenant detail endpoint responds for each role");
+        assert_eq!(
+            operator_tenant_detail.status(),
+            StatusCode::OK,
+            "operator role {role} can read tenant details"
+        );
+    }
+
+    // platform_support may read tenants but must not suspend them. Verify that
+    // the denial leaves both status and version unchanged.
+    let support_status_change = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "suspended",
+            "reason": "Support role must not change tenant lifecycle",
+            "expected_version": 2
+        }))
+        .send()
+        .await
+        .expect("support lifecycle mutation receives a response");
+    assert_eq!(support_status_change.status(), StatusCode::FORBIDDEN);
+    let status_after_support_denial: (String, i64) =
+        sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
+            .bind(created_tenant_id)
+            .fetch_one(&migration_pool)
+            .await
+            .expect("tenant state after support denial is queryable");
+    assert_eq!(status_after_support_denial, ("active".to_owned(), 2));
+
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_security' WHERE id=$1")
+        .bind(operator_id)
+        .execute(&migration_pool)
+        .await
+        .expect("platform security role is selected for lifecycle acceptance");
+    let security_status_change = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "suspended",
+            "reason": "Authorized platform security suspension",
+            "expected_version": 2
+        }))
+        .send()
+        .await
+        .expect("platform security can suspend a tenant");
+    assert_eq!(security_status_change.status(), StatusCode::OK);
+
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_owner' WHERE id=$1")
+        .bind(operator_id)
+        .execute(&migration_pool)
+        .await
+        .expect("platform owner role is restored for lifecycle acceptance");
+    let owner_status_change = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "active",
+            "reason": "Authorized platform owner reactivation",
+            "expected_version": 3
+        }))
+        .send()
+        .await
+        .expect("platform owner can reactivate a suspended tenant");
+    assert_eq!(owner_status_change.status(), StatusCode::OK);
+
+    let owner_suspend_status_change = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "suspended",
+            "reason": "Authorized platform owner suspension",
+            "expected_version": 4
+        }))
+        .send()
+        .await
+        .expect("platform owner can suspend a tenant");
+    assert_eq!(owner_suspend_status_change.status(), StatusCode::OK);
+
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_security' WHERE id=$1")
+        .bind(operator_id)
+        .execute(&migration_pool)
+        .await
+        .expect("platform security role is selected for lifecycle reactivation");
+    let security_reactivation = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "active",
+            "reason": "Authorized platform security reactivation",
+            "expected_version": 5
+        }))
+        .send()
+        .await
+        .expect("platform security can reactivate a suspended tenant");
+    assert_eq!(security_reactivation.status(), StatusCode::OK);
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_owner' WHERE id=$1")
+        .bind(operator_id)
+        .execute(&migration_pool)
+        .await
+        .expect("platform owner role is restored for remaining lifecycle acceptance");
+
+    // Invalid reasons and stale optimistic-lock versions must be rejected
+    // before changing the tenant aggregate or its version. Read the committed
+    // version instead of duplicating assumptions about prior transitions.
+    let tenant_before_invalid_transitions: (String, i64) =
+        sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
+            .bind(created_tenant_id)
+            .fetch_one(&migration_pool)
+            .await
+            .expect("tenant state before invalid transitions is queryable");
+    assert_eq!(tenant_before_invalid_transitions.0, "active");
+    let current_status_version = tenant_before_invalid_transitions.1;
+    assert!(current_status_version > 0);
+
+    let missing_status_reason = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .header("x-correlation-id", "corr_tenant_status_missing_reason")
+        .json(&serde_json::json!({
+            "status": "suspended",
+            "reason": " ",
+            "expected_version": current_status_version
+        }))
+        .send()
+        .await
+        .expect("status transition without a meaningful reason is rejected");
+    assert_eq!(missing_status_reason.status(), StatusCode::BAD_REQUEST);
+    let invalid_reasons = vec!["ab".to_owned(), "r".repeat(501)];
+    for invalid_reason in invalid_reasons {
+        let response = client
+            .post(format!(
+                "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+            ))
+            .header(header::ORIGIN, &origin)
+            .header(
+                header::COOKIE,
+                format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+            )
+            .header("x-csrf-token", &matrix_operator_csrf_cookie)
+            .json(&serde_json::json!({
+                "status": "suspended",
+                "reason": invalid_reason,
+                "expected_version": current_status_version
+            }))
+            .send()
+            .await
+            .expect("out-of-range lifecycle reason receives an HTTP response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    let stale_status_version = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .header("x-correlation-id", "corr_tenant_status_stale_version")
+        .json(&serde_json::json!({
+            "status": "suspended",
+            "reason": "This stale transition must not be applied",
+            "expected_version": current_status_version - 1
+        }))
+        .send()
+        .await
+        .expect("stale tenant status version is rejected");
+    assert_eq!(stale_status_version.status(), StatusCode::CONFLICT);
+
+    let zero_expected_version = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "suspended",
+            "reason": "A version must be positive",
+            "expected_version": -1
+        }))
+        .send()
+        .await
+        .expect("negative expected version is rejected as invalid input");
+    assert_eq!(zero_expected_version.status(), StatusCode::BAD_REQUEST);
+
+    let wrong_version_type = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "suspended",
+            "reason": "The version must be an integer",
+            "expected_version": "not-an-integer"
+        }))
+        .send()
+        .await
+        .expect("wrong expected_version JSON type is rejected");
+    assert_eq!(
+        wrong_version_type.status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    let invalid_status_dto_types = [
+        serde_json::json!({
+            "status": 7,
+            "reason": "Status must be a string",
+            "expected_version": current_status_version
+        }),
+        serde_json::json!({
+            "status": "suspended",
+            "reason": 7,
+            "expected_version": current_status_version
+        }),
+    ];
+    for (index, invalid_body) in invalid_status_dto_types.into_iter().enumerate() {
+        let response = client
+            .post(format!(
+                "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+            ))
+            .header(header::ORIGIN, &origin)
+            .header(
+                header::COOKIE,
+                format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+            )
+            .header("x-csrf-token", &matrix_operator_csrf_cookie)
+            .json(&invalid_body)
+            .send()
+            .await
+            .expect("wrong lifecycle DTO field type receives an HTTP response");
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "wrong lifecycle DTO type case {index} must be rejected"
+        );
+    }
+
+    let invalid_status_value = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "unknown-state",
+            "reason": "Unknown states must not be accepted",
+            "expected_version": current_status_version
+        }))
+        .send()
+        .await
+        .expect("unknown lifecycle state is rejected");
+    assert_eq!(invalid_status_value.status(), StatusCode::BAD_REQUEST);
+
+    for invalid_query in ["limit=0", "limit=101", "offset=-1", "limit=not-a-number"] {
+        let invalid_list = client
+            .get(format!("http://{http_addr}/v1/platform/tenants?{invalid_query}"))
+            .header(
+                header::COOKIE,
+                format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+            )
+            .send()
+            .await
+            .expect("invalid tenant-list pagination receives an HTTP response");
+        assert_eq!(
+            invalid_list.status(),
+            StatusCode::BAD_REQUEST,
+            "invalid pagination query {invalid_query} must be rejected"
+        );
+    }
+    let oversized_tenant_query = client
+        .get(format!(
+            "http://{http_addr}/v1/platform/tenants?query={}",
+            "q".repeat(121)
+        ))
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("oversized tenant search query receives an HTTP response");
+    assert_eq!(oversized_tenant_query.status(), StatusCode::BAD_REQUEST);
+
+    let tenants_before_invalid_dtos: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("tenant count before invalid DTO checks is queryable");
+    let invalid_tenant_values = [
+        serde_json::json!({"display_name": "A", "slug": "valid-slug", "legal_identification_type": "nit", "legal_identification_number": "12345"}),
+        serde_json::json!({"display_name": "Valid tenant", "slug": "a".repeat(65), "legal_identification_type": "nit", "legal_identification_number": "12345"}),
+        serde_json::json!({"display_name": "Valid tenant", "slug": "valid-slug", "legal_identification_type": "passport", "legal_identification_number": "12345"}),
+        serde_json::json!({"display_name": "Valid tenant", "slug": "valid-slug", "legal_identification_type": "nit", "legal_identification_number": "-12345"}),
+        serde_json::json!({"display_name": "Valid tenant", "slug": "valid-slug", "legal_identification_type": "nit", "legal_identification_number": "1".repeat(21)}),
+    ];
+    for (index, invalid_body) in invalid_tenant_values.into_iter().enumerate() {
+        let response = client
+            .post(format!("http://{http_addr}/v1/tenants"))
+            .header(header::ORIGIN, &origin)
+            .header(
+                header::COOKIE,
+                format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
+            )
+            .header("x-csrf-token", &second_csrf_cookie)
+            .json(&invalid_body)
+            .send()
+            .await
+            .expect("invalid tenant registration values receive an HTTP response");
+        assert_eq!(
+            response.status(),
+            StatusCode::BAD_REQUEST,
+            "invalid tenant registration value case {index} must fail validation"
+        );
+    }
+    let invalid_tenant_types = [
+        serde_json::json!({"display_name": 7, "slug": "valid-slug", "legal_identification_type": "nit", "legal_identification_number": "12345"}),
+        serde_json::json!({"display_name": "Valid tenant", "slug": 7, "legal_identification_type": "nit", "legal_identification_number": "12345"}),
+        serde_json::json!({"display_name": "Valid tenant", "slug": "valid-slug", "legal_identification_type": 7, "legal_identification_number": "12345"}),
+        serde_json::json!({"display_name": "Valid tenant", "slug": "valid-slug", "legal_identification_type": "nit", "legal_identification_number": 7}),
+    ];
+    for (index, invalid_body) in invalid_tenant_types.into_iter().enumerate() {
+        let response = client
+            .post(format!("http://{http_addr}/v1/tenants"))
+            .header(header::ORIGIN, &origin)
+            .header(
+                header::COOKIE,
+                format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
+            )
+            .header("x-csrf-token", &second_csrf_cookie)
+            .json(&invalid_body)
+            .send()
+            .await
+            .expect("incorrect tenant DTO field type receives an HTTP response");
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "wrong tenant DTO type case {index} must be rejected by the HTTP extractor"
+        );
+    }
+    let tenants_after_invalid_dtos: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("tenant count after invalid DTO checks is queryable");
+    assert_eq!(
+        tenants_after_invalid_dtos, tenants_before_invalid_dtos,
+        "invalid tenant values and types must not create tenant rows"
+    );
+
+    let invalid_tenant_dto = client
+        .post(format!("http://{http_addr}/v1/tenants"))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &second_csrf_cookie)
+        .json(&serde_json::json!({
+            "display_name": "Invalid tenant DTO",
+            "slug": 42,
+            "legal_identification_type": "nit",
+            "legal_identification_number": "123456"
+        }))
+        .send()
+        .await
+        .expect("wrong tenant DTO field type is rejected");
+    assert_eq!(
+        invalid_tenant_dto.status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+
+    let tenant_after_invalid_transitions: (String, i64) =
+        sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
+            .bind(created_tenant_id)
+            .fetch_one(&migration_pool)
+            .await
+            .expect("tenant state after invalid transitions is queryable");
+    assert_eq!(
+        tenant_after_invalid_transitions, tenant_before_invalid_transitions,
+        "invalid reason and stale version leave tenant state unchanged"
+    );
+
+    // Exercise activation and both close transitions on a separate tenant.
+    // platform_support must be denied; platform_security may activate and close.
+    let second_tenant_initial_state: (String, i64) =
+        sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
+            .bind(second_tenant_id)
+            .fetch_one(&migration_pool)
+            .await
+            .expect("second tenant lifecycle state is queryable");
+    assert_eq!(
+        second_tenant_initial_state,
+        ("pending_verification".to_owned(), 1)
+    );
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_support' WHERE id=$1")
+        .bind(operator_id)
+        .execute(&migration_pool)
+        .await
+        .expect("platform support role is selected for activation denial");
+    let support_activation = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{second_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "active",
+            "reason": "Support role must not activate a tenant",
+            "expected_version": 1
+        }))
+        .send()
+        .await
+        .expect("support activation receives an HTTP response");
+    assert_eq!(support_activation.status(), StatusCode::FORBIDDEN);
+
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_security' WHERE id=$1")
+        .bind(operator_id)
+        .execute(&migration_pool)
+        .await
+        .expect("platform security role is selected for activation");
+    let security_activation = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{second_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "active",
+            "reason": "Authorized platform security verification",
+            "expected_version": 1
+        }))
+        .send()
+        .await
+        .expect("platform security can activate a verified tenant");
+    assert_eq!(security_activation.status(), StatusCode::OK);
+
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_support' WHERE id=$1")
+        .bind(operator_id)
+        .execute(&migration_pool)
+        .await
+        .expect("platform support role is selected for close denial");
+    let support_close = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{second_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "closing",
+            "reason": "Support role must not close a tenant",
+            "expected_version": 2
+        }))
+        .send()
+        .await
+        .expect("support close receives an HTTP response");
+    assert_eq!(support_close.status(), StatusCode::FORBIDDEN);
+
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_owner' WHERE id=$1")
+        .bind(operator_id)
+        .execute(&migration_pool)
+        .await
+        .expect("platform owner role is selected for tenant close");
+    let owner_closing = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{second_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "closing",
+            "reason": "Authorized platform security close",
+            "expected_version": 2
+        }))
+        .send()
+        .await
+        .expect("platform owner can start tenant close");
+    assert_eq!(owner_closing.status(), StatusCode::OK);
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_security' WHERE id=$1")
+        .bind(operator_id)
+        .execute(&migration_pool)
+        .await
+        .expect("platform security role is selected to finish tenant close");
+    let security_closed = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{second_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "closed",
+            "reason": "Authorized platform security final close",
+            "expected_version": 3
+        }))
+        .send()
+        .await
+        .expect("platform security can finish tenant close");
+    assert_eq!(security_closed.status(), StatusCode::OK);
+    let second_tenant_closed_state: (String, i64) =
+        sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
+            .bind(second_tenant_id)
+            .fetch_one(&migration_pool)
+            .await
+            .expect("closed tenant lifecycle state is queryable");
+    assert_eq!(second_tenant_closed_state, ("closed".to_owned(), 4));
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_owner' WHERE id=$1")
+        .bind(operator_id)
+        .execute(&migration_pool)
+        .await
+        .expect("platform owner role is restored after lifecycle matrix");
+
+    // Mutating HTTP endpoints must reject missing CSRF tokens or untrusted origins
+    // before reaching a module or changing durable state.
+    let tenants_before_csrf_rejection: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("tenant count before CSRF rejection is queryable");
+    let csrf_rejected_tenant_create = client
+        .post(format!("http://{http_addr}/v1/tenants"))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .json(&serde_json::json!({
+            "display_name": "Must not be created",
+            "slug": format!("csrf-rejected-{}", Uuid::new_v4().simple()),
+            "legal_identification_type": "nit",
+            "legal_identification_number": format!("8{:018}", Uuid::new_v4().as_u128() % 1_000_000_000_000_000_000)
+        }))
+        .send()
+        .await
+        .expect("missing CSRF token receives an HTTP response");
+    assert_eq!(csrf_rejected_tenant_create.status(), StatusCode::FORBIDDEN);
+    let tenants_after_csrf_rejection: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("tenant count after CSRF rejection is queryable");
+    assert_eq!(tenants_after_csrf_rejection, tenants_before_csrf_rejection);
+
+    let keys_before_csrf_rejection: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM identity_access.api_keys")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("API key count before CSRF rejection is queryable");
+    let csrf_rejected_api_key = client
+        .post(format!(
+            "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
+        ))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .json(&serde_json::json!({
+            "name": "Must not be created",
+            "environment": "test",
+            "scopes": ["payment_intents.create"]
+        }))
+        .send()
+        .await
+        .expect("missing CSRF token rejects API key creation");
+    assert_eq!(csrf_rejected_api_key.status(), StatusCode::FORBIDDEN);
+    let keys_after_csrf_rejection: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM identity_access.api_keys")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("API key count after CSRF rejection is queryable");
+    assert_eq!(keys_after_csrf_rejection, keys_before_csrf_rejection);
+
+    let csrf_rejected_status_change = client
+        .post(format!(
+            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
+        ))
+        .header(header::ORIGIN, "https://attacker.example")
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", &operator_csrf_cookie)
+        .json(&serde_json::json!({
+            "status": "suspended",
+            "reason": "Must not be applied",
+            "expected_version": tenant_admin_status_body["status_version"]
+        }))
+        .send()
+        .await
+        .expect("untrusted Origin rejects status mutation");
+    assert_eq!(csrf_rejected_status_change.status(), StatusCode::FORBIDDEN);
+
+    let csrf_rejected_tenant_logout = client
+        .delete(format!("http://{http_addr}/v1/identity/session"))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("missing CSRF token rejects tenant logout");
+    assert_eq!(csrf_rejected_tenant_logout.status(), StatusCode::FORBIDDEN);
+
+    let csrf_rejected_operator_logout = client
+        .delete(format!("http://{http_addr}/v1/platform/identity/session"))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("missing CSRF token rejects operator logout");
+    assert_eq!(
+        csrf_rejected_operator_logout.status(),
+        StatusCode::FORBIDDEN
+    );
+
+    // Expired and revoked sessions are rejected at the HTTP boundary.
+    // The second tenant session has not been revoked; expire it explicitly so
+    // this assertion distinguishes expiration from the separate logout checks.
+    let expired_session_digest = Sha256::digest(second_session_cookie.as_bytes());
+    sqlx::query(
+        "UPDATE identity_access.sessions SET expires_at=now()-interval '1 second' WHERE token_digest=$1",
+    )
+    .bind(expired_session_digest.as_slice())
+    .execute(&migration_pool)
+    .await
+    .expect("active second tenant session is marked expired in isolated PostgreSQL");
+    let expired_session_response = client
+        .get(format!("http://{http_addr}/v1/identity/session"))
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("expired session receives an HTTP response");
+    assert_eq!(expired_session_response.status(), StatusCode::UNAUTHORIZED);
+    let expired_session_api_key_access = client
+        .get(format!(
+            "http://{http_addr}/v1/tenants/{second_tenant_id}/api-keys"
+        ))
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("expired tenant session cannot access API key resources");
+    assert_eq!(
+        expired_session_api_key_access.status(),
+        StatusCode::UNAUTHORIZED
+    );
+
+    // Two lifecycle mutations using the same expected version must serialize:
+    // one commits, the other receives a version conflict regardless of which
+    // state transition wins the row lock.
+    sqlx::query("UPDATE identity_access.operator_users SET role='platform_owner' WHERE id=$1")
+        .bind(operator_id)
+        .execute(&migration_pool)
+        .await
+        .expect("platform owner role is restored for concurrent lifecycle acceptance");
+    let race_status_url =
+        format!("http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status");
+    let race_cookie = format!(
+        "payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"
+    );
+    let (suspend_race, close_race) = tokio::join!(
+        client
+            .post(&race_status_url)
+            .header(header::ORIGIN, &origin)
+            .header(header::COOKIE, &race_cookie)
+            .header("x-csrf-token", &matrix_operator_csrf_cookie)
+            .header("x-correlation-id", "corr_tenant_status_race_suspend")
+            .json(&serde_json::json!({
+                "status": "suspended",
+                "reason": "Concurrent optimistic-lock suspension",
+                "expected_version": current_status_version
+            }))
+            .send(),
+        client
+            .post(&race_status_url)
+            .header(header::ORIGIN, &origin)
+            .header(header::COOKIE, &race_cookie)
+            .header("x-csrf-token", &matrix_operator_csrf_cookie)
+            .header("x-correlation-id", "corr_tenant_status_race_close")
+            .json(&serde_json::json!({
+                "status": "closing",
+                "reason": "Concurrent optimistic-lock close",
+                "expected_version": current_status_version
+            }))
+            .send()
+    );
+    let suspend_race = suspend_race.expect("concurrent suspension response arrives");
+    let close_race = close_race.expect("concurrent close response arrives");
+    let mut race_statuses = vec![suspend_race.status(), close_race.status()];
+    race_statuses.sort();
+    assert_eq!(
+        race_statuses,
+        vec![StatusCode::OK, StatusCode::CONFLICT],
+        "exactly one concurrent tenant status mutation may commit"
+    );
+    let race_conflict = if suspend_race.status() == StatusCode::CONFLICT {
+        suspend_race
+    } else {
+        close_race
+    };
+    let race_conflict_body: serde_json::Value = race_conflict
+        .json()
+        .await
+        .expect("optimistic-lock race returns a safe conflict envelope");
+    assert_eq!(
+        race_conflict_body["error"]["code"], "tenant_state_conflict",
+        "the losing request must be classified as a stale-version conflict"
+    );
+    let race_final_state: (String, i64) =
+        sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
+            .bind(created_tenant_id)
+            .fetch_one(&migration_pool)
+            .await
+            .expect("concurrent lifecycle final state is queryable");
+    assert!(
+        matches!(race_final_state.0.as_str(), "suspended" | "closing"),
+        "one of the two requested transitions must win"
+    );
+    assert_eq!(race_final_state.1, current_status_version + 1);
+    let race_history_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM tenant_registry.status_history WHERE tenant_id=$1 AND version=$2",
+    )
+    .bind(created_tenant_id)
+    .bind(current_status_version + 1)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("single concurrent status-history row is queryable");
+    assert_eq!(race_history_count, 1);
+    let race_outbox_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM tenant_registry.outbox_events WHERE aggregate_id=$1 AND aggregate_version=$2 AND event_type='tenant.status.changed'",
+    )
+    .bind(created_tenant_id)
+    .bind(current_status_version + 1)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("single concurrent status Outbox event is queryable");
+    assert_eq!(race_outbox_count, 1);
+
+    // A retained-journal gap must surface as a conflict at the HTTP edge,
+    // not as a successful partial replay that silently skips an old event.
+    let first_platform_event: Uuid =
+        sqlx::query_scalar("SELECT event_id FROM realtime.event_journal WHERE platform_cursor=1")
+            .fetch_one(&migration_pool)
+            .await
+            .expect("first platform journal event exists for gap injection");
+    sqlx::query("DELETE FROM realtime.event_journal WHERE event_id=$1")
+        .bind(first_platform_event)
+        .execute(&migration_pool)
+        .await
+        .expect("first platform journal event is removed to simulate a retained gap");
+    let platform_gap_replay = client
+        .get(format!(
+            "http://{http_addr}/v1/realtime/events?audience=platform&cursor=0"
+        ))
+        .header(
+            header::COOKIE,
+            format!(
+                "payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"
+            ),
+        )
+        .send()
+        .await
+        .expect("platform replay reports a retained journal gap");
+    assert_eq!(platform_gap_replay.status(), StatusCode::CONFLICT);
+    let platform_gap_body: serde_json::Value = platform_gap_replay
+        .json()
+        .await
+        .expect("realtime gap returns a safe error envelope");
+    assert_eq!(platform_gap_body["error"]["code"], "realtime_cursor_gap");
+
+    let matrix_operator_logout = client
+        .delete(format!("http://{http_addr}/v1/platform/identity/session"))
+        .header(header::ORIGIN, &origin)
+        .header(
+            header::COOKIE,
+            format!(
+                "payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"
+            ),
+        )
+        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .send()
+        .await
+        .expect("operator matrix session can be revoked");
+    assert_eq!(matrix_operator_logout.status(), StatusCode::NO_CONTENT);
+    let revoked_matrix_session_response = client
+        .get(format!("http://{http_addr}/v1/platform/identity/session"))
+        .header(
+            header::COOKIE,
+            format!(
+                "payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"
+            ),
+        )
+        .send()
+        .await
+        .expect("revoked matrix operator session receives an HTTP response");
+    assert_eq!(
+        revoked_matrix_session_response.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let revoked_operator_tenant_list = client
+        .get(format!("http://{http_addr}/v1/platform/tenants?limit=10&offset=0"))
+        .header(
+            header::COOKIE,
+            format!(
+                "payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"
+            ),
+        )
+        .send()
+        .await
+        .expect("revoked operator session cannot access administrative tenant resources");
+    assert_eq!(
+        revoked_operator_tenant_list.status(),
+        StatusCode::UNAUTHORIZED
+    );
+
+    // Expired Outbox leases are reclaimable, and fencing tokens prevent a
+    // previous worker from acknowledging an event after another worker owns it.
+    for schema in ["identity_access", "tenant_registry"] {
+        if schema == "identity_access" {
+            sqlx::query(
+                "UPDATE identity_access.outbox_events SET available_at=now()+interval '1 hour' WHERE published_at IS NULL",
+            )
+            .execute(&migration_pool)
+            .await
+            .expect("identity pending events are deferred for lease acceptance");
+        } else {
+            sqlx::query(
+                "UPDATE tenant_registry.outbox_events SET available_at=now()+interval '1 hour' WHERE published_at IS NULL",
+            )
+            .execute(&migration_pool)
+            .await
+            .expect("tenant pending events are deferred for lease acceptance");
+        }
+        let event_id = Uuid::new_v4();
+        let aggregate_id = Uuid::new_v4();
+        let stale_lease = Uuid::new_v4();
+        let insert_expired = if schema == "identity_access" {
+            sqlx::query(
+                "INSERT INTO identity_access.outbox_events                  (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,correlation_id,available_at,lease_token,lease_until,attempts)                  VALUES ($1,$2,1,'tenant.status.changed',1,'tenant_and_platform',$3,$4,now()-interval '1 second',$5,now()-interval '1 second',2)",
+            )
+        } else {
+            sqlx::query(
+                "INSERT INTO tenant_registry.outbox_events                  (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,correlation_id,available_at,lease_token,lease_until,attempts)                  VALUES ($1,$2,1,'tenant.status.changed',1,'tenant_and_platform',$3,$4,now()-interval '1 second',$5,now()-interval '1 second',2)",
+            )
+        };
+        insert_expired
+            .bind(event_id)
+            .bind(aggregate_id)
+            .bind(serde_json::json!({"tenant_id": created_tenant_id}))
+            .bind(format!("corr_{schema}_expired_lease"))
+            .bind(stale_lease)
+            .execute(&migration_pool)
+            .await
+            .expect("expired synthetic Outbox lease is inserted");
+        let (claimed_event_id, new_lease) = if schema == "identity_access" {
+            let claimed =
+                platform_identity_access::infrastructure::persistence::claim_outbox_events(
+                    &runtime_pool,
+                    32,
+                )
+                .await
+                .expect("identity Outbox worker reclaims an expired lease");
+            assert_eq!(
+                claimed.len(),
+                1,
+                "only the expired {schema} event is eligible"
+            );
+            (claimed[0].event_id, claimed[0].lease_token)
+        } else {
+            let claimed =
+                platform_tenant_registry::infrastructure::persistence::claim_outbox_events(
+                    &runtime_pool,
+                    32,
+                )
+                .await
+                .expect("tenant Outbox worker reclaims an expired lease");
+            assert_eq!(
+                claimed.len(),
+                1,
+                "only the expired {schema} event is eligible"
+            );
+            (claimed[0].event_id, claimed[0].lease_token)
+        };
+        assert_eq!(claimed_event_id, event_id);
+        assert_ne!(new_lease, stale_lease);
+        let old_worker_acknowledged = if schema == "identity_access" {
+            platform_identity_access::infrastructure::persistence::mark_outbox_published(
+                &runtime_pool,
+                event_id,
+                stale_lease,
+            )
+            .await
+            .expect("identity stale lease acknowledgement is checked")
+        } else {
+            platform_tenant_registry::infrastructure::persistence::mark_outbox_published(
+                &runtime_pool,
+                event_id,
+                stale_lease,
+            )
+            .await
+            .expect("tenant stale lease acknowledgement is checked")
+        };
+        assert!(!old_worker_acknowledged, "stale {schema} lease cannot ack");
+        let new_worker_acknowledged = if schema == "identity_access" {
+            platform_identity_access::infrastructure::persistence::mark_outbox_published(
+                &runtime_pool,
+                event_id,
+                new_lease,
+            )
+            .await
+            .expect("identity current lease acknowledgement is checked")
+        } else {
+            platform_tenant_registry::infrastructure::persistence::mark_outbox_published(
+                &runtime_pool,
+                event_id,
+                new_lease,
+            )
+            .await
+            .expect("tenant current lease acknowledgement is checked")
+        };
+        assert!(new_worker_acknowledged, "current {schema} lease can ack");
+        let attempts: i32 = if schema == "identity_access" {
+            sqlx::query_scalar(
+                "SELECT attempts FROM identity_access.outbox_events WHERE event_id=$1",
+            )
+            .bind(event_id)
+            .fetch_one(&migration_pool)
+            .await
+        } else {
+            sqlx::query_scalar(
+                "SELECT attempts FROM tenant_registry.outbox_events WHERE event_id=$1",
+            )
+            .bind(event_id)
+            .fetch_one(&migration_pool)
+            .await
+        }
+        .expect("reclaimed Outbox attempt count is queryable");
+        assert_eq!(attempts, 3);
+    }
 
     let mut isolated_stream_cleanup = isolated_stream_cleanup;
     isolated_stream_cleanup.cleanup().await;

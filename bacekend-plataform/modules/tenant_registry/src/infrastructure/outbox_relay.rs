@@ -34,7 +34,7 @@ pub async fn relay_batch(
     Ok(delivered)
 }
 
-async fn publish_event(
+pub async fn publish_event(
     jetstream: &Context,
     event: &PendingOutboxEvent,
     subject_prefix: &str,

@@ -1,22 +1,38 @@
 name: Platform Rust quality
 
+concurrency:
+  group: platform-quality-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
 on:
   push:
+    branches:
+      - main
     paths:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'bacekend-plataform/**'
+      - 'bacekend-pasarela/**'
+      - 'frontends/**'
+      - 'AGENTS.md'
+      - 'PROJECT_RULES.md'
+      - 'ROADMAP.md'
       - '.github/workflows/platform-quality.yml'
   pull_request:
     paths:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'bacekend-plataform/**'
+      - 'bacekend-pasarela/**'
+      - 'frontends/**'
+      - 'AGENTS.md'
+      - 'PROJECT_RULES.md'
+      - 'ROADMAP.md'
       - '.github/workflows/platform-quality.yml'
 
 jobs:
   quality:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:18-alpine
@@ -40,7 +56,7 @@ jobs:
       NATS_USER: payvia_ci
       NATS_PASSWORD: payvia-platform-${{ github.run_id }}-${{ github.run_attempt }}-integration
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Mask ephemeral service credentials
         run: |
           postgres_password="payvia-postgres-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-integration"
@@ -53,19 +69,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Start authenticated Redis for acceptance tests
         run: |
-          docker run --detach --name payvia-platform-test-redis --publish 6379:6379 redis:8-alpine \
+          docker run --detach --name payvia-shared-infra-redis-1 --publish 6379:6379 redis:8-alpine \
             redis-server --requirepass "$REDIS_PASSWORD"
           for attempt in $(seq 1 30); do
-            if docker exec -e REDISCLI_AUTH="$REDIS_PASSWORD" payvia-platform-test-redis redis-cli ping | grep -q PONG; then
+            if docker exec -e REDISCLI_AUTH="$REDIS_PASSWORD" payvia-shared-infra-redis-1 redis-cli ping | grep -q PONG; then
               exit 0
             fi
             sleep 1
           done
-          docker logs payvia-platform-test-redis
+          docker logs payvia-shared-infra-redis-1
           exit 1
       - name: Start authenticated JetStream for acceptance tests
         run: |
-          docker run --detach --name payvia-platform-test-nats --publish 4222:4222 nats:2-alpine \
+          docker run --detach --name payvia-shared-infra-nats-1 --publish 4222:4222 nats:2-alpine \
             -js --user "$NATS_USER" --pass "$NATS_PASSWORD"
           for attempt in $(seq 1 30); do
             if nc -z 127.0.0.1 4222; then
@@ -73,7 +89,7 @@ jobs:
             fi
             sleep 1
           done
-          docker logs payvia-platform-test-nats
+          docker logs payvia-shared-infra-nats-1
           exit 1
       - name: Format
         run: cargo fmt --all -- --check
@@ -81,3 +97,51 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Tests
         run: cargo test --workspace
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26.13.0
+          cache: npm
+          cache-dependency-path: |
+            frontends/frontend-pasarela/package-lock.json
+            frontends/frontend-plataform/package-lock.json
+      - name: Install and test tenant frontend
+        working-directory: frontends/frontend-pasarela
+        run: |
+          npm ci
+          npm test
+          npm run build
+      - name: Install and test platform frontend
+        working-directory: frontends/frontend-plataform
+        run: |
+          npm ci
+          npm test
+          npm run build
+      - name: Install Playwright Chromium headless shell for browser acceptance
+        working-directory: frontends/frontend-pasarela
+        env:
+          PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: 120000
+        run: |
+          timeout --signal=TERM --kill-after=30s 5m npx playwright install --only-shell --no-progress chromium
+          npx playwright install --list
+      - name: Provision isolated browser acceptance environment
+        run: |
+          umask 077
+          cat > bacekend-plataform/.env <<EOF
+          PLATFORM_TEST_DATABASE_ADMIN_URL=$PLATFORM_TEST_DATABASE_ADMIN_URL
+          PLATFORM_REDIS_URL=$PLATFORM_REDIS_URL
+          PLATFORM_NATS_URL=$PLATFORM_NATS_URL
+          NATS_USER=$NATS_USER
+          NATS_PASSWORD=$NATS_PASSWORD
+          EOF
+      - name: Browser E2E — tenant frontend
+        working-directory: frontends/frontend-pasarela
+        run: npm run test:e2e
+      - name: Browser E2E — platform frontend
+        working-directory: frontends/frontend-plataform
+        run: npm run test:e2e
+      - name: Browser E2E — multi-replica realtime recovery
+        working-directory: frontends/frontend-plataform
+        run: npm run test:e2e:recovery
+      - name: Remove temporary E2E environment
+        if: always()
+        run: rm -f bacekend-plataform/.env

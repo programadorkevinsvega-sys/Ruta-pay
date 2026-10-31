@@ -21,6 +21,7 @@ test("operador crea y administra tenants a través del BFF real", async ({ page,
   const password = `E2e-password-${suffix}Aa!`;
   const tenantName = `E2E Admin ${suffix}`;
   const slug = `e2e-admin-${suffix}`;
+  const legalIdentificationNumber = `9${Date.now()}${Math.floor(Math.random() * 1_000_000).toString().padStart(6, "0")}`.slice(0, 20);
   const origin = process.env.PAYVIA_E2E_FRONTEND_ORIGIN ?? "http://localhost:4173";
 
   const registration = await request.post("/v1/identity/register", {
@@ -38,7 +39,12 @@ test("operador crea y administra tenants a través del BFF real", async ({ page,
   expect(csrfCookie).toBeDefined();
   const tenantCreation = await request.post("/v1/tenants", {
     headers: { Origin: origin, "X-CSRF-Token": csrfCookie!.value, "X-Correlation-ID": crypto.randomUUID() },
-    data: { display_name: tenantName, slug },
+    data: {
+      display_name: tenantName,
+      slug,
+      legal_identification_type: "nit",
+      legal_identification_number: legalIdentificationNumber,
+    },
   });
   expect(tenantCreation.status(), await tenantCreation.text()).toBe(201);
   const tenant = await tenantCreation.json() as { tenant_id: string };

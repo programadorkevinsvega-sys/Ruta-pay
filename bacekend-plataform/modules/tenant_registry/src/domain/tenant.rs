@@ -107,15 +107,20 @@ impl Tenant {
     }
 
     pub fn normalize_identification_number(value: &str) -> Result<String, TenantError> {
-        let mut digits = String::with_capacity(value.len());
-        for character in value.trim().chars() {
+        let normalized_input = value.trim();
+        let mut digits = String::with_capacity(normalized_input.len());
+        let mut previous_was_digit = false;
+        for character in normalized_input.chars() {
             if character.is_ascii_digit() {
                 digits.push(character);
-            } else if !matches!(character, ' ' | '.' | '-') {
+                previous_was_digit = true;
+            } else if matches!(character, ' ' | '.' | '-') && previous_was_digit {
+                previous_was_digit = false;
+            } else {
                 return Err(TenantError::InvalidLegalIdentification);
             }
         }
-        if !(5..=20).contains(&digits.len()) {
+        if !previous_was_digit || !(5..=20).contains(&digits.len()) {
             return Err(TenantError::InvalidLegalIdentification);
         }
         Ok(digits)
@@ -180,6 +185,71 @@ mod tests {
     }
 
     #[test]
+    fn registration_enforces_display_name_and_slug_boundaries() {
+        assert_eq!(
+            Tenant::validate_registration("A", "valid-slug", "nit", "12345"),
+            Err(TenantError::InvalidDisplayName)
+        );
+        assert_eq!(
+            Tenant::validate_registration(&"a".repeat(121), "valid-slug", "nit", "12345"),
+            Err(TenantError::InvalidDisplayName)
+        );
+        assert!(Tenant::validate_registration("Valid tenant", "abc", "nit", "12345").is_ok());
+        assert!(
+            Tenant::validate_registration("Valid tenant", &"a".repeat(64), "nit", "12345").is_ok()
+        );
+        let too_long_slug = "a".repeat(65);
+        for invalid_slug in [
+            "ab",
+            too_long_slug.as_str(),
+            "-abc",
+            "abc-",
+            "a--b",
+            "Uppercase",
+            "under_score",
+            "ábc",
+        ] {
+            assert_eq!(
+                Tenant::validate_registration("Valid tenant", invalid_slug, "nit", "12345"),
+                Err(TenantError::InvalidSlug),
+                "must reject slug {invalid_slug:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn legal_identification_rejects_negative_and_malformed_separator_inputs() {
+        assert_eq!(
+            Tenant::normalize_identification_number("900.123.456-7"),
+            Ok("9001234567".to_owned())
+        );
+        assert_eq!(
+            Tenant::normalize_identification_number("12345"),
+            Ok("12345".to_owned())
+        );
+        assert_eq!(
+            Tenant::normalize_identification_number(&"1".repeat(20)),
+            Ok("1".repeat(20))
+        );
+        let too_long_identification = "1".repeat(21);
+        for invalid in [
+            "-12345",
+            "12345-",
+            "12--345",
+            "12..345",
+            "1234",
+            too_long_identification.as_str(),
+            "12A345",
+        ] {
+            assert_eq!(
+                Tenant::normalize_identification_number(invalid),
+                Err(TenantError::InvalidLegalIdentification),
+                "must reject legal identification {invalid:?}"
+            );
+        }
+    }
+
+    #[test]
     fn tenant_lifecycle_requires_authorized_operator_transitions() {
         assert_eq!(
             Tenant::validate_transition(
@@ -203,5 +273,119 @@ mod tests {
             Tenant::validate_transition(TenantStatus::Closed, TenantStatus::Active, "reopen", true,),
             Err(TenantError::InvalidTransition)
         );
+    }
+
+    #[test]
+    fn tenant_status_transition_matrix_rejects_every_unlisted_edge() {
+        use TenantStatus::*;
+        let statuses = [PendingVerification, Active, Suspended, Closing, Closed];
+        let allowed = [
+            (PendingVerification, Active),
+            (PendingVerification, Suspended),
+            (PendingVerification, Closed),
+            (Active, Suspended),
+            (Active, Closing),
+            (Suspended, Active),
+            (Suspended, Closing),
+            (Closing, Closed),
+        ];
+        for current in statuses {
+            for next in statuses {
+                assert_eq!(
+                    current.permits(next),
+                    allowed.contains(&(current, next)),
+                    "unexpected transition {} -> {}",
+                    current.as_str(),
+                    next.as_str()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tenant_transition_reason_has_inclusive_three_to_500_character_bounds() {
+        use TenantStatus::*;
+        assert_eq!(
+            Tenant::validate_transition(Active, Closing, "abc", false),
+            Ok(())
+        );
+        assert_eq!(
+            Tenant::validate_transition(Active, Closing, &"r".repeat(500), false),
+            Ok(())
+        );
+        let too_long_reason = "r".repeat(501);
+        for reason in ["", "  ", "ab", too_long_reason.as_str()] {
+            assert_eq!(
+                Tenant::validate_transition(Active, Closing, reason, false),
+                Err(TenantError::MissingReason),
+                "must reject reason {reason:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn operator_is_required_for_sensitive_lifecycle_transitions() {
+        use TenantStatus::*;
+        for (current, next) in [
+            (PendingVerification, Active),
+            (Active, Suspended),
+            (Suspended, Active),
+            (PendingVerification, Closed),
+            (Closing, Closed),
+        ] {
+            assert_eq!(
+                Tenant::validate_transition(current, next, "reviewed by operator", false),
+                Err(TenantError::OperatorRequired),
+                "operator must authorize {} -> {}",
+                current.as_str(),
+                next.as_str()
+            );
+            assert_eq!(
+                Tenant::validate_transition(current, next, "reviewed by operator", true),
+                Ok(()),
+                "operator may authorize {} -> {}",
+                current.as_str(),
+                next.as_str()
+            );
+        }
+
+        for (current, next) in [(Active, Closed), (Suspended, Closed)] {
+            for actor_is_operator in [false, true] {
+                assert_eq!(
+                    Tenant::validate_transition(
+                        current,
+                        next,
+                        "reviewed by operator",
+                        actor_is_operator,
+                    ),
+                    Err(TenantError::InvalidTransition),
+                    "operator authorization must not bypass invalid transition {} -> {}",
+                    current.as_str(),
+                    next.as_str()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tenant_status_parser_accepts_known_values_and_rejects_unknown_values() {
+        use TenantStatus::*;
+        for (raw, expected) in [
+            ("pending_verification", PendingVerification),
+            ("active", Active),
+            ("suspended", Suspended),
+            ("closing", Closing),
+            ("closed", Closed),
+        ] {
+            assert_eq!(TenantStatus::parse(raw), Ok(expected));
+            assert_eq!(expected.as_str(), raw);
+        }
+        for invalid in ["", "pending", "ACTIVE", "deleted", "unknown"] {
+            assert_eq!(
+                TenantStatus::parse(invalid),
+                Err(TenantError::InvalidStatus),
+                "must reject status {invalid:?}"
+            );
+        }
     }
 }

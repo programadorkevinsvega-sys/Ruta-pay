@@ -159,6 +159,9 @@ impl TenantService {
                 correlation_id,
             )
             .await?;
+        if expected_version < 1 {
+            return Err(TenantServiceError::InvalidQuery);
+        }
         if next == TenantStatus::Active {
             self.identity
                 .authorize_operator(session_token, csrf_token, "tenants.verify", correlation_id)

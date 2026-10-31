@@ -156,6 +156,17 @@ impl RealtimeGateway for RealtimeGatewayApi {
                 "realtime cursor request is invalid",
             ));
         }
+        // Validate the requested cursor before accepting the WebSocket upgrade.
+        // A future cursor or a retained-journal gap must be explicit to the client.
+        persistence::replay(
+            &self.pool,
+            &body.audience,
+            tenant_id,
+            body.after_cursor as i64,
+            BATCH_SIZE,
+        )
+        .await
+        .map_err(map_journal_error)?;
         let (sender, receiver) = mpsc::channel(128);
         let api = self.clone();
         tokio::spawn(async move {
@@ -239,23 +250,35 @@ async fn send_replay(
 ) -> Result<(), ()> {
     loop {
         let started = std::time::Instant::now();
-        let events = match persistence::replay(pool, audience, tenant_id, *cursor, BATCH_SIZE).await
-        {
-            Ok(events) => events,
-            Err(error) => {
-                let error_code = match &error {
-                    JournalError::InvalidEnvelope => "realtime_scope_invalid".to_owned(),
-                    JournalError::Database(database_error) => database_error
-                        .as_database_error()
-                        .and_then(|cause| cause.code())
-                        .map(|code| code.to_string())
-                        .unwrap_or_else(|| "database_error".to_owned()),
-                    JournalError::Redis => "realtime_signal_unavailable".to_owned(),
-                    JournalError::InvalidPersistedEvent => "realtime_event_corrupt".to_owned(),
-                };
-                let retryable = matches!(error, JournalError::Database(_) | JournalError::Redis);
-                tracing::error!(event.name = "realtime.journal.replay.failed", component = "realtime", operation = "replay_journal", dependency = "postgresql", error_code, error_category = "persistence", retryable, dependency_duration_ms = started.elapsed().as_millis() as u64, correlation_id = %correlation_id);
-                return Err(());
+        let mut attempt = 0_u32;
+        let events = loop {
+            match persistence::replay(pool, audience, tenant_id, *cursor, BATCH_SIZE).await {
+                Ok(events) => break events,
+                Err(error @ JournalError::Database(_)) if attempt < 2 => {
+                    attempt += 1;
+                    tracing::warn!(event.name = "realtime.journal.replay.retry", component = "realtime", operation = "replay_journal", dependency = "postgresql", retryable = true, attempt, correlation_id = %correlation_id);
+                    tokio::time::sleep(Duration::from_millis(100 * u64::from(attempt))).await;
+                    drop(error);
+                }
+                Err(error) => {
+                    let error_code = match &error {
+                        JournalError::InvalidEnvelope => "realtime_scope_invalid".to_owned(),
+                        JournalError::Database(database_error) => database_error
+                            .as_database_error()
+                            .and_then(|cause| cause.code())
+                            .map(|code| code.to_string())
+                            .unwrap_or_else(|| "database_error".to_owned()),
+                        JournalError::Redis => "realtime_signal_unavailable".to_owned(),
+                        JournalError::InvalidPersistedEvent => "realtime_event_corrupt".to_owned(),
+                        JournalError::CursorOutOfRange => "realtime_cursor_out_of_range".to_owned(),
+                        JournalError::CursorGap => "realtime_cursor_gap".to_owned(),
+                    };
+                    let retryable =
+                        matches!(&error, JournalError::Database(_) | JournalError::Redis);
+                    tracing::error!(event.name = "realtime.journal.replay.failed", component = "realtime", operation = "replay_journal", dependency = "postgresql", error_code, error_category = "persistence", retryable, dependency_duration_ms = started.elapsed().as_millis() as u64, correlation_id = %correlation_id);
+                    let _ = sender.send(Err(map_journal_error(error))).await;
+                    return Err(());
+                }
             }
         };
         if events.is_empty() {
@@ -305,6 +328,12 @@ fn map_journal_error(error: JournalError) -> Status {
         JournalError::Redis => Status::unavailable("realtime signal is temporarily unavailable"),
         JournalError::InvalidPersistedEvent => {
             Status::internal("realtime journal operation failed")
+        }
+        JournalError::CursorOutOfRange => {
+            Status::out_of_range("realtime cursor is outside the retained scope")
+        }
+        JournalError::CursorGap => {
+            Status::failed_precondition("realtime journal contains a cursor gap; restart replay")
         }
     }
 }
