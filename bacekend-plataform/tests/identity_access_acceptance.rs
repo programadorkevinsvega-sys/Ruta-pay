@@ -7,7 +7,6 @@ use async_nats::jetstream;
 #[path = "identity_access_acceptance/support.rs"]
 mod identity_access_acceptance_support;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::Utc;
 use identity_access_acceptance_support::{
     AcceptanceDatabaseCleanup, EventCapture, EventStreamCleanup, cookie_value, is_stream_not_found,
 };
