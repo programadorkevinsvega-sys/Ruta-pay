@@ -34,6 +34,8 @@ pub async fn verify(
     operator_id: uuid::Uuid,
     legal_identification_number: &str,
     second_legal_identification_number: &str,
+    created_tenant_id: uuid::Uuid,
+    replay_cursor: u64,
 ) -> MatrixOperatorCookies {
     super::operator_realtime_revocation::verify(
         client,
@@ -77,6 +79,8 @@ pub async fn verify(
         session_cookie,
         csrf_cookie,
         registered_user_id,
+        created_tenant_id,
+        replay_cursor,
     )
     .await;
     super::login_rate_limits::verify(
