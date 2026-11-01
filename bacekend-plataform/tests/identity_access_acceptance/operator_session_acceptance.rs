@@ -24,8 +24,6 @@ pub async fn verify(
     migration_pool: &PgPool,
     tenant_cookies: &TenantSessionCookies,
 ) -> OperatorSessionCookies {
-    let session_cookie = &tenant_cookies.session_cookie;
-    let csrf_cookie = &tenant_cookies.csrf_cookie;
     let invalid_origin_operator_login = client
         .post(format!("http://{http_addr}/v1/platform/identity/session"))
         .header(header::ORIGIN, "https://attacker.example")
@@ -112,7 +110,7 @@ pub async fn verify(
                     "payvia_tenant_session={operator_session_cookie}; payvia_tenant_csrf={operator_csrf_cookie}"
                 ),
             )
-            .header("x-csrf-token", operator_csrf_cookie)
+            .header("x-csrf-token", operator_csrf_cookie.as_str())
             .send()
             .await
             .expect("operator session cannot access tenant identity");
