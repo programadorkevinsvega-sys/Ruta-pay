@@ -1,4 +1,3 @@
-use super::*;
 use redis::aio::ConnectionManager;
 use reqwest::{Client, StatusCode, header};
 use std::net::SocketAddr;
