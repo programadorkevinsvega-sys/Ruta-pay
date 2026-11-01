@@ -1,3 +1,4 @@
+use super::*;
 use reqwest::{Client, StatusCode, header};
 use sqlx::PgPool;
 use std::net::SocketAddr;
@@ -31,7 +32,7 @@ pub async fn verify(context: TenantStatusLifecycleContext<'_>) {
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
         ))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
@@ -49,21 +50,21 @@ pub async fn verify(context: TenantStatusLifecycleContext<'_>) {
     let status_after_support_denial: (String, i64) =
         sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
             .bind(created_tenant_id)
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("tenant state after support denial is queryable");
     assert_eq!(status_after_support_denial, ("active".to_owned(), 2));
 
     sqlx::query("UPDATE identity_access.operator_users SET role='platform_security' WHERE id=$1")
         .bind(operator_id)
-        .execute(&migration_pool)
+        .execute(migration_pool)
         .await
         .expect("platform security role is selected for lifecycle acceptance");
     let security_status_change = client
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
         ))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
@@ -81,14 +82,14 @@ pub async fn verify(context: TenantStatusLifecycleContext<'_>) {
 
     sqlx::query("UPDATE identity_access.operator_users SET role='platform_owner' WHERE id=$1")
         .bind(operator_id)
-        .execute(&migration_pool)
+        .execute(migration_pool)
         .await
         .expect("platform owner role is restored for lifecycle acceptance");
     let owner_status_change = client
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
         ))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
@@ -108,7 +109,7 @@ pub async fn verify(context: TenantStatusLifecycleContext<'_>) {
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
         ))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
@@ -126,14 +127,14 @@ pub async fn verify(context: TenantStatusLifecycleContext<'_>) {
 
     sqlx::query("UPDATE identity_access.operator_users SET role='platform_security' WHERE id=$1")
         .bind(operator_id)
-        .execute(&migration_pool)
+        .execute(migration_pool)
         .await
         .expect("platform security role is selected for lifecycle reactivation");
     let security_reactivation = client
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
         ))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
@@ -150,7 +151,7 @@ pub async fn verify(context: TenantStatusLifecycleContext<'_>) {
     assert_eq!(security_reactivation.status(), StatusCode::OK);
     sqlx::query("UPDATE identity_access.operator_users SET role='platform_owner' WHERE id=$1")
         .bind(operator_id)
-        .execute(&migration_pool)
+        .execute(migration_pool)
         .await
         .expect("platform owner role is restored for remaining lifecycle acceptance");
 }
