@@ -1,3 +1,4 @@
+use super::*;
 use reqwest::{Client, StatusCode, header};
 use sqlx::PgPool;
 use std::net::SocketAddr;
@@ -25,7 +26,7 @@ pub async fn verify_and_reauthenticate(
             "SELECT EXISTS (SELECT 1 FROM identity_access.audit_events WHERE actor_id = $1 AND action = 'identity.session.revoked' AND correlation_id = 'corr_operator_logout')",
         )
         .bind(operator_id)
-        .fetch_one(&migration_pool)
+        .fetch_one(migration_pool)
         .await
         .expect("operator session revocation audit is queryable");
     assert!(
@@ -35,7 +36,7 @@ pub async fn verify_and_reauthenticate(
     let session_revocation_event: bool = sqlx::query_scalar(
             "SELECT EXISTS (SELECT 1 FROM identity_access.outbox_events WHERE event_type = 'identity.session.revoked' AND audience = 'platform_operator')",
         )
-        .fetch_one(&migration_pool)
+        .fetch_one(migration_pool)
         .await
         .expect("operator session revocation event is queryable");
     assert!(
@@ -59,7 +60,7 @@ pub async fn verify_and_reauthenticate(
     // Create a fresh session for the role/permission matrix that follows.
     let matrix_operator_login = client
         .post(format!("http://{http_addr}/v1/platform/identity/session"))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header("x-correlation-id", "corr_operator_matrix_login")
         .json(&serde_json::json!({
             "email": operator_email.clone(),
