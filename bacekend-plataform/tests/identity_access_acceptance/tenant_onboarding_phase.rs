@@ -55,7 +55,6 @@ pub async fn setup(environment: &IdentityEnvironment) -> TenantOnboardingFixture
         operator_id,
         &mut authorization_client,
         &migration_pool,
-        &tenant_cookies,
     )
     .await;
     let operator_session_cookie = operator_cookies.session_cookie;
