@@ -110,7 +110,7 @@ pub async fn verify(context: SessionSecurityContext<'_>) {
         .json(&serde_json::json!({
             "status": "suspended",
             "reason": "Must not be applied",
-            "expected_version": tenant_admin_status_body["status_version"]
+            "expected_version": tenant_status_version
         }))
         .send()
         .await
