@@ -36,7 +36,7 @@ pub async fn verify(context: OutboxDatabaseFailureContext<'_>) {
     let postgres_relay_failure =
         platform_tenant_registry::infrastructure::outbox_relay::relay_batch(
             runtime_pool,
-            &jetstream,
+            jetstream,
             &event_topology.subject_prefix,
         )
         .await;
@@ -77,7 +77,7 @@ pub async fn verify(context: OutboxDatabaseFailureContext<'_>) {
     let identity_postgres_relay_failure =
         platform_identity_access::infrastructure::outbox_relay::relay_batch(
             runtime_pool,
-            &jetstream,
+            jetstream,
             &event_topology.subject_prefix,
         )
         .await;
