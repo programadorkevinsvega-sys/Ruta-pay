@@ -45,7 +45,7 @@ pub async fn verify(context: TenantStatusInputContext<'_>) -> ((String, i64), i6
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
         )
-        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .header("x-csrf-token", matrix_operator_csrf_cookie)
         .header("x-correlation-id", "corr_tenant_status_missing_reason")
         .json(&serde_json::json!({
             "status": "suspended",
@@ -67,7 +67,7 @@ pub async fn verify(context: TenantStatusInputContext<'_>) -> ((String, i64), i6
                 header::COOKIE,
                 format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
             )
-            .header("x-csrf-token", &matrix_operator_csrf_cookie)
+            .header("x-csrf-token", matrix_operator_csrf_cookie)
             .json(&serde_json::json!({
                 "status": "suspended",
                 "reason": invalid_reason,
