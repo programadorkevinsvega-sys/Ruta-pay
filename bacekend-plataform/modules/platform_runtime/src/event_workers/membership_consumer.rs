@@ -1,5 +1,7 @@
 use async_nats::jetstream;
-use platform_identity_access::infrastructure::tenant_membership_consumer::{TenantMembershipConsumerError, consume_tenant_registered};
+use platform_identity_access::infrastructure::tenant_membership_consumer::{
+    TenantMembershipConsumerError, consume_tenant_registered,
+};
 use sqlx::PgPool;
 use std::time::Duration;
 use tokio::{sync::watch, time};
