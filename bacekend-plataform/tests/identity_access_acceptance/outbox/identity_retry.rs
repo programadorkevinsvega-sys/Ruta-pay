@@ -1,5 +1,6 @@
 use super::OutboxInfrastructure;
-use platform_runtime::event_topology::delete_e2e_stream;
+use platform_runtime::event_topology::{delete_e2e_stream, EventTopology};
+use uuid::Uuid;
 use sqlx::PgPool;
 
 pub(super) async fn verify(
