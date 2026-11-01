@@ -2236,6 +2236,13 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .json()
         .await
         .expect("tenant entitlement list is valid JSON");
+    assert_eq!(
+        phase3_entitlements
+            .as_array()
+            .map(std::vec::Vec::len),
+        Some(1),
+        "tenant receives exactly the capabilities assigned to its plan"
+    );
     assert_eq!(phase3_entitlements[0]["capability_key"], "payments.monthly");
     assert_eq!(phase3_entitlements[0]["consumed"], 0);
 
