@@ -5,7 +5,7 @@ use platform_contracts::realtime::{
     realtime_gateway_server::RealtimeGateway,
 };
 use tokio::sync::mpsc;
-use tokio_stream::{Stream, wrappers::ReceiverStream};
+use tokio_stream::{Stream, StreamExt, wrappers::ReceiverStream};
 use tonic::{Request, Response, Status};
 use tracing::Instrument;
 
