@@ -1,6 +1,6 @@
+use super::fixture::{TestFixture, capability};
 use chrono::Duration;
 use platform_catalog_pricing::application::catalog_service::PublishPriceVersionCommand;
-use super::{fixture::{TestFixture, capability},};
 
 pub async fn verify(fixture: &TestFixture) {
     let catalog = &fixture.catalog;
@@ -63,5 +63,5 @@ pub async fn verify(fixture: &TestFixture) {
     assert_eq!(before_change.price_version_id, price_one.id);
     assert_eq!(after_change.price_version_id, price_two.id);
     assert_eq!(after_change.limit_value, Some(10));
-    
+
 }
