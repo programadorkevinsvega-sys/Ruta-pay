@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::domain::catalog::{PriceVersion, PriceVersionStatus};
+use crate::domain::catalog::{CatalogError, PriceVersion};
 use super::{CatalogService, CatalogServiceError, PublishPriceVersionCommand, support::set_operator_context};
 
 impl CatalogService {
