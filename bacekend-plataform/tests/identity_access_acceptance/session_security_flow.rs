@@ -11,32 +11,42 @@ use tonic::transport::Channel;
 
 use super::operator_revocation_audit::MatrixOperatorCookies;
 
-pub async fn verify(
-    client: &Client,
-    realtime_client: &mut RealtimeGatewayClient<Channel>,
-    migration_pool: &PgPool,
-    redis_manager: &ConnectionManager,
-    http_addr: SocketAddr,
-    origin: &str,
-    traceparent: &str,
-    email: &str,
-    ip_key: &str,
-    captured_events: &Arc<Mutex<Vec<HashMap<String, String>>>>,
-    default_headers: reqwest::header::HeaderMap,
-    password: &str,
-    operator_password: &str,
-    operator_email: &str,
-    session_cookie: &str,
-    csrf_cookie: &str,
-    operator_session_cookie: &str,
-    operator_csrf_cookie: &str,
-    registered_user_id: uuid::Uuid,
-    operator_id: uuid::Uuid,
-    legal_identification_number: &str,
-    second_legal_identification_number: &str,
-    created_tenant_id: uuid::Uuid,
-    replay_cursor: u64,
-) -> MatrixOperatorCookies {
+pub struct SessionSecurityFlowContext<'a> {
+    pub client: &'a Client,
+    pub realtime_client: &'a mut RealtimeGatewayClient<Channel>,
+    pub migration_pool: &'a PgPool,
+    pub redis_manager: &'a ConnectionManager,
+    pub http_addr: SocketAddr,
+    pub origin: &'a str,
+    pub traceparent: &'a str,
+    pub email: &'a str,
+    pub ip_key: &'a str,
+    pub captured_events: &'a Arc<Mutex<Vec<HashMap<String, String>>>>,
+    pub default_headers: reqwest::header::HeaderMap,
+    pub password: &'a str,
+    pub operator_password: &'a str,
+    pub operator_email: &'a str,
+    pub session_cookie: &'a str,
+    pub csrf_cookie: &'a str,
+    pub operator_session_cookie: &'a str,
+    pub operator_csrf_cookie: &'a str,
+    pub registered_user_id: uuid::Uuid,
+    pub operator_id: uuid::Uuid,
+    pub legal_identification_number: &'a str,
+    pub second_legal_identification_number: &'a str,
+    pub created_tenant_id: uuid::Uuid,
+    pub replay_cursor: u64,
+}
+
+pub async fn verify(context: SessionSecurityFlowContext<'_>) -> MatrixOperatorCookies {
+    let SessionSecurityFlowContext {
+        client, realtime_client, migration_pool, redis_manager, http_addr, origin,
+        traceparent, email, ip_key, captured_events, default_headers, password,
+        operator_password, operator_email, session_cookie, csrf_cookie,
+        operator_session_cookie, operator_csrf_cookie, registered_user_id,
+        operator_id, legal_identification_number, second_legal_identification_number,
+        created_tenant_id, replay_cursor,
+    } = context;
     super::operator_realtime_revocation::verify(
         client,
         realtime_client,
