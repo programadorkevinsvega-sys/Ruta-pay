@@ -1,4 +1,3 @@
-use super::*;
 use platform_contracts::realtime::{
     SubscribeEventsRequest, realtime_gateway_client::RealtimeGatewayClient,
 };
