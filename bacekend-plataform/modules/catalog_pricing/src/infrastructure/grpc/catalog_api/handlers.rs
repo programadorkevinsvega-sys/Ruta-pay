@@ -4,9 +4,8 @@ use platform_contracts::catalog_pricing::{
     catalog_pricing_server::CatalogPricing,
 };
 use tonic::{Request, Response, Status};
-use uuid::Uuid;
 
-use crate::application::catalog_service::{CatalogServiceError, PublishPriceVersionCommand};
+use crate::application::catalog_service::PublishPriceVersionCommand;
 use super::{CatalogPricingApi, mapping::{map_error, parse_time, parse_uuid, price_response}};
 
 impl CatalogPricing for CatalogPricingApi {
