@@ -44,10 +44,10 @@ cargo test --workspace
 Para ejecutar solo la aceptación de catálogo/cuotas:
 
 ```bash
-cargo test -p platform-backend --test phase3_catalog_entitlements_acceptance
+cargo test -p bacekend-plataform --test phase3_catalog_entitlements_acceptance
 ```
 
-El nombre del paquete debe coincidir con el `package.name` del manifiesto del backend; en CI se usa `cargo test --workspace` como comando autoritativo.
+En CI se usa `cargo test --workspace` como comando autoritativo.
 
 ## Criterio de cierre
 
