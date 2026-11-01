@@ -18,6 +18,8 @@ pub async fn verify(
     session_cookie: &str,
     csrf_cookie: &str,
     registered_user_id: Uuid,
+    created_tenant_id: Uuid,
+    replay_cursor: u64,
 ) {
     let mut tenant_realtime_subscription_client = realtime_acceptance_client.clone();
     let mut tenant_realtime_subscription = tenant_realtime_subscription_client
