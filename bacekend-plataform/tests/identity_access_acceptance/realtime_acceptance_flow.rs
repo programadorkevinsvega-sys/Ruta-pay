@@ -41,14 +41,16 @@ pub async fn verify(
     )
     .await;
     super::platform_realtime_replay::verify(
-        stream,
-        event_topology,
-        runtime_pool,
-        &mut realtime_redis,
-        client,
-        http_addr,
-        operator_session_cookie,
-        operator_csrf_cookie,
+        super::platform_realtime_replay::PlatformRealtimeReplayContext {
+            stream,
+            event_topology,
+            runtime_pool,
+            realtime_redis: &mut realtime_redis,
+            client,
+            http_addr,
+            operator_session_cookie,
+            operator_csrf_cookie,
+        },
     )
     .await;
     replay_cursor
