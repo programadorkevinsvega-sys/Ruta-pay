@@ -109,38 +109,8 @@ pub mod tenant_status_race;
 #[path = "tenant_status_version_validation.rs"]
 pub mod tenant_status_version_validation;
 
-use async_nats::jetstream;
 #[path = "support.rs"]
 mod identity_access_acceptance_support;
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use identity_access_acceptance_support::{
-    AcceptanceDatabaseCleanup, EventCapture, EventStreamCleanup, cookie_value,
-};
-use opentelemetry::{global, trace::TracerProvider as _};
-use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerProvider};
-use platform_contracts::{
-    catalog_pricing::catalog_pricing_client::CatalogPricingClient as CatalogPricingGrpcClient,
-    entitlements_quotas::entitlements_quotas_client::EntitlementsQuotasClient as EntitlementsQuotasGrpcClient,
-    identity_access::{
-        AuthorizeApiKeyOperationRequest, AuthorizeOperatorOperationRequest,
-        AuthorizeTenantOperationRequest, identity_access_client::IdentityAccessClient,
-    },
-    realtime::{
-        SubscribeEventsRequest,
-        realtime_gateway_client::RealtimeGatewayClient as RealtimeGatewayGrpcClient,
-    },
-    runtime::runtime_probe_client::RuntimeProbeClient,
-    tenant_registry::tenant_registry_client::TenantRegistryClient as TenantRegistryGrpcClient,
-};
-use platform_identity_access::application::operator_bootstrap::OperatorBootstrapService;
-use platform_runtime::event_topology::{EventTopology, delete_e2e_stream};
-use reqwest::{Client, StatusCode, header};
-use sha2::{Digest, Sha256};
-use sqlx::postgres::PgPoolOptions;
-use std::{net::SocketAddr, time::Duration};
-use tokio::{net::TcpListener, sync::oneshot};
-use tracing_subscriber::prelude::*;
-use uuid::Uuid;
 
 pub use environment_fixture::IdentityEnvironment;
 pub use identity_access_acceptance_support::is_stream_not_found;
