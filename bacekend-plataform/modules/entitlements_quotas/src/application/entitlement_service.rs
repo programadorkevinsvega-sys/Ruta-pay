@@ -9,6 +9,17 @@ pub struct EntitlementService {
     pool: PgPool,
 }
 
+pub struct ConsumeQuotaCommand<'a> {
+    pub actor: Uuid,
+    pub tenant: Uuid,
+    pub key: &'a str,
+    pub environment: &'a str,
+    pub quantity: i64,
+    pub idempotency_key: &'a str,
+    pub now: DateTime<Utc>,
+    pub correlation_id: &'a str,
+}
+
 impl EntitlementService {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
@@ -122,19 +133,16 @@ impl EntitlementService {
         let consumed: i64 = sqlx::query_scalar("SELECT COALESCE(sum(quantity),0)::bigint FROM entitlements_quotas.usage_ledger WHERE tenant_id=$1 AND capability_key=$2 AND period_start=$3 AND period_end=$4")
             .bind(tenant).bind(key).bind(period_start).bind(period_end).fetch_one(&mut *tx).await?;
         tx.commit().await?;
-        Ok(build_entitlement(
-            tenant,
-            price_version,
-            key,
+        Ok(EntitlementSnapshot {
+            tenant_id: tenant,
+            price_version_id: price_version,
+            capability_key: key.to_owned(),
             enabled,
-            limit,
-            policy,
+            limit_value: limit,
+            overage_policy: policy,
             allowed_environment,
-            environment,
-            consumed,
-            period_start,
-            period_end,
-        ))
+        }
+        .build(environment, consumed, period_start, period_end))
     }
 
     pub async fn list(
@@ -163,15 +171,18 @@ impl EntitlementService {
 
     pub async fn consume(
         &self,
-        actor: Uuid,
-        tenant: Uuid,
-        key: &str,
-        environment: &str,
-        quantity: i64,
-        idempotency_key: &str,
-        now: DateTime<Utc>,
-        correlation_id: &str,
+        command: ConsumeQuotaCommand<'_>,
     ) -> Result<(Entitlement, bool), EntitlementServiceError> {
+        let ConsumeQuotaCommand {
+            actor,
+            tenant,
+            key,
+            environment,
+            quantity,
+            idempotency_key,
+            now,
+            correlation_id,
+        } = command;
         validate_consumption(quantity, idempotency_key)?;
         validate_environment(environment)?;
         let mut tx = self.pool.begin().await?;
@@ -239,45 +250,56 @@ impl EntitlementService {
     }
 }
 
-fn build_entitlement(
-    tenant: Uuid,
-    price: Uuid,
-    key: &str,
+struct EntitlementSnapshot {
+    tenant_id: Uuid,
+    price_version_id: Uuid,
+    capability_key: String,
     enabled: bool,
-    limit: Option<i64>,
-    policy: String,
+    limit_value: Option<i64>,
+    overage_policy: String,
     allowed_environment: String,
-    environment: &str,
-    consumed: i64,
-    start: DateTime<Utc>,
-    end: DateTime<Utc>,
-) -> Entitlement {
-    let env_allowed = allowed_environment == "all" || allowed_environment == environment;
-    let allowed = enabled
-        && env_allowed
-        && (limit.is_none() || policy == "allow" || consumed < limit.unwrap_or_default());
-    let reason = if !enabled {
-        "capability_disabled"
-    } else if !env_allowed {
-        "environment_restricted"
-    } else if !allowed {
-        "quota_exhausted"
-    } else {
-        "allowed"
-    };
-    Entitlement {
-        tenant_id: tenant,
-        price_version_id: price,
-        capability_key: key.to_owned(),
-        enabled,
-        limit_value: limit,
-        consumed,
-        remaining: limit.map(|value| value.saturating_sub(consumed).max(0)),
-        allowed,
-        reason: reason.to_owned(),
-        environment: environment.to_owned(),
-        period_start: start,
-        period_end: end,
+}
+
+impl EntitlementSnapshot {
+    fn build(
+        self,
+        environment: &str,
+        consumed: i64,
+        period_start: DateTime<Utc>,
+        period_end: DateTime<Utc>,
+    ) -> Entitlement {
+        let environment_allowed =
+            self.allowed_environment == "all" || self.allowed_environment == environment;
+        let allowed = self.enabled
+            && environment_allowed
+            && (self.limit_value.is_none()
+                || self.overage_policy == "allow"
+                || consumed < self.limit_value.unwrap_or_default());
+        let reason = if !self.enabled {
+            "capability_disabled"
+        } else if !environment_allowed {
+            "environment_restricted"
+        } else if !allowed {
+            "quota_exhausted"
+        } else {
+            "allowed"
+        };
+        Entitlement {
+            tenant_id: self.tenant_id,
+            price_version_id: self.price_version_id,
+            capability_key: self.capability_key,
+            enabled: self.enabled,
+            limit_value: self.limit_value,
+            consumed,
+            remaining: self
+                .limit_value
+                .map(|value| value.saturating_sub(consumed).max(0)),
+            allowed,
+            reason: reason.to_owned(),
+            environment: environment.to_owned(),
+            period_start,
+            period_end,
+        }
     }
 }
 
