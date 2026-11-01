@@ -3,7 +3,9 @@ use std::net::SocketAddr;
 use bacekend_pasarela::entitlements::GatewayEntitlementsClient;
 use platform_contracts::{
     entitlements_quotas::ConsumeQuotaRequest,
-    identity_access::{AuthorizeApiKeyOperationRequest, identity_access_client::IdentityAccessClient},
+    identity_access::{
+        AuthorizeApiKeyOperationRequest, identity_access_client::IdentityAccessClient,
+    },
 };
 use reqwest::{StatusCode, header};
 use tonic::transport::Channel;
