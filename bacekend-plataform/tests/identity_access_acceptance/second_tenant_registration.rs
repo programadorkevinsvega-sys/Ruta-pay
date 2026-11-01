@@ -1,3 +1,4 @@
+use super::*;
 use reqwest::{Client, StatusCode, header};
 use sqlx::PgPool;
 use std::net::SocketAddr;
@@ -23,7 +24,7 @@ pub async fn register(
     let second_password = format!("Second-tenant-password-{}!", Uuid::new_v4().simple());
     let second_user_registration = client
         .post(format!("http://{http_addr}/v1/identity/register"))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header("x-correlation-id", "corr_second_tenant_register")
         .json(&serde_json::json!({"email": second_email, "password": second_password}))
         .send()
@@ -32,7 +33,7 @@ pub async fn register(
     assert_eq!(second_user_registration.status(), StatusCode::CREATED);
     let second_login = client
         .post(format!("http://{http_addr}/v1/identity/session"))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header("x-correlation-id", "corr_second_tenant_login")
         .json(&serde_json::json!({"email": second_email, "password": second_password}))
         .send()
@@ -57,7 +58,7 @@ pub async fn register(
     );
     let conflicting_slug = client
             .post(format!("http://{http_addr}/v1/tenants"))
-            .header(header::ORIGIN, &origin)
+            .header(header::ORIGIN, origin)
             .header(
                 header::COOKIE,
                 format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
@@ -77,7 +78,7 @@ pub async fn register(
     let duplicate_slug_count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants WHERE slug=$1")
             .bind(&tenant_slug)
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("duplicate slug count is queryable");
     assert_eq!(duplicate_slug_count, 1, "tenant slug remains unique");
@@ -85,16 +86,16 @@ pub async fn register(
             "SELECT count(*) FROM tenant_registry.outbox_events WHERE aggregate_id=$1 AND event_type='tenant.registered'",
         )
         .bind(created_tenant_id)
-        .fetch_one(&migration_pool)
+        .fetch_one(migration_pool)
         .await
         .expect("tenant registration event count is queryable");
     assert_eq!(duplicate_slug_event_count, 1);
 
     tenant_registration_races::verify(tenant_registration_races::TenantRegistrationRaceContext {
-        client: &client,
-        migration_pool: &migration_pool,
+        client: client,
+        migration_pool: migration_pool,
         http_addr,
-        origin: &origin,
+        origin: origin,
         second_session_cookie: &second_session_cookie,
         second_csrf_cookie: &second_csrf_cookie,
     })
