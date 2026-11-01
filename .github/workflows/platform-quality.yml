@@ -8,6 +8,7 @@ on:
   push:
     branches:
       - main
+      - feat/phase-3-catalog-entitlements
     paths:
       - 'Cargo.toml'
       - 'Cargo.lock'
