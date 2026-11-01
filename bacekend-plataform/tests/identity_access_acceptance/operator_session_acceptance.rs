@@ -27,8 +27,8 @@ pub async fn verify(
         .post(format!("http://{http_addr}/v1/platform/identity/session"))
         .header(header::ORIGIN, "https://attacker.example")
         .json(&serde_json::json!({
-            "email": operator_email.clone(),
-            "password": operator_password.clone()
+            "email": operator_email,
+            "password": operator_password
         }))
         .send()
         .await
@@ -43,8 +43,8 @@ pub async fn verify(
         .header(header::ORIGIN, origin)
         .header("x-correlation-id", "corr_operator_login")
         .json(&serde_json::json!({
-            "email": operator_email.clone(),
-            "password": operator_password.clone()
+            "email": operator_email,
+            "password": operator_password
         }))
         .send()
         .await
