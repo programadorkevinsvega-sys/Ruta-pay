@@ -75,6 +75,16 @@ pub(super) fn map_error(error: EntitlementServiceError) -> Status {
         | EntitlementServiceError::Domain(
             crate::domain::entitlement::EntitlementError::AssignmentConflict,
         ) => Status::already_exists("entitlement operation conflicts"),
+        EntitlementServiceError::IdempotencyResultUnavailable => {
+            tracing::error!(
+                event.name = "entitlements.idempotency_snapshot.unavailable",
+                component = "entitlements_quotas",
+                error_code = "idempotency_result_unavailable",
+                error_category = "integrity",
+                retryable = false
+            );
+            Status::failed_precondition("idempotent result is unavailable")
+        }
         EntitlementServiceError::Database(error) => {
             tracing::error!(event.name="entitlements.persistence.failed", component="entitlements_quotas", error_class=%error);
             Status::internal("entitlement operation could not be completed")
