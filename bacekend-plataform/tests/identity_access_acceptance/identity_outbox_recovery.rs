@@ -6,7 +6,7 @@ use uuid::Uuid;
 pub async fn verify(
     migration_pool: &PgPool,
     runtime_pool: &PgPool,
-    jetstream: &jetstream::Context,
+    jetstream: jetstream::Context,
 ) {
     // Exercise the identity_access Outbox worker against a real JetStream
     // publish failure and recovery, independently of tenant_registry.
@@ -18,7 +18,7 @@ pub async fn verify(
     .expect("existing identity Outbox events are deferred for isolated retry acceptance");
     let identity_failure_namespace = format!("e2e_identity_{}", Uuid::new_v4().simple());
     let identity_failure_topology =
-        EventTopology::from_namespace(Some(&identity_failure_namespace))
+        EventTopology::from_namespace(Some(identity_failure_namespace))
             .expect("identity failure namespace is valid");
     let identity_failed_event_id = Uuid::new_v4();
     sqlx::query(
@@ -33,7 +33,7 @@ pub async fn verify(
     let failed_identity_delivery =
         platform_identity_access::infrastructure::outbox_relay::relay_batch(
             runtime_pool,
-            &jetstream,
+            jetstream,
             &identity_failure_topology.subject_prefix,
         )
         .await
@@ -53,7 +53,7 @@ pub async fn verify(
     assert!(identity_deferred_state.1);
     assert!(identity_deferred_state.2);
     identity_failure_topology
-        .ensure_stream(&jetstream)
+        .ensure_stream(jetstream)
         .await
         .expect("identity JetStream stream is restored for retry");
     sqlx::query("UPDATE identity_access.outbox_events SET available_at=now() WHERE event_id=$1")
@@ -64,7 +64,7 @@ pub async fn verify(
     let identity_retried_delivery =
         platform_identity_access::infrastructure::outbox_relay::relay_batch(
             runtime_pool,
-            &jetstream,
+            jetstream,
             &identity_failure_topology.subject_prefix,
         )
         .await
@@ -79,7 +79,7 @@ pub async fn verify(
     .expect("identity successful retry state is queryable");
     assert!(identity_retried_state.0);
     assert!(identity_retried_state.1.is_none());
-    delete_e2e_stream(&jetstream, &identity_failure_namespace)
+    delete_e2e_stream(jetstream, identity_failure_namespace)
         .await
         .expect("identity failure stream cleanup removes only its isolated stream");
 }
