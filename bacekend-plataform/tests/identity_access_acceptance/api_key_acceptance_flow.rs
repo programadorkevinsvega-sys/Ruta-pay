@@ -45,7 +45,7 @@ pub async fn verify(
     .await;
 
     api_key_authorization::verify_allowed(
-        &mut authorization_client,
+        authorization_client,
         created_tenant_id,
         api_key_id,
         &api_key_secret,
@@ -74,7 +74,7 @@ pub async fn verify(
     })
     .await;
     api_key_authorization::verify_denials(
-        &mut authorization_client,
+        authorization_client,
         migration_pool,
         created_tenant_id,
         api_key_id,
@@ -83,7 +83,7 @@ pub async fn verify(
     .await;
     api_key_lifecycle::verify(
         client,
-        &mut authorization_client,
+        authorization_client,
         migration_pool,
         http_addr,
         origin,
@@ -99,7 +99,7 @@ pub async fn verify(
     tenant_role_matrix::verify(tenant_role_matrix::TenantRoleMatrixContext {
         client: client,
         migration_pool: migration_pool,
-        authorization_client: &mut authorization_client,
+        authorization_client: authorization_client,
         http_addr,
         session_cookie: session_cookie,
         csrf_cookie: csrf_cookie,
