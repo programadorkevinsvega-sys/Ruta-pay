@@ -1,3 +1,4 @@
+use super::*;
 use reqwest::{Client, StatusCode, header};
 use sqlx::PgPool;
 use std::net::SocketAddr;
@@ -17,12 +18,12 @@ pub async fn verify(
     // not as a successful partial replay that silently skips an old event.
     let first_platform_event: Uuid =
         sqlx::query_scalar("SELECT event_id FROM realtime.event_journal WHERE platform_cursor=1")
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("first platform journal event exists for gap injection");
     sqlx::query("DELETE FROM realtime.event_journal WHERE event_id=$1")
         .bind(first_platform_event)
-        .execute(&migration_pool)
+        .execute(migration_pool)
         .await
         .expect("first platform journal event is removed to simulate a retained gap");
     let platform_gap_replay = client
@@ -47,7 +48,7 @@ pub async fn verify(
 
     let matrix_operator_logout = client
             .delete(format!("http://{http_addr}/v1/platform/identity/session"))
-            .header(header::ORIGIN, &origin)
+            .header(header::ORIGIN, origin)
             .header(
                 header::COOKIE,
                 format!(
