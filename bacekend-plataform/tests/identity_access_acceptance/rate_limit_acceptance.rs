@@ -1,4 +1,5 @@
 use reqwest::{Client, StatusCode, header};
+use uuid::Uuid;
 use std::{
     collections::HashMap,
     net::SocketAddr,
