@@ -1,12 +1,17 @@
 use chrono::Utc;
 use platform_contracts::{
     entitlements_quotas::{ConsumeQuotaRequest, ConsumeQuotaResponse},
-    identity_access::{AuthorizeApiKeyOperationRequest, identity_access_client::IdentityAccessClient},
+    identity_access::{
+        AuthorizeApiKeyOperationRequest, identity_access_client::IdentityAccessClient,
+    },
 };
 use tonic::{Request, Response, Status};
 
 use crate::application::entitlement_service::ConsumeQuotaCommand;
-use super::{EntitlementsQuotasApi, mapping::{entitlement_response, map_error, parse_uuid}};
+use super::{
+    EntitlementsQuotasApi,
+    mapping::{entitlement_response, map_error, parse_uuid},
+};
 
 impl EntitlementsQuotasApi {
     pub(super) async fn consume_quota_handler(
