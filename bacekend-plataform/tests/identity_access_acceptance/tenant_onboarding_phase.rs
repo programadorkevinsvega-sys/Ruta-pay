@@ -1,4 +1,5 @@
 use super::*;
+use uuid::Uuid;
 
 pub struct TenantOnboardingFixture {
     pub session_cookie: String,
