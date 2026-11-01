@@ -2,7 +2,8 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use super::{
-    ConsumeQuotaCommand, EntitlementService, EntitlementServiceError, snapshot::EntitlementSnapshot,
+    ConsumeQuotaCommand, EntitlementService, EntitlementServiceError,
+    result_snapshot::EntitlementResultSnapshot, snapshot::EntitlementSnapshot,
     support::{period_bounds, set_tenant_context, validate_environment},
 };
 use crate::domain::entitlement::{Entitlement, EntitlementError, validate_consumption};
@@ -42,8 +43,7 @@ impl EntitlementService {
                 return Err(EntitlementError::IdempotencyConflict.into());
             }
             let snapshot = result_snapshot.ok_or(EntitlementError::IdempotencyResultUnavailable)?;
-            let original_result: Entitlement = serde_json::from_value(snapshot)
-                .map_err(|_| EntitlementError::IdempotencyResultUnavailable)?;
+            let original_result = EntitlementResultSnapshot::decode(snapshot, tenant, key, environment)?;
             tx.commit().await?;
             return Ok((original_result, true));
         }
@@ -81,8 +81,7 @@ impl EntitlementService {
             allowed_environment: allowed_environment.clone(),
         }
         .build(environment, consumed_after, period_start, period_end);
-        let result_snapshot = serde_json::to_value(&result)
-            .map_err(|_| EntitlementError::IdempotencyResultUnavailable)?;
+        let result_snapshot = EntitlementResultSnapshot::encode(&result)?;
         let usage_id = Uuid::new_v4();
         sqlx::query("INSERT INTO entitlements_quotas.usage_ledger (id,tenant_id,price_version_id,capability_key,environment,idempotency_key,quantity,period_start,period_end,result_snapshot) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
             .bind(usage_id).bind(tenant).bind(price_version).bind(key).bind(environment).bind(idempotency_key).bind(quantity).bind(period_start).bind(period_end).bind(result_snapshot).execute(&mut *tx).await?;
