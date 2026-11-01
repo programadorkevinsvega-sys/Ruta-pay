@@ -14,7 +14,7 @@ pub(super) struct EntitlementSnapshot {
 }
 
 impl EntitlementSnapshot {
-pub(super) fn build(
+    pub(super) fn build(
         self,
         environment: &str,
         consumed: i64,
@@ -54,5 +54,4 @@ pub(super) fn build(
             period_end,
         }
     }
-}
 }
