@@ -109,7 +109,10 @@ pub(crate) use errors::{error, grpc_error};
 pub use memberships::tenant_memberships;
 pub use operator::{logout, operator_login, operator_logout, operator_session};
 pub use registration::register;
-use security::{append_cookie, clear_session, is_loopback_authority, response_no_content};
+use security::{
+    append_cookie, clear_session, is_loopback_authority, response_no_content,
+    validate_mutation_session,
+};
 pub(crate) use security::{cookie_value, valid_csrf, valid_origin};
 pub use sessions::{login, tenant_session};
 
