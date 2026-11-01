@@ -1,10 +1,9 @@
 use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Utc};
-use sqlx::Transaction;
 use uuid::Uuid;
 
 use crate::domain::entitlement::EntitlementError;
 
-fn period_bounds(
+pub(super) fn period_bounds(
     at: DateTime<Utc>,
     period: &str,
 ) -> Result<(DateTime<Utc>, DateTime<Utc>), EntitlementError> {
@@ -38,14 +37,14 @@ fn period_bounds(
     Ok((start, end))
 }
 
-fn validate_environment(environment: &str) -> Result<(), EntitlementError> {
+pub(super) fn validate_environment(environment: &str) -> Result<(), EntitlementError> {
     if matches!(environment, "test" | "live") {
         Ok(())
     } else {
         Err(EntitlementError::InvalidCapability)
     }
 }
-async fn set_operator_context(
+pub(super) async fn set_operator_context(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     actor: Uuid,
 ) -> Result<(), sqlx::Error> {
@@ -57,7 +56,7 @@ async fn set_operator_context(
     .await?;
     Ok(())
 }
-async fn set_tenant_context(
+pub(super) async fn set_tenant_context(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant: Uuid,
     actor: Uuid,
