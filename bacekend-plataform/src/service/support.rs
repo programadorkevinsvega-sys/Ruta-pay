@@ -4,7 +4,7 @@ use std::time::Duration;
 use tokio::{net::TcpListener, sync::watch};
 use tracing::Instrument;
 
-async fn bind_listener(
+pub(super) async fn bind_listener(
     address: std::net::SocketAddr,
     component: &'static str,
     operation: &'static str,
@@ -21,7 +21,7 @@ async fn bind_listener(
     })
 }
 
-async fn serve_runtime(
+pub(super) async fn serve_runtime(
     listener: TcpListener,
     dependencies: platform_runtime::module_config::RuntimeModuleDependencies,
     mut shutdown: watch::Receiver<bool>,
@@ -37,7 +37,7 @@ async fn serve_runtime(
     .await
 }
 
-async fn verify_runtime_startup(
+pub(super) async fn verify_runtime_startup(
     client: RuntimeProbeGrpcClient<tonic::transport::Channel>,
 ) -> Result<(), tonic::Status> {
     let span = tracing::info_span!(
