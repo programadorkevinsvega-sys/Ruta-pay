@@ -1,0 +1,108 @@
+use platform_contracts::identity_access::{
+    AuthorizeApiKeyOperationRequest,
+    identity_access_client::IdentityAccessClient,
+};
+use sqlx::PgPool;
+use tonic::{Code, transport::Channel};
+use uuid::Uuid;
+
+pub async fn verify(
+    authorization_client: &mut IdentityAccessClient<Channel>,
+    migration_pool: &PgPool,
+    created_tenant_id: Uuid,
+    api_key_id: Uuid,
+    api_key_secret: &str,
+) {
+    let scoped_api_key_authorization = authorization_client
+        .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
+            secret: api_key_secret.to_owned(),
+            tenant_id: created_tenant_id.to_string(),
+            environment: "live".to_owned(),
+            required_scope: "payment_intents.create".to_owned(),
+            correlation_id: "corr_api_key_scope_allowed".to_owned(),
+        })
+        .await
+        .expect("API key with the requested scope authorizes the operation")
+        .into_inner();
+    assert_eq!(scoped_api_key_authorization.key_id, api_key_id.to_string());
+    assert_eq!(
+        scoped_api_key_authorization.tenant_id,
+        created_tenant_id.to_string()
+    );
+    phase3_catalog::configure(
+        &client,
+        http_addr,
+        &origin,
+        &operator_session_cookie,
+        &operator_csrf_cookie,
+        created_tenant_id,
+    )
+    .await;
+    phase3_entitlements::verify(phase3_entitlements::EntitlementAcceptanceContext {
+        client: &client,
+        http_addr,
+        grpc_addr,
+        origin: &origin,
+        session_cookie: &session_cookie,
+        csrf_cookie: &csrf_cookie,
+        tenant_id: created_tenant_id,
+        api_key_id,
+        api_key_secret,
+        authorization_client: authorization_client.clone(),
+    })
+    .await;
+    
+    let denied_api_key_scope = authorization_client
+        .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
+            secret: api_key_secret.to_owned(),
+            tenant_id: created_tenant_id.to_string(),
+            environment: "live".to_owned(),
+            required_scope: "payment_intents.capture".to_owned(),
+            correlation_id: "corr_api_key_scope_denied".to_owned(),
+        })
+        .await
+        .expect_err("API key cannot authorize an operation outside its scopes");
+    assert_eq!(denied_api_key_scope.code(), tonic::Code::PermissionDenied);
+    let wrong_environment_api_key = authorization_client
+        .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
+            secret: api_key_secret.to_owned(),
+            tenant_id: created_tenant_id.to_string(),
+            environment: "test".to_owned(),
+            required_scope: "payment_intents.create".to_owned(),
+            correlation_id: "corr_api_key_wrong_environment".to_owned(),
+        })
+        .await
+        .expect_err("live API key cannot authorize test environment operations");
+    assert_eq!(
+        wrong_environment_api_key.code(),
+        tonic::Code::Unauthenticated
+    );
+    let cross_tenant_api_key = authorization_client
+        .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
+            secret: api_key_secret.to_owned(),
+            tenant_id: Uuid::new_v4().to_string(),
+            environment: "live".to_owned(),
+            required_scope: "payment_intents.create".to_owned(),
+            correlation_id: "corr_api_key_cross_tenant".to_owned(),
+        })
+        .await
+        .expect_err("API key cannot authorize a different tenant");
+    assert_eq!(cross_tenant_api_key.code(), tonic::Code::Unauthenticated);
+    let api_key_last_used: bool = sqlx::query_scalar(
+        "SELECT last_used_at IS NOT NULL FROM identity_access.api_keys WHERE tenant_id=$1 AND id=$2",
+    )
+    .bind(created_tenant_id)
+    .bind(api_key_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("successful scoped authorization updates last_used_at");
+    assert!(api_key_last_used);
+    let api_key_scope_audit_counts: (i64, i64) = sqlx::query_as(
+        "SELECT count(*) FILTER (WHERE outcome='allowed'),count(*) FILTER (WHERE outcome='denied') FROM identity_access.audit_events WHERE action='api_key.authorization.checked' AND resource_id=$1 AND correlation_id IN ('corr_api_key_scope_allowed','corr_api_key_scope_denied')",
+    )
+    .bind(api_key_id)
+    .fetch_one(&migration_pool)
+    .await
+    .expect("API key scope authorization audit outcomes are queryable");
+    assert_eq!(api_key_scope_audit_counts, (1, 1));
+}
