@@ -58,7 +58,6 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     )
     .await;
     let jetstream = event_fixture.jetstream;
-    let _failed_topology = event_fixture.failed_topology;
     let event_topology = event_fixture.event_topology;
     let stream = event_fixture.stream;
     let event_payload = event_fixture.event_payload;
@@ -182,9 +181,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
 
     outbox_leases::verify(&migration_pool, &runtime_pool, created_tenant_id).await;
 
-    let mut isolated_stream_cleanup = isolated_stream_cleanup;
     isolated_stream_cleanup.cleanup().await;
-    let mut event_stream_cleanup = event_stream_cleanup;
     event_stream_cleanup.cleanup().await;
     assert!(
         jetstream
