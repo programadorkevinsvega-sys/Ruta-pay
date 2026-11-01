@@ -1,8 +1,8 @@
 use std::net::SocketAddr;
 
 use chrono::Utc;
-use reqwest::header;
 use reqwest::StatusCode;
+use reqwest::header;
 use uuid::Uuid;
 
 pub async fn configure(
