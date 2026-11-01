@@ -45,10 +45,11 @@ async fn publish_event(
         return Err("event_type_invalid");
     }
     let subject = format!("{subject_prefix}.{}", event.event_type);
+    let audience = if event.audience == "platform" { "platform_operator" } else { event.audience.as_str() };
     let envelope = json!({
         "event_id":event.event_id,"event_type":event.event_type,"schema_version":event.schema_version,
         "aggregate_id":event.aggregate_id,"aggregate_version":event.aggregate_version,
-        "audience":event.audience,"correlation_id":event.correlation_id,
+        "audience":audience,"correlation_id":event.correlation_id,
         "traceparent":event.traceparent,"occurred_at":chrono::Utc::now(),"payload":event.payload
     });
     let payload = serde_json::to_vec(&envelope).map_err(|_| "event_serialization_failed")?;
