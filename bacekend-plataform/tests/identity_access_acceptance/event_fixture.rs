@@ -23,18 +23,25 @@ pub struct EventFixture {
     pub isolated_stream_cleanup: EventStreamCleanup,
 }
 
-pub async fn create(
-    migration_pool: &PgPool,
-    runtime_pool: &PgPool,
-    runtime_role: &str,
-    client: &Client,
-    http_addr: SocketAddr,
-    session_cookie: &str,
-    csrf_cookie: &str,
-    created_tenant_id: Uuid,
-    registered_user_id: Uuid,
-    legal_identification_number: &str,
-) -> EventFixture {
+pub struct EventFixtureContext<'a> {
+    pub migration_pool: &'a PgPool,
+    pub runtime_pool: &'a PgPool,
+    pub runtime_role: &'a str,
+    pub client: &'a Client,
+    pub http_addr: SocketAddr,
+    pub session_cookie: &'a str,
+    pub csrf_cookie: &'a str,
+    pub created_tenant_id: Uuid,
+    pub registered_user_id: Uuid,
+    pub legal_identification_number: &'a str,
+}
+
+pub async fn create(context: EventFixtureContext<'_>) -> EventFixture {
+    let EventFixtureContext {
+        migration_pool, runtime_pool, runtime_role, client, http_addr,
+        session_cookie, csrf_cookie, created_tenant_id, registered_user_id,
+        legal_identification_number,
+    } = context;
     let nats_client = async_nats::ConnectOptions::with_user_and_password(
         std::env::var("NATS_USER").expect("development NATS user is configured"),
         std::env::var("NATS_PASSWORD").expect("development NATS password is configured"),
