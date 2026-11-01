@@ -1,3 +1,4 @@
+use super::*;
 use reqwest::{Client, StatusCode, header};
 use sqlx::PgPool;
 use std::net::SocketAddr;
@@ -29,7 +30,7 @@ pub async fn verify(context: TenantStatusInputContext<'_>) -> ((String, i64), i6
     let tenant_before_invalid_transitions: (String, i64) =
         sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
             .bind(created_tenant_id)
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("tenant state before invalid transitions is queryable");
     assert_eq!(tenant_before_invalid_transitions.0, "active");
@@ -40,7 +41,7 @@ pub async fn verify(context: TenantStatusInputContext<'_>) -> ((String, i64), i6
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
         ))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
@@ -62,7 +63,7 @@ pub async fn verify(context: TenantStatusInputContext<'_>) -> ((String, i64), i6
             .post(format!(
                 "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
             ))
-            .header(header::ORIGIN, &origin)
+            .header(header::ORIGIN, origin)
             .header(
                 header::COOKIE,
                 format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
