@@ -23,9 +23,9 @@ pub struct ServerFixture {
     pub authorization_client: IdentityAccessClient<Channel>,
     pub realtime_acceptance_client: RealtimeGatewayClient<Channel>,
     grpc_stop: Option<oneshot::Sender<()>>,
-    grpc_task: JoinHandle<()>,
+    grpc_task: JoinHandle<Result<(), tonic::transport::Error>>,
     http_stop: Option<oneshot::Sender<()>>,
-    http_task: JoinHandle<()>,
+    http_task: JoinHandle<Result<(), std::io::Error>>,
 }
 
 impl ServerFixture {
@@ -142,10 +142,10 @@ impl ServerFixture {
         if let Some(stop) = self.http_stop.take() {
             let _ = stop.send(());
         }
-        self.http_task.await.expect("HTTP task joins");
+        self.http_task.await.expect("HTTP task joins").expect("BFF server stops cleanly");
         if let Some(stop) = self.grpc_stop.take() {
             let _ = stop.send(());
         }
-        self.grpc_task.await.expect("gRPC task joins");
+        self.grpc_task.await.expect("gRPC task joins").expect("runtime server stops cleanly");
     }
 }
