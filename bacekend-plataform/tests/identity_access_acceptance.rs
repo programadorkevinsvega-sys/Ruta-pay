@@ -5,6 +5,7 @@ mod credential_validation;
 mod database_fixture;
 mod database_migrations;
 mod duplicate_registration;
+mod environment_fixture;
 mod event_fixture;
 mod identity_outbox_recovery;
 mod operator_redis_fixture;
@@ -40,6 +41,7 @@ mod session_security;
 mod session_security_flow;
 mod tenant_dto_validation;
 mod tenant_event_delivery;
+mod tenant_onboarding_phase;
 mod tenant_outbox_recovery;
 mod tenant_platform_access;
 mod tenant_registration_acceptance;
@@ -87,172 +89,45 @@ use uuid::Uuid;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() {
-    let provider = SdkTracerProvider::builder().build();
-    global::set_tracer_provider(provider.clone());
-    global::set_text_map_propagator(TraceContextPropagator::new());
-    let captured = EventCapture::default();
-    let captured_events = captured.0.clone();
-    tracing_subscriber::registry()
-        .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("identity-acceptance")))
-        .with(captured)
-        .try_init()
-        .expect("identity acceptance subscriber initializes");
-
-    let database = database_fixture::create().await;
-    let admin_pool = database.admin_pool;
-    let migration_pool = database.migration_pool;
-    let runtime_pool = database.runtime_pool;
-    let runtime_role = database.runtime_role;
-    let redis_url = database.redis_url;
-    let mut database_cleanup = database.cleanup;
-
-    let operator_fixture = operator_redis_fixture::bootstrap_and_verify_redis_failure(
-        &runtime_pool,
-        &migration_pool,
-        &redis_url,
-    )
-    .await;
-    let operator_email = operator_fixture.operator_email;
-    let operator_password = operator_fixture.operator_password;
-    let operator_id = operator_fixture.operator_id;
-    let redis_client = operator_fixture.redis_client;
-    let redis_manager = operator_fixture.redis_manager;
-
-    let servers = server_fixture::ServerFixture::start(
-        &runtime_pool,
-        &redis_manager,
-        redis_client,
-    )
-    .await;
+    let environment = environment_fixture::setup().await;
+    let tenant = tenant_onboarding_phase::setup(&environment).await;
+    let IdentityEnvironment {
+        provider,
+        captured_events,
+        admin_pool,
+        migration_pool,
+        runtime_pool,
+        runtime_role,
+        mut database_cleanup,
+        redis_manager,
+        operator_email,
+        operator_password,
+        operator_id,
+        servers,
+        email,
+        password,
+        registered_user_id,
+    } = environment;
+    let TenantOnboardingFixture {
+        session_cookie,
+        csrf_cookie,
+        traceparent,
+        ip_key,
+        operator_session_cookie,
+        operator_csrf_cookie,
+        legal_identification_number,
+        created_tenant_id,
+        tenant_body,
+        tenant_slug,
+        tenant_admin_status_body,
+    } = tenant;
     let grpc_addr = servers.grpc_addr;
     let http_addr = servers.http_addr;
     let origin = servers.origin.clone();
     let default_headers = servers.default_headers.clone();
-    let test_source_ip = servers.test_source_ip;
     let client = servers.client.clone();
     let mut authorization_client = servers.authorization_client.clone();
     let mut realtime_acceptance_client = servers.realtime_acceptance_client.clone();
-
-    let email = format!("acceptance_{}@example.test", Uuid::new_v4().simple());
-    let password = format!("A-valid-password-{}!", Uuid::new_v4().simple());
-    credential_validation::verify(credential_validation::IdentityCredentialValidationContext {
-        client: &client,
-        migration_pool: &migration_pool,
-        http_addr,
-        origin: &origin,
-        email: &email,
-        password: &password,
-    })
-    .await;
-
-    let register_response = client
-        .post(format!("http://{http_addr}/v1/identity/register"))
-        .header(header::ORIGIN, &origin)
-        .header("x-correlation-id", "corr_identity_register")
-        .json(&serde_json::json!({"email": email, "password": password}))
-        .send()
-        .await
-        .expect("HTTP registration response arrives");
-    assert_eq!(register_response.status(), StatusCode::CREATED);
-
-    let registration: serde_json::Value = register_response
-        .json()
-        .await
-        .expect("registration response contains its resource identifier");
-    let registered_user_id = Uuid::parse_str(
-        registration["user_id"]
-            .as_str()
-            .expect("registration user id is present"),
-    )
-    .expect("registration user id is valid");
-
-    outbox_transaction_rollback::verify(&client, &migration_pool, http_addr, &origin).await;
-    duplicate_registration::verify(
-        &client,
-        &migration_pool,
-        http_addr,
-        &origin,
-        &email,
-        &password,
-        registered_user_id,
-    )
-    .await;
-    concurrent_registration::verify(
-        &client,
-        &migration_pool,
-        http_addr,
-        &origin,
-        registered_user_id,
-    )
-    .await;
-
-    let tenant_cookies = tenant_session_acceptance::verify(
-        &client,
-        http_addr,
-        &origin,
-        &email,
-        &password,
-        test_source_ip,
-        &redis_manager,
-        &captured_events,
-        registered_user_id,
-    )
-    .await;
-    let session_cookie = tenant_cookies.session_cookie.clone();
-    let csrf_cookie = tenant_cookies.csrf_cookie.clone();
-    let traceparent = tenant_cookies.traceparent.clone();
-    let ip_key = tenant_cookies.ip_key.clone();
-    let operator_cookies = operator_session_acceptance::verify(
-        &client,
-        http_addr,
-        &origin,
-        &operator_email,
-        &operator_password,
-        operator_id,
-        &mut authorization_client,
-        &migration_pool,
-        &tenant_cookies,
-    )
-    .await;
-    let operator_session_cookie = operator_cookies.session_cookie;
-    let operator_csrf_cookie = operator_cookies.csrf_cookie;
-
-    let tenant_registration = tenant_registration_acceptance::verify(
-        &client,
-        &migration_pool,
-        http_addr,
-        &origin,
-        &session_cookie,
-        &csrf_cookie,
-    )
-    .await;
-    let legal_identification_number = tenant_registration.legal_identification_number;
-    let created_tenant_id = tenant_registration.tenant_id;
-    let tenant_body = tenant_registration.tenant_body;
-    let tenant_slug = tenant_registration.tenant_slug;
-
-    tenant_platform_access::verify(
-        &client,
-        http_addr,
-        &origin,
-        &session_cookie,
-        &csrf_cookie,
-        &operator_session_cookie,
-        &operator_csrf_cookie,
-        created_tenant_id,
-    )
-    .await;
-    let tenant_admin_status_body = tenant_status_outbox_acceptance::verify(
-        &client,
-        &migration_pool,
-        http_addr,
-        &origin,
-        &operator_session_cookie,
-        &operator_csrf_cookie,
-        created_tenant_id,
-        &tenant_body,
-    )
-    .await;
 
     let event_fixture = event_fixture::create(
         &migration_pool,
