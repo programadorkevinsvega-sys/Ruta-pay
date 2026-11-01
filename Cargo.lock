@@ -256,6 +256,7 @@ dependencies = [
  "axum",
  "bacekend-pasarela",
  "base64 0.22.1",
+ "chrono",
  "metrics-exporter-prometheus",
  "opentelemetry",
  "opentelemetry_sdk",
