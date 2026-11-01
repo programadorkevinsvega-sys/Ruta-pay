@@ -5,9 +5,8 @@ mod identity_retry;
 
 use async_nats::jetstream;
 use platform_runtime::event_topology::EventTopology;
-use uuid::Uuid;
 use sqlx::PgPool;
-use crate::identity_access_acceptance_support::EventStreamCleanup;
+use uuid::Uuid;
 use crate::identity_access_acceptance_support::EventStreamCleanup;
 
 pub(super) struct OutboxInfrastructure {
