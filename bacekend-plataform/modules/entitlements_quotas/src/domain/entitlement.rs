@@ -44,8 +44,6 @@ pub enum EntitlementError {
     QuotaExceeded,
     #[error("idempotency key was reused with different operation data")]
     IdempotencyConflict,
-    #[error("the original idempotent result is unavailable or invalid")]
-    IdempotencyResultUnavailable,
     #[error("plan assignment overlaps an existing assignment")]
     AssignmentConflict,
 }
