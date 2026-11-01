@@ -271,7 +271,7 @@ struct TraceparentExtractor<'a>(Option<&'a str>);
 
 impl Extractor for TraceparentExtractor<'_> {
     fn get(&self, key: &str) -> Option<&str> {
-        (key == "traceparent").then_some(self.0?).flatten()
+        if key == "traceparent" { self.0 } else { None }
     }
 
     fn keys(&self) -> Vec<&str> {
