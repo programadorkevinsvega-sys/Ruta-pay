@@ -1,11 +1,11 @@
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::domain::entitlement::{Entitlement, EntitlementError, validate_consumption};
 use super::{
     ConsumeQuotaCommand, EntitlementService, EntitlementServiceError,
     support::{period_bounds, set_tenant_context, validate_environment},
 };
+use crate::domain::entitlement::{Entitlement, EntitlementError, validate_consumption};
 
 impl EntitlementService {
     pub async fn consume(
