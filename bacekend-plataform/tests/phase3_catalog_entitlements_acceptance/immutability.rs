@@ -27,7 +27,13 @@ async fn assert_rejected(
     statement: &'static str,
     id: Uuid,
 ) {
+    sqlx::query("SAVEPOINT immutable_attempt").execute(&mut **tx).await
+        .expect("mutation savepoint is created");
     let error = sqlx::query(statement).bind(id).execute(&mut **tx).await
         .expect_err("immutable records reject mutation at the PostgreSQL boundary");
     assert_eq!(error.as_database_error().and_then(|db| db.code()).as_deref(), Some("55000"));
+    sqlx::query("ROLLBACK TO SAVEPOINT immutable_attempt").execute(&mut **tx).await
+        .expect("failed mutation is rolled back to its savepoint");
+    sqlx::query("RELEASE SAVEPOINT immutable_attempt").execute(&mut **tx).await
+        .expect("mutation savepoint is released");
 }
