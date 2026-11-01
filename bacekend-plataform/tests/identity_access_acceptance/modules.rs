@@ -45,9 +45,7 @@ pub mod outbox_leases;
 #[path = "outbox_transaction_rollback.rs"]
 pub mod outbox_transaction_rollback;
 #[path = "phase3_catalog.rs"]
-#[path = "phase3_catalog.rs"]
 pub mod phase3_catalog;
-#[path = "phase3_entitlements.rs"]
 #[path = "phase3_entitlements.rs"]
 pub mod phase3_entitlements;
 #[path = "platform_realtime_replay.rs"]
@@ -116,7 +114,7 @@ use async_nats::jetstream;
 mod identity_access_acceptance_support;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use identity_access_acceptance_support::{
-    AcceptanceDatabaseCleanup, EventCapture, EventStreamCleanup, cookie_value, is_stream_not_found,
+    AcceptanceDatabaseCleanup, EventCapture, EventStreamCleanup, cookie_value,
 };
 use opentelemetry::{global, trace::TracerProvider as _};
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerProvider};
