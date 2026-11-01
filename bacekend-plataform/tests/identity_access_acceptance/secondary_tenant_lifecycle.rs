@@ -1,3 +1,4 @@
+use super::*;
 use reqwest::{Client, StatusCode, header};
 use sqlx::PgPool;
 use std::net::SocketAddr;
@@ -30,7 +31,7 @@ pub async fn verify(context: SecondaryTenantLifecycleContext<'_>) {
     let second_tenant_initial_state: (String, i64) =
         sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
             .bind(second_tenant_id)
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("second tenant lifecycle state is queryable");
     assert_eq!(
@@ -39,14 +40,14 @@ pub async fn verify(context: SecondaryTenantLifecycleContext<'_>) {
     );
     sqlx::query("UPDATE identity_access.operator_users SET role='platform_support' WHERE id=$1")
         .bind(operator_id)
-        .execute(&migration_pool)
+        .execute(migration_pool)
         .await
         .expect("platform support role is selected for activation denial");
     let support_activation = client
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{second_tenant_id}/status"
         ))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
@@ -64,14 +65,14 @@ pub async fn verify(context: SecondaryTenantLifecycleContext<'_>) {
 
     sqlx::query("UPDATE identity_access.operator_users SET role='platform_security' WHERE id=$1")
         .bind(operator_id)
-        .execute(&migration_pool)
+        .execute(migration_pool)
         .await
         .expect("platform security role is selected for activation");
     let security_activation = client
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{second_tenant_id}/status"
         ))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
@@ -89,14 +90,14 @@ pub async fn verify(context: SecondaryTenantLifecycleContext<'_>) {
 
     sqlx::query("UPDATE identity_access.operator_users SET role='platform_support' WHERE id=$1")
         .bind(operator_id)
-        .execute(&migration_pool)
+        .execute(migration_pool)
         .await
         .expect("platform support role is selected for close denial");
     let support_close = client
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{second_tenant_id}/status"
         ))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
@@ -114,14 +115,14 @@ pub async fn verify(context: SecondaryTenantLifecycleContext<'_>) {
 
     sqlx::query("UPDATE identity_access.operator_users SET role='platform_owner' WHERE id=$1")
         .bind(operator_id)
-        .execute(&migration_pool)
+        .execute(migration_pool)
         .await
         .expect("platform owner role is selected for tenant close");
     let owner_closing = client
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{second_tenant_id}/status"
         ))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
@@ -138,14 +139,14 @@ pub async fn verify(context: SecondaryTenantLifecycleContext<'_>) {
     assert_eq!(owner_closing.status(), StatusCode::OK);
     sqlx::query("UPDATE identity_access.operator_users SET role='platform_security' WHERE id=$1")
         .bind(operator_id)
-        .execute(&migration_pool)
+        .execute(migration_pool)
         .await
         .expect("platform security role is selected to finish tenant close");
     let security_closed = client
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{second_tenant_id}/status"
         ))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
@@ -163,13 +164,13 @@ pub async fn verify(context: SecondaryTenantLifecycleContext<'_>) {
     let second_tenant_closed_state: (String, i64) =
         sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
             .bind(second_tenant_id)
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("closed tenant lifecycle state is queryable");
     assert_eq!(second_tenant_closed_state, ("closed".to_owned(), 4));
     sqlx::query("UPDATE identity_access.operator_users SET role='platform_owner' WHERE id=$1")
         .bind(operator_id)
-        .execute(&migration_pool)
+        .execute(migration_pool)
         .await
         .expect("platform owner role is restored after lifecycle matrix");
 }
