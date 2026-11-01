@@ -1,6 +1,9 @@
 mod operator_role_matrix;
 mod session_security;
 mod tenant_status_race;
+mod tenant_dto_validation;
+mod tenant_status_input_validation;
+mod tenant_status_version_validation;
 mod outbox_leases;
 #[path = "identity_access_acceptance/phase3_catalog.rs"]
 mod phase3_catalog;
@@ -3260,307 +3263,42 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("platform owner role is restored for remaining lifecycle acceptance");
 
-    // Invalid reasons and stale optimistic-lock versions must be rejected
-    // before changing the tenant aggregate or its version. Read the committed
-    // version instead of duplicating assumptions about prior transitions.
-    let tenant_before_invalid_transitions: (String, i64) =
-        sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
-            .bind(created_tenant_id)
-            .fetch_one(&migration_pool)
-            .await
-            .expect("tenant state before invalid transitions is queryable");
-    assert_eq!(tenant_before_invalid_transitions.0, "active");
-    let current_status_version = tenant_before_invalid_transitions.1;
-    assert!(current_status_version > 0);
-
-    let missing_status_reason = client
-        .post(format!(
-            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
-        ))
-        .header(header::ORIGIN, &origin)
-        .header(
-            header::COOKIE,
-            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
+    let (tenant_before_invalid_transitions, current_status_version) =
+        tenant_status_input_validation::verify(
+            tenant_status_input_validation::TenantStatusInputContext {
+                client: &client,
+                migration_pool: &migration_pool,
+                http_addr,
+                origin: &origin,
+                matrix_operator_session_cookie: &matrix_operator_session_cookie,
+                matrix_operator_csrf_cookie: &matrix_operator_csrf_cookie,
+                created_tenant_id,
+            },
         )
-        .header("x-csrf-token", &matrix_operator_csrf_cookie)
-        .header("x-correlation-id", "corr_tenant_status_missing_reason")
-        .json(&serde_json::json!({
-            "status": "suspended",
-            "reason": " ",
-            "expected_version": current_status_version
-        }))
-        .send()
-        .await
-        .expect("status transition without a meaningful reason is rejected");
-    assert_eq!(missing_status_reason.status(), StatusCode::BAD_REQUEST);
-    let invalid_reasons = vec!["ab".to_owned(), "r".repeat(501)];
-    for invalid_reason in invalid_reasons {
-        let response = client
-            .post(format!(
-                "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
-            ))
-            .header(header::ORIGIN, &origin)
-            .header(
-                header::COOKIE,
-                format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
-            )
-            .header("x-csrf-token", &matrix_operator_csrf_cookie)
-            .json(&serde_json::json!({
-                "status": "suspended",
-                "reason": invalid_reason,
-                "expected_version": current_status_version
-            }))
-            .send()
-            .await
-            .expect("out-of-range lifecycle reason receives an HTTP response");
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    }
-
-    let stale_status_version = client
-        .post(format!(
-            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
-        ))
-        .header(header::ORIGIN, &origin)
-        .header(
-            header::COOKIE,
-            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
-        )
-        .header("x-csrf-token", &matrix_operator_csrf_cookie)
-        .header("x-correlation-id", "corr_tenant_status_stale_version")
-        .json(&serde_json::json!({
-            "status": "suspended",
-            "reason": "This stale transition must not be applied",
-            "expected_version": current_status_version - 1
-        }))
-        .send()
-        .await
-        .expect("stale tenant status version is rejected");
-    assert_eq!(stale_status_version.status(), StatusCode::CONFLICT);
-
-    let zero_expected_version = client
-        .post(format!(
-            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
-        ))
-        .header(header::ORIGIN, &origin)
-        .header(
-            header::COOKIE,
-            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
-        )
-        .header("x-csrf-token", &matrix_operator_csrf_cookie)
-        .json(&serde_json::json!({
-            "status": "suspended",
-            "reason": "A version must be positive",
-            "expected_version": -1
-        }))
-        .send()
-        .await
-        .expect("negative expected version is rejected as invalid input");
-    assert_eq!(zero_expected_version.status(), StatusCode::BAD_REQUEST);
-
-    let wrong_version_type = client
-        .post(format!(
-            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
-        ))
-        .header(header::ORIGIN, &origin)
-        .header(
-            header::COOKIE,
-            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
-        )
-        .header("x-csrf-token", &matrix_operator_csrf_cookie)
-        .json(&serde_json::json!({
-            "status": "suspended",
-            "reason": "The version must be an integer",
-            "expected_version": "not-an-integer"
-        }))
-        .send()
-        .await
-        .expect("wrong expected_version JSON type is rejected");
-    assert_eq!(
-        wrong_version_type.status(),
-        StatusCode::UNPROCESSABLE_ENTITY
-    );
-    let invalid_status_dto_types = [
-        serde_json::json!({
-            "status": 7,
-            "reason": "Status must be a string",
-            "expected_version": current_status_version
-        }),
-        serde_json::json!({
-            "status": "suspended",
-            "reason": 7,
-            "expected_version": current_status_version
-        }),
-    ];
-    for (index, invalid_body) in invalid_status_dto_types.into_iter().enumerate() {
-        let response = client
-            .post(format!(
-                "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
-            ))
-            .header(header::ORIGIN, &origin)
-            .header(
-                header::COOKIE,
-                format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
-            )
-            .header("x-csrf-token", &matrix_operator_csrf_cookie)
-            .json(&invalid_body)
-            .send()
-            .await
-            .expect("wrong lifecycle DTO field type receives an HTTP response");
-        assert_eq!(
-            response.status(),
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "wrong lifecycle DTO type case {index} must be rejected"
-        );
-    }
-
-    let invalid_status_value = client
-        .post(format!(
-            "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
-        ))
-        .header(header::ORIGIN, &origin)
-        .header(
-            header::COOKIE,
-            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
-        )
-        .header("x-csrf-token", &matrix_operator_csrf_cookie)
-        .json(&serde_json::json!({
-            "status": "unknown-state",
-            "reason": "Unknown states must not be accepted",
-            "expected_version": current_status_version
-        }))
-        .send()
-        .await
-        .expect("unknown lifecycle state is rejected");
-    assert_eq!(invalid_status_value.status(), StatusCode::BAD_REQUEST);
-
-    for invalid_query in ["limit=0", "limit=101", "offset=-1", "limit=not-a-number"] {
-        let invalid_list = client
-            .get(format!("http://{http_addr}/v1/platform/tenants?{invalid_query}"))
-            .header(
-                header::COOKIE,
-                format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
-            )
-            .send()
-            .await
-            .expect("invalid tenant-list pagination receives an HTTP response");
-        assert_eq!(
-            invalid_list.status(),
-            StatusCode::BAD_REQUEST,
-            "invalid pagination query {invalid_query} must be rejected"
-        );
-    }
-    let oversized_tenant_query = client
-        .get(format!(
-            "http://{http_addr}/v1/platform/tenants?query={}",
-            "q".repeat(121)
-        ))
-        .header(
-            header::COOKIE,
-            format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
-        )
-        .send()
-        .await
-        .expect("oversized tenant search query receives an HTTP response");
-    assert_eq!(oversized_tenant_query.status(), StatusCode::BAD_REQUEST);
-
-    let tenants_before_invalid_dtos: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants")
-            .fetch_one(&migration_pool)
-            .await
-            .expect("tenant count before invalid DTO checks is queryable");
-    let invalid_tenant_values = [
-        serde_json::json!({"display_name": "A", "slug": "valid-slug", "legal_identification_type": "nit", "legal_identification_number": "12345"}),
-        serde_json::json!({"display_name": "Valid tenant", "slug": "a".repeat(65), "legal_identification_type": "nit", "legal_identification_number": "12345"}),
-        serde_json::json!({"display_name": "Valid tenant", "slug": "valid-slug", "legal_identification_type": "passport", "legal_identification_number": "12345"}),
-        serde_json::json!({"display_name": "Valid tenant", "slug": "valid-slug", "legal_identification_type": "nit", "legal_identification_number": "-12345"}),
-        serde_json::json!({"display_name": "Valid tenant", "slug": "valid-slug", "legal_identification_type": "nit", "legal_identification_number": "1".repeat(21)}),
-    ];
-    for (index, invalid_body) in invalid_tenant_values.into_iter().enumerate() {
-        let response = client
-            .post(format!("http://{http_addr}/v1/tenants"))
-            .header(header::ORIGIN, &origin)
-            .header(
-                header::COOKIE,
-                format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
-            )
-            .header("x-csrf-token", &second_csrf_cookie)
-            .json(&invalid_body)
-            .send()
-            .await
-            .expect("invalid tenant registration values receive an HTTP response");
-        assert_eq!(
-            response.status(),
-            StatusCode::BAD_REQUEST,
-            "invalid tenant registration value case {index} must fail validation"
-        );
-    }
-    let invalid_tenant_types = [
-        serde_json::json!({"display_name": 7, "slug": "valid-slug", "legal_identification_type": "nit", "legal_identification_number": "12345"}),
-        serde_json::json!({"display_name": "Valid tenant", "slug": 7, "legal_identification_type": "nit", "legal_identification_number": "12345"}),
-        serde_json::json!({"display_name": "Valid tenant", "slug": "valid-slug", "legal_identification_type": 7, "legal_identification_number": "12345"}),
-        serde_json::json!({"display_name": "Valid tenant", "slug": "valid-slug", "legal_identification_type": "nit", "legal_identification_number": 7}),
-    ];
-    for (index, invalid_body) in invalid_tenant_types.into_iter().enumerate() {
-        let response = client
-            .post(format!("http://{http_addr}/v1/tenants"))
-            .header(header::ORIGIN, &origin)
-            .header(
-                header::COOKIE,
-                format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
-            )
-            .header("x-csrf-token", &second_csrf_cookie)
-            .json(&invalid_body)
-            .send()
-            .await
-            .expect("incorrect tenant DTO field type receives an HTTP response");
-        assert_eq!(
-            response.status(),
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "wrong tenant DTO type case {index} must be rejected by the HTTP extractor"
-        );
-    }
-    let tenants_after_invalid_dtos: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants")
-            .fetch_one(&migration_pool)
-            .await
-            .expect("tenant count after invalid DTO checks is queryable");
-    assert_eq!(
-        tenants_after_invalid_dtos, tenants_before_invalid_dtos,
-        "invalid tenant values and types must not create tenant rows"
-    );
-
-    let invalid_tenant_dto = client
-        .post(format!("http://{http_addr}/v1/tenants"))
-        .header(header::ORIGIN, &origin)
-        .header(
-            header::COOKIE,
-            format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
-        )
-        .header("x-csrf-token", &second_csrf_cookie)
-        .json(&serde_json::json!({
-            "display_name": "Invalid tenant DTO",
-            "slug": 42,
-            "legal_identification_type": "nit",
-            "legal_identification_number": "123456"
-        }))
-        .send()
-        .await
-        .expect("wrong tenant DTO field type is rejected");
-    assert_eq!(
-        invalid_tenant_dto.status(),
-        StatusCode::UNPROCESSABLE_ENTITY
-    );
-
-    let tenant_after_invalid_transitions: (String, i64) =
-        sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
-            .bind(created_tenant_id)
-            .fetch_one(&migration_pool)
-            .await
-            .expect("tenant state after invalid transitions is queryable");
-    assert_eq!(
-        tenant_after_invalid_transitions, tenant_before_invalid_transitions,
-        "invalid reason and stale version leave tenant state unchanged"
-    );
+        .await;
+    tenant_status_version_validation::verify(
+        tenant_status_version_validation::TenantStatusVersionContext {
+            client: &client,
+            http_addr,
+            origin: &origin,
+            matrix_operator_session_cookie: &matrix_operator_session_cookie,
+            matrix_operator_csrf_cookie: &matrix_operator_csrf_cookie,
+            created_tenant_id,
+            current_status_version,
+        },
+    )
+    .await;
+    tenant_dto_validation::verify(tenant_dto_validation::TenantDtoValidationContext {
+        client: &client,
+        migration_pool: &migration_pool,
+        http_addr,
+        origin: &origin,
+        second_session_cookie: &second_session_cookie,
+        second_csrf_cookie: &second_csrf_cookie,
+        created_tenant_id,
+        tenant_before_invalid_transitions,
+    })
+    .await;
 
     // Exercise activation and both close transitions on a separate tenant.
     // platform_support must be denied; platform_security may activate and close.
