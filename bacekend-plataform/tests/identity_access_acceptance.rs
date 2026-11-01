@@ -477,22 +477,14 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     )
     .await;
 
-    let scoped_api_key_authorization = authorization_client
-        .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
-            secret: api_key_secret.to_owned(),
-            tenant_id: created_tenant_id.to_string(),
-            environment: "live".to_owned(),
-            required_scope: "payment_intents.create".to_owned(),
-            correlation_id: "corr_api_key_scope_allowed".to_owned(),
-        })
-        .await
-        .expect("API key with the requested scope authorizes the operation")
-        .into_inner();
-    assert_eq!(scoped_api_key_authorization.key_id, api_key_id.to_string());
-    assert_eq!(
-        scoped_api_key_authorization.tenant_id,
-        created_tenant_id.to_string()
-    );
+    api_key_authorization::verify(
+        &mut authorization_client,
+        &migration_pool,
+        created_tenant_id,
+        api_key_id,
+        &api_key_secret,
+    )
+    .await;
     phase3_catalog::configure(
         &client,
         http_addr,
@@ -515,155 +507,20 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         authorization_client: authorization_client.clone(),
     })
     .await;
-
-    let denied_api_key_scope = authorization_client
-        .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
-            secret: api_key_secret.to_owned(),
-            tenant_id: created_tenant_id.to_string(),
-            environment: "live".to_owned(),
-            required_scope: "payment_intents.capture".to_owned(),
-            correlation_id: "corr_api_key_scope_denied".to_owned(),
-        })
-        .await
-        .expect_err("API key cannot authorize an operation outside its scopes");
-    assert_eq!(denied_api_key_scope.code(), tonic::Code::PermissionDenied);
-    let wrong_environment_api_key = authorization_client
-        .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
-            secret: api_key_secret.to_owned(),
-            tenant_id: created_tenant_id.to_string(),
-            environment: "test".to_owned(),
-            required_scope: "payment_intents.create".to_owned(),
-            correlation_id: "corr_api_key_wrong_environment".to_owned(),
-        })
-        .await
-        .expect_err("live API key cannot authorize test environment operations");
-    assert_eq!(
-        wrong_environment_api_key.code(),
-        tonic::Code::Unauthenticated
-    );
-    let cross_tenant_api_key = authorization_client
-        .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
-            secret: api_key_secret.to_owned(),
-            tenant_id: Uuid::new_v4().to_string(),
-            environment: "live".to_owned(),
-            required_scope: "payment_intents.create".to_owned(),
-            correlation_id: "corr_api_key_cross_tenant".to_owned(),
-        })
-        .await
-        .expect_err("API key cannot authorize a different tenant");
-    assert_eq!(cross_tenant_api_key.code(), tonic::Code::Unauthenticated);
-    let api_key_last_used: bool = sqlx::query_scalar(
-        "SELECT last_used_at IS NOT NULL FROM identity_access.api_keys WHERE tenant_id=$1 AND id=$2",
+    api_key_lifecycle::verify(
+        &client,
+        &mut authorization_client,
+        &migration_pool,
+        http_addr,
+        &origin,
+        &session_cookie,
+        &csrf_cookie,
+        created_tenant_id,
+        api_key_id,
+        &api_key_secret,
+        &api_key_created,
     )
-    .bind(created_tenant_id)
-    .bind(api_key_id)
-    .fetch_one(&migration_pool)
-    .await
-    .expect("successful scoped authorization updates last_used_at");
-    assert!(api_key_last_used);
-    let api_key_scope_audit_counts: (i64, i64) = sqlx::query_as(
-        "SELECT count(*) FILTER (WHERE outcome='allowed'),count(*) FILTER (WHERE outcome='denied') FROM identity_access.audit_events WHERE action='api_key.authorization.checked' AND resource_id=$1 AND correlation_id IN ('corr_api_key_scope_allowed','corr_api_key_scope_denied')",
-    )
-    .bind(api_key_id)
-    .fetch_one(&migration_pool)
-    .await
-    .expect("API key scope authorization audit outcomes are queryable");
-    assert_eq!(api_key_scope_audit_counts, (1, 1));
-
-    let foreign_api_key_list = client
-        .get(format!(
-            "http://{http_addr}/v1/tenants/{}/api-keys",
-            Uuid::new_v4()
-        ))
-        .header(
-            header::COOKIE,
-            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
-        )
-        .send()
-        .await
-        .expect("tenant key access to an unassociated tenant is rejected");
-    assert_eq!(foreign_api_key_list.status(), StatusCode::FORBIDDEN);
-
-    let api_key_list = client
-        .get(format!(
-            "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
-        ))
-        .header(
-            header::COOKIE,
-            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
-        )
-        .send()
-        .await
-        .expect("API key metadata is available to the authorized tenant");
-    assert_eq!(api_key_list.status(), StatusCode::OK);
-    let api_key_metadata: serde_json::Value = api_key_list
-        .json()
-        .await
-        .expect("API key metadata is safe JSON");
-    assert_eq!(api_key_metadata[0]["status"], "active");
-    assert_eq!(api_key_metadata[0]["prefix"], api_key_created["prefix"]);
-    assert!(api_key_metadata[0].get("secret_once").is_none());
-    assert!(api_key_metadata[0].get("secret_digest").is_none());
-
-    let api_key_revoke = client
-        .delete(format!(
-            "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys/{api_key_id}"
-        ))
-        .header(header::ORIGIN, &origin)
-        .header(
-            header::COOKIE,
-            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
-        )
-        .header("x-csrf-token", &csrf_cookie)
-        .header("x-correlation-id", "corr_api_key_revoke")
-        .send()
-        .await
-        .expect("tenant owner can revoke its key through BFF and gRPC");
-    assert_eq!(api_key_revoke.status(), StatusCode::NO_CONTENT);
-    let csrf_rejected_api_key_revoke = client
-        .delete(format!(
-            "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys/{api_key_id}"
-        ))
-        .header(header::ORIGIN, &origin)
-        .header(
-            header::COOKIE,
-            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
-        )
-        .send()
-        .await
-        .expect("missing CSRF token rejects API key revocation");
-    assert_eq!(csrf_rejected_api_key_revoke.status(), StatusCode::FORBIDDEN);
-    let revoked_key_status: String = sqlx::query_scalar(
-        "SELECT status FROM identity_access.api_keys WHERE tenant_id=$1 AND id=$2",
-    )
-    .bind(created_tenant_id)
-    .bind(api_key_id)
-    .fetch_one(&migration_pool)
-    .await
-    .expect("revocation persists in PostgreSQL");
-    assert_eq!(revoked_key_status, "revoked");
-    let revoked_api_key_authorization = authorization_client
-        .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
-            secret: api_key_secret.to_owned(),
-            tenant_id: created_tenant_id.to_string(),
-            environment: "live".to_owned(),
-            required_scope: "payment_intents.create".to_owned(),
-            correlation_id: "corr_api_key_revoked_denied".to_owned(),
-        })
-        .await
-        .expect_err("revoked API key cannot authorize future operations");
-    assert_eq!(
-        revoked_api_key_authorization.code(),
-        tonic::Code::Unauthenticated
-    );
-    let api_key_audit: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM identity_access.audit_events WHERE resource_id=$1 AND action='api_key.created' AND outcome='completed') AND EXISTS (SELECT 1 FROM identity_access.audit_events WHERE resource_id=$1 AND action='api_key.revoked' AND outcome='completed')",
-    )
-    .bind(api_key_id)
-    .fetch_one(&migration_pool)
-    .await
-    .expect("API key creation and revocation are audited");
-    assert!(api_key_audit);
+    .await;
 
     tenant_role_matrix::verify(tenant_role_matrix::TenantRoleMatrixContext {
         client: &client,
