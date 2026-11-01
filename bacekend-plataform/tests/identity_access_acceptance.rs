@@ -1,3 +1,5 @@
+mod support;
+
 use async_nats::jetstream;
 use chrono::Utc;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -1035,6 +1037,15 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .collect();
     let operator_session_cookie = cookie_value(&operator_cookies, "payvia_platform_session");
     let operator_csrf_cookie = cookie_value(&operator_cookies, "payvia_platform_csrf");
+
+    support::phase3_catalog_http_acceptance::verify(
+        &client,
+        http_addr,
+        &origin,
+        &operator_session_cookie,
+        &operator_csrf_cookie,
+    )
+    .await;
     let authorization = authorization_client
         .authorize_operator_operation(AuthorizeOperatorOperationRequest {
             session_token: operator_session_cookie.clone(),
