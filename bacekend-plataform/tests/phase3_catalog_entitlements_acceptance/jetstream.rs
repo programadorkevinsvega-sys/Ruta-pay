@@ -39,14 +39,17 @@ pub async fn verify(fixture: &TestFixture) {
         .execute(&fixture.database.migration_pool).await.expect("unrelated entitlement events are deferred");
     let catalog_event = Uuid::new_v4();
     let usage_event = Uuid::new_v4();
-    sqlx::query("INSERT INTO catalog_pricing.outbox_events (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,correlation_id) VALUES ($1,$2,1,'catalog.price_version.published',1,'platform',$3,$4)")
+    let traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+    sqlx::query("INSERT INTO catalog_pricing.outbox_events (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,traceparent,correlation_id) VALUES ($1,$2,1,'catalog.price_version.published',1,'platform',$3,$4,$5)")
         .bind(catalog_event).bind(Uuid::new_v4())
         .bind(serde_json::json!({"price_version_id": fixture.price_one.id}))
+        .bind(traceparent)
         .bind("phase3_jetstream_catalog").execute(&fixture.database.migration_pool).await
         .expect("catalog outbox event is persisted");
-    sqlx::query("INSERT INTO entitlements_quotas.outbox_events (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,correlation_id) VALUES ($1,$2,1,'quota.consumed',1,'tenant',$3,$4)")
+    sqlx::query("INSERT INTO entitlements_quotas.outbox_events (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,traceparent,correlation_id) VALUES ($1,$2,1,'quota.consumed',1,'tenant',$3,$4,$5)")
         .bind(usage_event).bind(Uuid::new_v4())
         .bind(serde_json::json!({"tenant_id": fixture.tenant_one, "usage_id": Uuid::new_v4()}))
+        .bind(traceparent)
         .bind("phase3_jetstream_entitlement").execute(&fixture.database.migration_pool).await
         .expect("entitlement outbox event is persisted");
 
@@ -117,6 +120,7 @@ pub async fn verify(fixture: &TestFixture) {
                 .as_str()
                 .unwrap_or_default()
                 .to_owned(),
+            envelope["traceparent"].as_str().unwrap_or_default().to_owned(),
         ));
         message.ack().await.expect("received event is acknowledged");
     }
@@ -125,14 +129,16 @@ pub async fn verify(fixture: &TestFixture) {
             .iter()
             .any(|event| event.0 == catalog_event.to_string()
                 && event.1 == "catalog.price_version.published"
-                && event.2 == "phase3_jetstream_catalog")
+                && event.2 == "phase3_jetstream_catalog"
+                && event.3 == traceparent)
     );
     assert!(
         received
             .iter()
             .any(|event| event.0 == usage_event.to_string()
                 && event.1 == "quota.consumed"
-                && event.2 == "phase3_jetstream_entitlement")
+                && event.2 == "phase3_jetstream_entitlement"
+                && event.3 == traceparent)
     );
     let platform_events = platform_realtime::infrastructure::persistence::replay(
         &fixture.database.runtime_pool,
