@@ -1,3 +1,4 @@
+use super::*;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -42,7 +43,7 @@ pub async fn bootstrap_and_verify_redis_failure(
         "SELECT EXISTS (SELECT 1 FROM identity_access.outbox_events WHERE aggregate_id = $1 AND event_type = 'identity.operator.bootstrap.completed')",
     )
     .bind(operator_id)
-    .fetch_one(&migration_pool)
+    .fetch_one(migration_pool)
     .await
     .expect("operator bootstrap outbox event is queryable");
     assert!(
@@ -92,7 +93,7 @@ pub async fn bootstrap_and_verify_redis_failure(
         );
     let users_before_redis_failure: i64 =
         sqlx::query_scalar("SELECT count(*) FROM identity_access.tenant_users")
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("tenant identity count before Redis failure is queryable");
     let redis_registration_failure = restricted_identity_service
@@ -122,7 +123,7 @@ pub async fn bootstrap_and_verify_redis_failure(
     ));
     let users_after_redis_failure: i64 =
         sqlx::query_scalar("SELECT count(*) FROM identity_access.tenant_users")
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("tenant identity count after Redis failure is queryable");
     assert_eq!(
