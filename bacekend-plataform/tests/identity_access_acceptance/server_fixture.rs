@@ -10,11 +10,10 @@ use redis::aio::ConnectionManager;
 use reqwest::{Client, header};
 use sqlx::PgPool;
 use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    time::Duration,
+    net::{Ipv4Addr, SocketAddr},
 };
 use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
-use tonic::transport::{Channel, Endpoint};
+use tonic::transport::Channel;
 use uuid::Uuid;
 
 pub struct ServerFixture {
@@ -83,8 +82,8 @@ impl ServerFixture {
         let entitlements_client = EntitlementsQuotasClient::connect(format!("http://{grpc_addr}"))
             .await
             .expect("entitlements gRPC channel connects");
-        let mut authorization_client = identity_client.clone();
-        let mut realtime_acceptance_client = realtime_client.clone();
+        let authorization_client = identity_client.clone();
+        let realtime_acceptance_client = realtime_client.clone();
         let http_listener = TcpListener::bind("127.0.0.1:0").await.expect("BFF bind");
         let http_addr = http_listener.local_addr().expect("BFF address");
         let origin = format!("http://localhost:{}", http_addr.port());
