@@ -3,7 +3,7 @@ use platform_contracts::realtime::{
 };
 use reqwest::{Client, StatusCode, header};
 use std::net::SocketAddr;
-use tokio::time::{Duration, timeout};
+use tokio::time::Duration;
 use tonic::transport::Channel;
 
 pub async fn verify(
