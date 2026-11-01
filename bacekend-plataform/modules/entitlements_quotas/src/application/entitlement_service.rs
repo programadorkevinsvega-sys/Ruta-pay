@@ -130,8 +130,8 @@ impl EntitlementService {
         let allowed_environment: String = row.try_get("environment")?;
         let quota_period: String = row.try_get("quota_period")?;
         let (period_start, period_end) = period_bounds(at, &quota_period)?;
-        let consumed: i64 = sqlx::query_scalar("SELECT COALESCE(sum(quantity),0)::bigint FROM entitlements_quotas.usage_ledger WHERE tenant_id=$1 AND capability_key=$2 AND period_start=$3 AND period_end=$4")
-            .bind(tenant).bind(key).bind(period_start).bind(period_end).fetch_one(&mut *tx).await?;
+        let consumed: i64 = sqlx::query_scalar("SELECT COALESCE(sum(quantity),0)::bigint FROM entitlements_quotas.usage_ledger WHERE tenant_id=$1 AND capability_key=$2 AND environment=$3 AND period_start=$4 AND period_end=$5")
+            .bind(tenant).bind(key).bind(environment).bind(period_start).bind(period_end).fetch_one(&mut *tx).await?;
         tx.commit().await?;
         Ok(EntitlementSnapshot {
             tenant_id: tenant,
@@ -221,8 +221,8 @@ impl EntitlementService {
             .bind(lock_key)
             .execute(&mut *tx)
             .await?;
-        let consumed: i64 = sqlx::query_scalar("SELECT COALESCE(sum(quantity),0)::bigint FROM entitlements_quotas.usage_ledger WHERE tenant_id=$1 AND capability_key=$2 AND period_start=$3 AND period_end=$4")
-            .bind(tenant).bind(key).bind(period_start).bind(period_end).fetch_one(&mut *tx).await?;
+        let consumed: i64 = sqlx::query_scalar("SELECT COALESCE(sum(quantity),0)::bigint FROM entitlements_quotas.usage_ledger WHERE tenant_id=$1 AND capability_key=$2 AND environment=$3 AND period_start=$4 AND period_end=$5")
+            .bind(tenant).bind(key).bind(environment).bind(period_start).bind(period_end).fetch_one(&mut *tx).await?;
         let env_allowed = allowed_environment == "all" || allowed_environment == environment;
         if !enabled
             || !env_allowed
