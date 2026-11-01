@@ -92,10 +92,10 @@ pub async fn register(
     assert_eq!(duplicate_slug_event_count, 1);
 
     tenant_registration_races::verify(tenant_registration_races::TenantRegistrationRaceContext {
-        client: client,
-        migration_pool: migration_pool,
+        client,
+        migration_pool,
         http_addr,
-        origin: origin,
+        origin,
         second_session_cookie: &second_session_cookie,
         second_csrf_cookie: &second_csrf_cookie,
     })
