@@ -9,9 +9,7 @@ use platform_contracts::{
 use redis::aio::ConnectionManager;
 use reqwest::{Client, header};
 use sqlx::PgPool;
-use std::{
-    net::{Ipv4Addr, SocketAddr},
-};
+use std::net::{Ipv4Addr, SocketAddr};
 use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
 use tonic::transport::Channel;
 use uuid::Uuid;
