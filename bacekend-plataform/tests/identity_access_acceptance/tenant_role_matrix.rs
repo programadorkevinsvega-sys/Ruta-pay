@@ -1,3 +1,4 @@
+use super::*;
 use platform_contracts::identity_access::{
     AuthorizeTenantOperationRequest, identity_access_client::IdentityAccessClient,
 };
@@ -62,7 +63,7 @@ pub async fn verify(context: TenantRoleMatrixContext<'_>) {
         .bind(role)
         .bind(created_tenant_id)
         .bind(registered_user_id)
-        .execute(&migration_pool)
+        .execute(migration_pool)
         .await
         .expect("tenant membership role can be switched for isolated acceptance");
 
@@ -139,12 +140,12 @@ pub async fn verify(context: TenantRoleMatrixContext<'_>) {
             .post(format!(
                 "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
             ))
-            .header(header::ORIGIN, &origin)
+            .header(header::ORIGIN, origin)
             .header(
                 header::COOKIE,
                 format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
             )
-            .header("x-csrf-token", &csrf_cookie)
+            .header("x-csrf-token", csrf_cookie)
             .json(&serde_json::json!({
                 "name": format!("Role matrix {role}"),
                 "environment": "test",
@@ -174,14 +175,14 @@ pub async fn verify(context: TenantRoleMatrixContext<'_>) {
                 .delete(format!(
                     "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys/{key_id}"
                 ))
-                .header(header::ORIGIN, &origin)
+                .header(header::ORIGIN, origin)
                 .header(
                     header::COOKIE,
                     format!(
                         "payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"
                     ),
                 )
-                .header("x-csrf-token", &csrf_cookie)
+                .header("x-csrf-token", csrf_cookie)
                 .send()
                 .await
                 .expect("authorized role can revoke its own tenant API key");
@@ -193,7 +194,7 @@ pub async fn verify(context: TenantRoleMatrixContext<'_>) {
     )
     .bind(created_tenant_id)
     .bind(registered_user_id)
-    .execute(&migration_pool)
+    .execute(migration_pool)
     .await
     .expect("tenant owner role is restored after the role matrix");
 }
