@@ -12,6 +12,8 @@ mod immutability;
 mod isolation;
 #[path = "phase3_catalog_entitlements_acceptance/jetstream.rs"]
 mod jetstream;
+#[path = "phase3_catalog_entitlements_acceptance/legacy_idempotency.rs"]
+mod legacy_idempotency;
 #[path = "phase3_catalog_entitlements_acceptance/quota.rs"]
 mod quota;
 #[path = "phase3_catalog_entitlements_acceptance/versioning.rs"]
@@ -21,6 +23,7 @@ mod versioning;
 async fn phase_three_real_postgres_limits_replay_concurrency_versioning_rls_and_integrity() {
     let fixture = fixture::TestFixture::new().await;
     quota::verify(&fixture).await;
+    legacy_idempotency::verify(&fixture).await;
     concurrency::verify(&fixture).await;
     versioning::verify(&fixture).await;
     immutability::verify(&fixture).await;
