@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use opentelemetry::{global, propagation::Extractor, trace::TraceContextExt};
+use super::BATCH_SIZE;
+
+use opentelemetry::{global, trace::TraceContextExt};
 use platform_contracts::realtime::RealtimeEvent;
 use sqlx::PgPool;
 use tokio::sync::mpsc;
