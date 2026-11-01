@@ -10,7 +10,7 @@ use std::{
 use tonic::transport::Channel;
 
 use super::operator_revocation_audit::MatrixOperatorCookies;
- 
+
 pub async fn verify(
     client: &Client,
     realtime_client: &mut RealtimeGatewayClient<Channel>,
@@ -89,20 +89,22 @@ pub async fn verify(
     )
     .await;
     super::rate_limit_telemetry::verify(captured_events);
-    super::rate_limit_acceptance::verify(super::rate_limit_acceptance::RateLimitAcceptanceContext {
-        http_addr,
-        origin,
-        default_headers,
-        captured_events,
-        password,
-        operator_password,
-        session_cookie,
-        csrf_cookie,
-        operator_session_cookie,
-        operator_csrf_cookie,
-        legal_identification_number,
-        second_legal_identification_number,
-    })
+    super::rate_limit_acceptance::verify(
+        super::rate_limit_acceptance::RateLimitAcceptanceContext {
+            http_addr,
+            origin,
+            default_headers,
+            captured_events,
+            password,
+            operator_password,
+            session_cookie,
+            csrf_cookie,
+            operator_session_cookie,
+            operator_csrf_cookie,
+            legal_identification_number,
+            second_legal_identification_number,
+        },
+    )
     .await;
     matrix_operator_cookies
 }

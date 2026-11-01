@@ -26,35 +26,35 @@ pub async fn verify(
     created_tenant_id: Uuid,
 ) -> SecondTenantFixture {
     let second_tenant_credentials = second_tenant_registration::register(
-    &client,
-    &migration_pool,
-    http_addr,
-    &origin,
-    &tenant_slug,
-    created_tenant_id,
+        &client,
+        &migration_pool,
+        http_addr,
+        &origin,
+        &tenant_slug,
+        created_tenant_id,
     )
     .await;
     let second_session_cookie = second_tenant_credentials.session_cookie.clone();
     let second_csrf_cookie = second_tenant_credentials.csrf_cookie.clone();
-    let second_legal_identification_number =
-    second_tenant_credentials.legal_identification_number.clone();
+    let second_legal_identification_number = second_tenant_credentials
+        .legal_identification_number
+        .clone();
     let second_tenant_id = second_tenant_isolation::create_and_verify(
-    &client,
-    &migration_pool,
-    &runtime_pool,
-    &jetstream,
-    &event_topology,
-    &stream,
-    &registration_subject,
-    http_addr,
-    &origin,
-    &tenant_slug,
-    created_tenant_id,
-    &second_tenant_credentials,
+        &client,
+        &migration_pool,
+        &runtime_pool,
+        &jetstream,
+        &event_topology,
+        &stream,
+        &registration_subject,
+        http_addr,
+        &origin,
+        &tenant_slug,
+        created_tenant_id,
+        &second_tenant_credentials,
     )
     .await;
-    
-    
+
     SecondTenantFixture {
         credentials: second_tenant_credentials,
         tenant_id: second_tenant_id,

@@ -1,8 +1,8 @@
 use async_nats::jetstream;
-use platform_runtime::event_topology::EventTopology;
 use platform_contracts::realtime::realtime_gateway_client::RealtimeGatewayClient;
-use reqwest::{Client, StatusCode, header};
+use platform_runtime::event_topology::EventTopology;
 use redis::aio::ConnectionManager;
+use reqwest::{Client, StatusCode, header};
 use sqlx::PgPool;
 use std::net::SocketAddr;
 use tonic::transport::Channel;

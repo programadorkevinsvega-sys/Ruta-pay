@@ -51,7 +51,7 @@ pub async fn verify(
         operator_session_api_key_create.status(),
         StatusCode::UNAUTHORIZED
     );
-    
+
     let api_keys_before_invalid_dtos: i64 =
         sqlx::query_scalar("SELECT count(*) FROM identity_access.api_keys")
             .fetch_one(&migration_pool)

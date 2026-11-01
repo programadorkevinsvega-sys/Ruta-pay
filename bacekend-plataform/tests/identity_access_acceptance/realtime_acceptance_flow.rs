@@ -1,6 +1,6 @@
 use async_nats::jetstream;
-use platform_runtime::event_topology::EventTopology;
 use platform_contracts::realtime::realtime_gateway_client::RealtimeGatewayClient;
+use platform_runtime::event_topology::EventTopology;
 use redis::aio::ConnectionManager;
 use reqwest::Client;
 use sqlx::PgPool;
@@ -36,7 +36,11 @@ pub async fn verify(
     )
     .await;
     let replay_cursor = super::tenant_realtime_replay::verify(
-        client, http_addr, session_cookie, csrf_cookie, created_tenant_id,
+        client,
+        http_addr,
+        session_cookie,
+        csrf_cookie,
+        created_tenant_id,
     )
     .await;
     super::platform_realtime_replay::verify(

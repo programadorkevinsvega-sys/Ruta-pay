@@ -1,5 +1,5 @@
-use reqwest::{Client, StatusCode, header};
 use redis::aio::ConnectionManager;
+use reqwest::{Client, StatusCode, header};
 use std::net::SocketAddr;
 
 pub async fn verify(
@@ -44,7 +44,7 @@ pub async fn verify(
             );
         }
     }
-    
+
     let mut isolated_ip_counter = redis_manager.clone();
     let _: u64 = redis::cmd("DEL")
         .arg(&ip_key)

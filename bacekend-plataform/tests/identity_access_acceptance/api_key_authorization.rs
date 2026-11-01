@@ -1,6 +1,5 @@
 use platform_contracts::identity_access::{
-    AuthorizeApiKeyOperationRequest,
-    identity_access_client::IdentityAccessClient,
+    AuthorizeApiKeyOperationRequest, identity_access_client::IdentityAccessClient,
 };
 use sqlx::PgPool;
 use tonic::{Code, transport::Channel};

@@ -1,6 +1,5 @@
 use platform_contracts::realtime::{
-    SubscribeEventsRequest,
-    realtime_gateway_client::RealtimeGatewayClient,
+    SubscribeEventsRequest, realtime_gateway_client::RealtimeGatewayClient,
 };
 use reqwest::{Client, StatusCode, header};
 use std::net::SocketAddr;
@@ -30,7 +29,7 @@ pub async fn verify(
         .await
         .expect("authorized operator can subscribe to platform realtime")
         .into_inner();
-    
+
     let operator_logout = client
         .delete(format!("http://{http_addr}/v1/platform/identity/session"))
         .header(header::ORIGIN, &origin)

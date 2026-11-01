@@ -20,91 +20,91 @@ pub async fn verify(
     registered_user_id: Uuid,
 ) {
     api_key_dto_validation::verify(
-    &client,
-    &migration_pool,
-    http_addr,
-    &origin,
-    &session_cookie,
-    &csrf_cookie,
-    &operator_session_cookie,
-    &operator_csrf_cookie,
-    created_tenant_id,
+        &client,
+        &migration_pool,
+        http_addr,
+        &origin,
+        &session_cookie,
+        &csrf_cookie,
+        &operator_session_cookie,
+        &operator_csrf_cookie,
+        created_tenant_id,
     )
     .await;
-    
+
     let (api_key_id, api_key_secret, api_key_created) = api_key_creation::verify(
-    &client,
-    &migration_pool,
-    http_addr,
-    &origin,
-    &session_cookie,
-    &csrf_cookie,
-    created_tenant_id,
+        &client,
+        &migration_pool,
+        http_addr,
+        &origin,
+        &session_cookie,
+        &csrf_cookie,
+        created_tenant_id,
     )
     .await;
-    
+
     api_key_authorization::verify_allowed(
-    &mut authorization_client,
-    created_tenant_id,
-    api_key_id,
-    &api_key_secret,
+        &mut authorization_client,
+        created_tenant_id,
+        api_key_id,
+        &api_key_secret,
     )
     .await;
     phase3_catalog::configure(
-    &client,
-    http_addr,
-    &origin,
-    &operator_session_cookie,
-    &operator_csrf_cookie,
-    created_tenant_id,
+        &client,
+        http_addr,
+        &origin,
+        &operator_session_cookie,
+        &operator_csrf_cookie,
+        created_tenant_id,
     )
     .await;
     phase3_entitlements::verify(phase3_entitlements::EntitlementAcceptanceContext {
-    client: &client,
-    http_addr,
-    grpc_addr,
-    origin: &origin,
-    session_cookie: &session_cookie,
-    csrf_cookie: &csrf_cookie,
-    tenant_id: created_tenant_id,
-    api_key_id,
-    api_key_secret,
-    authorization_client: authorization_client.clone(),
+        client: &client,
+        http_addr,
+        grpc_addr,
+        origin: &origin,
+        session_cookie: &session_cookie,
+        csrf_cookie: &csrf_cookie,
+        tenant_id: created_tenant_id,
+        api_key_id,
+        api_key_secret,
+        authorization_client: authorization_client.clone(),
     })
     .await;
     api_key_authorization::verify_denials(
-    &mut authorization_client,
-    &migration_pool,
-    created_tenant_id,
-    api_key_id,
-    &api_key_secret,
+        &mut authorization_client,
+        &migration_pool,
+        created_tenant_id,
+        api_key_id,
+        &api_key_secret,
     )
     .await;
     api_key_lifecycle::verify(
-    &client,
-    &mut authorization_client,
-    &migration_pool,
-    http_addr,
-    &origin,
-    &session_cookie,
-    &csrf_cookie,
-    created_tenant_id,
-    api_key_id,
-    &api_key_secret,
-    &api_key_created,
+        &client,
+        &mut authorization_client,
+        &migration_pool,
+        http_addr,
+        &origin,
+        &session_cookie,
+        &csrf_cookie,
+        created_tenant_id,
+        api_key_id,
+        &api_key_secret,
+        &api_key_created,
     )
     .await;
-    
+
     tenant_role_matrix::verify(tenant_role_matrix::TenantRoleMatrixContext {
-    client: &client,
-    migration_pool: &migration_pool,
-    authorization_client: &mut authorization_client,
-    http_addr,
-    session_cookie: &session_cookie,
-    csrf_cookie: &csrf_cookie,
-    origin: &origin,
-    created_tenant_id,
-    registered_user_id,
+        client: &client,
+        migration_pool: &migration_pool,
+        authorization_client: &mut authorization_client,
+        http_addr,
+        session_cookie: &session_cookie,
+        csrf_cookie: &csrf_cookie,
+        origin: &origin,
+        created_tenant_id,
+        registered_user_id,
     })
     .await;
 }

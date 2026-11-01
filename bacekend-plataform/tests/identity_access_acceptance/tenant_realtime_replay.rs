@@ -52,7 +52,7 @@ pub async fn verify(
         cursor_replay_body["events"].as_array().map(Vec::len),
         Some(0)
     );
-    
+
     // A cursor ahead of the durable scope cursor is not an empty page: it is
     // an invalid checkpoint and must be rejected so clients do not skip events.
     let future_cursor = client
@@ -69,7 +69,7 @@ pub async fn verify(
         .await
         .expect("future realtime cursor receives a classified response");
     assert_eq!(future_cursor.status(), StatusCode::RANGE_NOT_SATISFIABLE);
-    
+
     for invalid_cursor in [
         "-1",
         "not-a-number",
@@ -115,7 +115,7 @@ pub async fn verify(
         .await
         .expect("malformed realtime tenant scope receives an HTTP response");
     assert_eq!(malformed_realtime_tenant.status(), StatusCode::BAD_REQUEST);
-    
+
     let foreign_tenant_replay = client
         .get(format!(
             "http://{http_addr}/v1/realtime/events?audience=tenant&tenant_id={}&cursor=0",

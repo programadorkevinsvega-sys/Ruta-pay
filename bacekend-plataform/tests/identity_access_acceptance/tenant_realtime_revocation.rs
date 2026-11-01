@@ -1,6 +1,5 @@
 use platform_contracts::realtime::{
-    SubscribeEventsRequest,
-    realtime_gateway_client::RealtimeGatewayClient,
+    SubscribeEventsRequest, realtime_gateway_client::RealtimeGatewayClient,
 };
 use reqwest::{Client, StatusCode, header};
 use sqlx::PgPool;
@@ -32,7 +31,7 @@ pub async fn verify(
         .await
         .expect("authorized tenant can subscribe to its realtime stream")
         .into_inner();
-    
+
     let logout = client
         .delete(format!("http://{http_addr}/v1/identity/session"))
         .header(header::ORIGIN, &origin)
