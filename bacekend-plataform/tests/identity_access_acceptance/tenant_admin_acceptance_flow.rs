@@ -19,6 +19,8 @@ pub async fn verify(
     operator_id: Uuid,
     created_tenant_id: Uuid,
     registered_user_id: Uuid,
+    session_cookie: &str,
+    csrf_cookie: &str,
     second_session_cookie: &str,
     second_csrf_cookie: &str,
     second_tenant_id: Uuid,
@@ -112,7 +114,7 @@ pub async fn verify(
         second_csrf_cookie: &second_csrf_cookie,
         second_tenant_id,
         created_tenant_id,
-        tenant_status_version: tenant_admin_status_body["status_version"].clone(),
+        tenant_status_version,
     })
     .await;
 
