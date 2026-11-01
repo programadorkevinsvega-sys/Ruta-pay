@@ -65,8 +65,8 @@ pub async fn setup(environment: &IdentityEnvironment) -> TenantOnboardingFixture
         migration_pool,
         http_addr,
         origin,
-        session_cookie,
-        csrf_cookie,
+        &session_cookie,
+        &csrf_cookie,
     )
     .await;
     let legal_identification_number = tenant_registration.legal_identification_number;
@@ -78,10 +78,10 @@ pub async fn setup(environment: &IdentityEnvironment) -> TenantOnboardingFixture
         client,
         http_addr,
         origin,
-        session_cookie,
-        csrf_cookie,
-        operator_session_cookie,
-        operator_csrf_cookie,
+        &session_cookie,
+        &csrf_cookie,
+        &operator_session_cookie,
+        &operator_csrf_cookie,
         created_tenant_id,
     )
     .await;
@@ -90,19 +90,19 @@ pub async fn setup(environment: &IdentityEnvironment) -> TenantOnboardingFixture
         migration_pool,
         http_addr,
         origin,
-        operator_session_cookie,
-        operator_csrf_cookie,
+        &operator_session_cookie,
+        &operator_csrf_cookie,
         created_tenant_id,
-        tenant_body,
+        &tenant_body,
     )
     .await;
     TenantOnboardingFixture {
-        session_cookie,
-        csrf_cookie,
+        &session_cookie,
+        &csrf_cookie,
         traceparent,
         ip_key,
-        operator_session_cookie,
-        operator_csrf_cookie,
+        &operator_session_cookie,
+        &operator_csrf_cookie,
         legal_identification_number,
         created_tenant_id,
         tenant_body,
