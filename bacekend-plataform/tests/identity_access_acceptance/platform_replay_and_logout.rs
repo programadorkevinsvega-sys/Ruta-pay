@@ -1,6 +1,7 @@
 use reqwest::{Client, StatusCode, header};
 use sqlx::PgPool;
 use std::net::SocketAddr;
+use uuid::Uuid;
 
 pub async fn verify(
     client: &Client,
@@ -8,6 +9,8 @@ pub async fn verify(
     http_addr: SocketAddr,
     matrix_operator_session_cookie: &str,
     matrix_operator_csrf_cookie: &str,
+    runtime_pool: &PgPool,
+    created_tenant_id: Uuid,
 ) {
     // A retained-journal gap must surface as a conflict at the HTTP edge,
     // not as a successful partial replay that silently skips an old event.
@@ -85,4 +88,5 @@ pub async fn verify(
         revoked_operator_tenant_list.status(),
         StatusCode::UNAUTHORIZED
     );
+    super::outbox_leases::verify(migration_pool, runtime_pool, created_tenant_id).await;
 }
