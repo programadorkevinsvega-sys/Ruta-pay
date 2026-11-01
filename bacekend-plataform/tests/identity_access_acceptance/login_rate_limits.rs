@@ -47,7 +47,7 @@ pub async fn verify(
 
     let mut isolated_ip_counter = redis_manager.clone();
     let _: u64 = redis::cmd("DEL")
-        .arg(&ip_key)
+        .arg(ip_key)
         .query_async(&mut isolated_ip_counter)
         .await
         .expect("test-owned per-IP counter is reset before threshold acceptance");
