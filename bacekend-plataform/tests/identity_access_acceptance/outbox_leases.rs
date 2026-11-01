@@ -1,3 +1,4 @@
+use super::*;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -9,14 +10,14 @@ pub async fn verify(migration_pool: &PgPool, runtime_pool: &PgPool, created_tena
             sqlx::query(
                 "UPDATE identity_access.outbox_events SET available_at=now()+interval '1 hour' WHERE published_at IS NULL",
             )
-            .execute(&migration_pool)
+            .execute(migration_pool)
             .await
             .expect("identity pending events are deferred for lease acceptance");
         } else {
             sqlx::query(
                 "UPDATE tenant_registry.outbox_events SET available_at=now()+interval '1 hour' WHERE published_at IS NULL",
             )
-            .execute(&migration_pool)
+            .execute(migration_pool)
             .await
             .expect("tenant pending events are deferred for lease acceptance");
         }
@@ -38,13 +39,13 @@ pub async fn verify(migration_pool: &PgPool, runtime_pool: &PgPool, created_tena
             .bind(serde_json::json!({"tenant_id": created_tenant_id}))
             .bind(format!("corr_{schema}_expired_lease"))
             .bind(stale_lease)
-            .execute(&migration_pool)
+            .execute(migration_pool)
             .await
             .expect("expired synthetic Outbox lease is inserted");
         let (claimed_event_id, new_lease) = if schema == "identity_access" {
             let claimed =
                 platform_identity_access::infrastructure::persistence::claim_outbox_events(
-                    &runtime_pool,
+                    runtime_pool,
                     32,
                 )
                 .await
@@ -58,7 +59,7 @@ pub async fn verify(migration_pool: &PgPool, runtime_pool: &PgPool, created_tena
         } else {
             let claimed =
                 platform_tenant_registry::infrastructure::persistence::claim_outbox_events(
-                    &runtime_pool,
+                    runtime_pool,
                     32,
                 )
                 .await
@@ -74,7 +75,7 @@ pub async fn verify(migration_pool: &PgPool, runtime_pool: &PgPool, created_tena
         assert_ne!(new_lease, stale_lease);
         let old_worker_acknowledged = if schema == "identity_access" {
             platform_identity_access::infrastructure::persistence::mark_outbox_published(
-                &runtime_pool,
+                runtime_pool,
                 event_id,
                 stale_lease,
             )
@@ -82,7 +83,7 @@ pub async fn verify(migration_pool: &PgPool, runtime_pool: &PgPool, created_tena
             .expect("identity stale lease acknowledgement is checked")
         } else {
             platform_tenant_registry::infrastructure::persistence::mark_outbox_published(
-                &runtime_pool,
+                runtime_pool,
                 event_id,
                 stale_lease,
             )
@@ -92,7 +93,7 @@ pub async fn verify(migration_pool: &PgPool, runtime_pool: &PgPool, created_tena
         assert!(!old_worker_acknowledged, "stale {schema} lease cannot ack");
         let new_worker_acknowledged = if schema == "identity_access" {
             platform_identity_access::infrastructure::persistence::mark_outbox_published(
-                &runtime_pool,
+                runtime_pool,
                 event_id,
                 new_lease,
             )
@@ -100,7 +101,7 @@ pub async fn verify(migration_pool: &PgPool, runtime_pool: &PgPool, created_tena
             .expect("identity current lease acknowledgement is checked")
         } else {
             platform_tenant_registry::infrastructure::persistence::mark_outbox_published(
-                &runtime_pool,
+                runtime_pool,
                 event_id,
                 new_lease,
             )
@@ -113,14 +114,14 @@ pub async fn verify(migration_pool: &PgPool, runtime_pool: &PgPool, created_tena
                 "SELECT attempts FROM identity_access.outbox_events WHERE event_id=$1",
             )
             .bind(event_id)
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
         } else {
             sqlx::query_scalar(
                 "SELECT attempts FROM tenant_registry.outbox_events WHERE event_id=$1",
             )
             .bind(event_id)
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
         }
         .expect("reclaimed Outbox attempt count is queryable");
