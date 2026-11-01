@@ -2033,7 +2033,9 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         }))
         .send()
         .await
-        .expect("tenant owner can create an API key with payment and quota scopes through BFF and gRPC");
+        .expect(
+            "tenant owner can create an API key with payment and quota scopes through BFF and gRPC",
+        );
     assert_eq!(api_key_creation.status(), StatusCode::CREATED);
     let api_key_created: serde_json::Value = api_key_creation
         .json()
