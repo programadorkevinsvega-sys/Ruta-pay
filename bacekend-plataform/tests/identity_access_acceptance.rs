@@ -13,6 +13,7 @@ mod phase3_catalog;
 #[path = "identity_access_acceptance/phase3_entitlements.rs"]
 mod phase3_entitlements;
 mod rate_limit_acceptance;
+mod rate_limit_telemetry;
 mod secondary_tenant_lifecycle;
 mod session_security;
 mod tenant_dto_validation;
@@ -210,7 +211,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("entitlements gRPC channel connects");
     let mut authorization_client = identity_client.clone();
-    let realtime_acceptance_client = realtime_client.clone();
+    let mut realtime_acceptance_client = realtime_client.clone();
     let http_listener = TcpListener::bind("127.0.0.1:0").await.expect("BFF bind");
     let http_addr = http_listener.local_addr().expect("BFF address");
     let origin = format!("http://localhost:{}", http_addr.port());
@@ -1689,48 +1690,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     )
     .await;
 
-    let rate_limit_events = captured_events.lock().expect("event capture lock").clone();
-    let rate_limit_module_failure = rate_limit_events
-        .iter()
-        .find(|event| {
-            event
-                .get("event.name")
-                .is_some_and(|name| name.contains("grpc.module.request.failed"))
-                && event
-                    .get("error_code")
-                    .is_some_and(|code| code.contains("identity_rate_limited"))
-                && event
-                    .get("correlation_id")
-                    .is_some_and(|value| value.contains("corr_identity_rate_limit_8"))
-        })
-        .expect("causal rate limit event is recorded");
-    let rate_limit_http_closure = rate_limit_events
-        .iter()
-        .find(|event| {
-            event
-                .get("event.name")
-                .is_some_and(|name| name.contains("http.request.completed"))
-                && event
-                    .get("correlation_id")
-                    .is_some_and(|value| value.contains("corr_identity_rate_limit_8"))
-        })
-        .expect("rate limit HTTP closure event is recorded");
-    for field in ["correlation_id", "trace_id"] {
-        assert_eq!(
-            rate_limit_module_failure.get(field),
-            rate_limit_http_closure.get(field)
-        );
-    }
-    assert!(
-        rate_limit_http_closure
-            .get("error_code")
-            .is_some_and(|code| code.contains("identity_rate_limited"))
-    );
-    assert!(
-        rate_limit_http_closure
-            .get("error_category")
-            .is_some_and(|category| category.contains("rate_limit"))
-    );
+    rate_limit_telemetry::verify(&captured_events);
 
     rate_limit_acceptance::verify(rate_limit_acceptance::RateLimitAcceptanceContext {
         http_addr,
