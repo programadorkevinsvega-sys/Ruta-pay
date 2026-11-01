@@ -36,8 +36,8 @@ pub async fn list_entitlements(
         );
     }
     let (Some(session), Some(csrf)) = (
-        identity::cookie_value(&headers, TENANT_SESSION),
-        identity::cookie_value(&headers, TENANT_CSRF),
+        identity::cookie_value(&headers, identity::SESSION_COOKIE),
+        identity::cookie_value(&headers, identity::CSRF_COOKIE),
     ) else {
         return identity::error(
             StatusCode::UNAUTHORIZED,
@@ -98,8 +98,8 @@ pub async fn get_entitlement(
         );
     }
     let (Some(session), Some(csrf)) = (
-        identity::cookie_value(&headers, TENANT_SESSION),
-        identity::cookie_value(&headers, TENANT_CSRF),
+        identity::cookie_value(&headers, identity::SESSION_COOKIE),
+        identity::cookie_value(&headers, identity::CSRF_COOKIE),
     ) else {
         return identity::error(
             StatusCode::UNAUTHORIZED,
