@@ -94,9 +94,9 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Tests
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
       - uses: actions/setup-node@v7
         with:
           node-version: 26.13.0
