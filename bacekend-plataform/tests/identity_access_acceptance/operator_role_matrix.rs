@@ -1,3 +1,4 @@
+use super::*;
 use platform_contracts::identity_access::{
     AuthorizeOperatorOperationRequest, identity_access_client::IdentityAccessClient,
 };
@@ -59,7 +60,7 @@ pub async fn verify(context: OperatorRoleMatrixContext<'_>) {
         sqlx::query("UPDATE identity_access.operator_users SET role=$1 WHERE id=$2")
             .bind(role)
             .bind(operator_id)
-            .execute(&migration_pool)
+            .execute(migration_pool)
             .await
             .expect("operator role can be switched for isolated acceptance");
         for permission in [
