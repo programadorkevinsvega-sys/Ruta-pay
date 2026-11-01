@@ -1,3 +1,4 @@
+use super::*;
 use reqwest::{Client, StatusCode, header};
 use sqlx::PgPool;
 use std::net::SocketAddr;
@@ -32,7 +33,7 @@ pub async fn verify(context: TenantStatusRaceContext<'_>) {
     // state transition wins the row lock.
     sqlx::query("UPDATE identity_access.operator_users SET role='platform_owner' WHERE id=$1")
         .bind(operator_id)
-        .execute(&migration_pool)
+        .execute(migration_pool)
         .await
         .expect("platform owner role is restored for concurrent lifecycle acceptance");
     let race_status_url =
@@ -43,7 +44,7 @@ pub async fn verify(context: TenantStatusRaceContext<'_>) {
     let (suspend_race, close_race) = tokio::join!(
         client
             .post(&race_status_url)
-            .header(header::ORIGIN, &origin)
+            .header(header::ORIGIN, origin)
             .header(header::COOKIE, &race_cookie)
             .header("x-csrf-token", &matrix_operator_csrf_cookie)
             .header("x-correlation-id", "corr_tenant_status_race_suspend")
@@ -55,7 +56,7 @@ pub async fn verify(context: TenantStatusRaceContext<'_>) {
             .send(),
         client
             .post(&race_status_url)
-            .header(header::ORIGIN, &origin)
+            .header(header::ORIGIN, origin)
             .header(header::COOKIE, &race_cookie)
             .header("x-csrf-token", &matrix_operator_csrf_cookie)
             .header("x-correlation-id", "corr_tenant_status_race_close")
@@ -91,7 +92,7 @@ pub async fn verify(context: TenantStatusRaceContext<'_>) {
     let race_final_state: (String, i64) =
         sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
             .bind(created_tenant_id)
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("concurrent lifecycle final state is queryable");
     assert!(
@@ -104,7 +105,7 @@ pub async fn verify(context: TenantStatusRaceContext<'_>) {
     )
     .bind(created_tenant_id)
     .bind(current_status_version + 1)
-    .fetch_one(&migration_pool)
+    .fetch_one(migration_pool)
     .await
     .expect("single concurrent status-history row is queryable");
     assert_eq!(race_history_count, 1);
@@ -113,7 +114,7 @@ pub async fn verify(context: TenantStatusRaceContext<'_>) {
     )
     .bind(created_tenant_id)
     .bind(current_status_version + 1)
-    .fetch_one(&migration_pool)
+    .fetch_one(migration_pool)
     .await
     .expect("single concurrent status Outbox event is queryable");
     assert_eq!(race_outbox_count, 1);
