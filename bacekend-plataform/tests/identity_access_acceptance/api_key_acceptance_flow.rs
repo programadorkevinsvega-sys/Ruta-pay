@@ -61,12 +61,12 @@ pub async fn verify(
     )
     .await;
     phase3_entitlements::verify(phase3_entitlements::EntitlementAcceptanceContext {
-        client: client,
+        client,
         http_addr,
         grpc_addr,
-        origin: origin,
-        session_cookie: session_cookie,
-        csrf_cookie: csrf_cookie,
+        origin,
+        session_cookie,
+        csrf_cookie,
         tenant_id: created_tenant_id,
         api_key_id,
         api_key_secret: &api_key_secret,
@@ -97,13 +97,13 @@ pub async fn verify(
     .await;
 
     tenant_role_matrix::verify(tenant_role_matrix::TenantRoleMatrixContext {
-        client: client,
-        migration_pool: migration_pool,
-        authorization_client: authorization_client,
+        client,
+        migration_pool,
+        authorization_client,
         http_addr,
-        session_cookie: session_cookie,
-        csrf_cookie: csrf_cookie,
-        origin: origin,
+        session_cookie,
+        csrf_cookie,
+        origin,
         created_tenant_id,
         registered_user_id,
     })
