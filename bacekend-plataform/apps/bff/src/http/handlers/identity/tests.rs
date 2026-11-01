@@ -1,9 +1,7 @@
 use super::*;
 
-#[cfg(test)]
-mod tests {
-    use super::valid_origin;
-    use axum::http::{HeaderMap, HeaderValue, header};
+use super::valid_origin;
+use axum::http::{HeaderMap, HeaderValue, header};
 
     fn origin_headers(origin: &str, host: &str) -> HeaderMap {
         let mut headers = HeaderMap::new();
@@ -47,4 +45,3 @@ mod tests {
             "example.test",
         )));
     }
-}
