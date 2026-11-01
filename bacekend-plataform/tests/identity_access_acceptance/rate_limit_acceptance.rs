@@ -1,3 +1,4 @@
+use super::*;
 use reqwest::{Client, StatusCode, header};
 use std::{
     collections::HashMap,
@@ -57,7 +58,7 @@ pub async fn verify(context: RateLimitAcceptanceContext<'_>) {
     for attempt in 0..5 {
         let response = rate_limit_client
             .post(format!("http://{http_addr}/v1/identity/register"))
-            .header(header::ORIGIN, &origin)
+            .header(header::ORIGIN, origin)
             .json(&serde_json::json!({
                 "email": limited_email,
                 "password": "long-lowercase-password"
@@ -73,7 +74,7 @@ pub async fn verify(context: RateLimitAcceptanceContext<'_>) {
     }
     let account_limited = rate_limit_client
         .post(format!("http://{http_addr}/v1/identity/register"))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .json(&serde_json::json!({
             "email": limited_email,
             "password": "long-lowercase-password"
@@ -87,7 +88,7 @@ pub async fn verify(context: RateLimitAcceptanceContext<'_>) {
     for attempt in 6..20 {
         let response = rate_limit_client
             .post(format!("http://{http_addr}/v1/identity/register"))
-            .header(header::ORIGIN, &origin)
+            .header(header::ORIGIN, origin)
             .json(&serde_json::json!({
                 "email": format!("ip_limit_{attempt}_{}@example.test", Uuid::new_v4().simple()),
                 "password": "long-lowercase-password"
@@ -103,7 +104,7 @@ pub async fn verify(context: RateLimitAcceptanceContext<'_>) {
     }
     let ip_limited = rate_limit_client
         .post(format!("http://{http_addr}/v1/identity/register"))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .json(&serde_json::json!({
             "email": format!("ip_limit_final_{}@example.test", Uuid::new_v4().simple()),
             "password": "long-lowercase-password"
@@ -128,22 +129,22 @@ pub async fn verify(context: RateLimitAcceptanceContext<'_>) {
     assert!(
         !event_values
             .iter()
-            .any(|value| value.contains(&session_cookie))
+            .any(|value| value.contains(session_cookie))
     );
     assert!(
         !event_values
             .iter()
-            .any(|value| value.contains(&csrf_cookie))
+            .any(|value| value.contains(csrf_cookie))
     );
     assert!(
         !event_values
             .iter()
-            .any(|value| value.contains(&operator_session_cookie))
+            .any(|value| value.contains(operator_session_cookie))
     );
     assert!(
         !event_values
             .iter()
-            .any(|value| value.contains(&operator_csrf_cookie))
+            .any(|value| value.contains(operator_csrf_cookie))
     );
     assert!(
         !event_values
