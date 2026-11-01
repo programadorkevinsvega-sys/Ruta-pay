@@ -1,3 +1,4 @@
+use super::*;
 use platform_contracts::identity_access::{
     AuthorizeApiKeyOperationRequest, identity_access_client::IdentityAccessClient,
 };
@@ -60,12 +61,12 @@ pub async fn verify(
         .delete(format!(
             "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys/{api_key_id}"
         ))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
         )
-        .header("x-csrf-token", &csrf_cookie)
+        .header("x-csrf-token", csrf_cookie)
         .header("x-correlation-id", "corr_api_key_revoke")
         .send()
         .await
@@ -75,7 +76,7 @@ pub async fn verify(
         .delete(format!(
             "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys/{api_key_id}"
         ))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
@@ -89,7 +90,7 @@ pub async fn verify(
     )
     .bind(created_tenant_id)
     .bind(api_key_id)
-    .fetch_one(&migration_pool)
+    .fetch_one(migration_pool)
     .await
     .expect("revocation persists in PostgreSQL");
     assert_eq!(revoked_key_status, "revoked");
@@ -111,7 +112,7 @@ pub async fn verify(
             "SELECT EXISTS (SELECT 1 FROM identity_access.audit_events WHERE resource_id=$1 AND action='api_key.created' AND outcome='completed') AND EXISTS (SELECT 1 FROM identity_access.audit_events WHERE resource_id=$1 AND action='api_key.revoked' AND outcome='completed')",
         )
         .bind(api_key_id)
-        .fetch_one(&migration_pool)
+        .fetch_one(migration_pool)
         .await
         .expect("API key creation and revocation are audited");
     assert!(api_key_audit);
