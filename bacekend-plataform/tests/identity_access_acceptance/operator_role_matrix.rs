@@ -1,6 +1,5 @@
 use platform_contracts::identity_access::{
-    AuthorizeOperatorOperationRequest,
-    identity_access_client::IdentityAccessClient,
+    AuthorizeOperatorOperationRequest, identity_access_client::IdentityAccessClient,
 };
 use reqwest::{Client, StatusCode, header};
 use sqlx::PgPool;
