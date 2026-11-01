@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 axum.workspace = true
+chrono.workspace = true
 metrics.workspace = true
 opentelemetry.workspace = true
 payvia-observability = { path = "../../../crates/observability" }
