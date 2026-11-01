@@ -1,9 +1,7 @@
 use chrono::Utc;
 use platform_contracts::{
     entitlements_quotas::{ConsumeQuotaRequest, ConsumeQuotaResponse},
-    identity_access::{
-        AuthorizeApiKeyOperationRequest, identity_access_client::IdentityAccessClient,
-    },
+    identity_access::AuthorizeApiKeyOperationRequest,
 };
 use tonic::{Request, Response, Status};
 
