@@ -131,7 +131,7 @@ pub(super) async fn verify(context: TenantEventDeliveryContext<'_>) -> TenantEve
         registration_event_id.to_string()
     );
     assert!(
-        !String::from_utf8_lossy(&event_message.payload).contains(&legal_identification_number)
+        !String::from_utf8_lossy(&event_message.payload).contains(legal_identification_number)
     );
     let membership_created = platform_identity_access::infrastructure::tenant_membership_consumer::consume_tenant_registered(
         runtime_pool,
