@@ -84,6 +84,8 @@ La implementación se ejecuta conforme a la matriz previa de [`docs/phase-2/acce
 - [ ] API administrativa de catálogo y consulta tenant de su plan/consumo sin filtrar datos internos.
 - [ ] Contrato de entitlement/autorización consumible por gateway mediante gRPC.
 
+Acta y matriz reproducible: [`docs/phase-3/acceptance.md`](docs/phase-3/acceptance.md). La aceptación añade intentos UPDATE/DELETE contra triggers de inmutabilidad, fallos forzados de Outbox para comprobar rollback de precio/ledger/auditoría y entrega real a JetStream con validación de `event_id`, `event_type` y `correlation_id`. Las nuevas pruebas quedan pendientes de ejecución CI sobre el HEAD actualizado; las casillas de esta fase no se marcan hasta que el run final sea verde.
+
 **Salida:** pruebas reales cubren límites exactos, excedentes, concurrencia, cambio versionado de plan, fechas y aislamiento.
 
 ## Fase 4 — Suscripciones y facturación de uso Payvia
