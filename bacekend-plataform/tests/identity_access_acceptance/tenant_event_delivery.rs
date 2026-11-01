@@ -24,6 +24,9 @@ pub(super) struct TenantEventDeliveryContext<'a> {
 
 pub(super) struct TenantEventDeliveryResult {
     pub(super) stream: jetstream::stream::Stream,
+    pub(super) event_payload: Vec<u8>,
+    pub(super) registration_event_id: Uuid,
+    pub(super) registration_subject: String,
     pub(super) event_stream_cleanup: EventStreamCleanup,
     pub(super) isolated_stream_cleanup: EventStreamCleanup,
 }
@@ -178,6 +181,9 @@ pub(super) async fn verify(context: TenantEventDeliveryContext<'_>) -> TenantEve
     assert_eq!(memberships_body["memberships"][0]["role"], "tenant_owner");
     TenantEventDeliveryResult {
         stream,
+        event_payload: event_message.payload.to_vec(),
+        registration_event_id,
+        registration_subject,
         event_stream_cleanup,
         isolated_stream_cleanup,
     }
