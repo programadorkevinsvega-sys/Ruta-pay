@@ -1,10 +1,10 @@
 use platform_contracts::{
-    catalog_pricing::{GetPriceVersionRequest, catalog_pricing_client::CatalogPricingClient},
+    catalog_pricing::GetPriceVersionRequest,
     entitlements_quotas::{
-        AssignTenantPlanRequest, AssignTenantPlanResponse, CapabilityInput,
+        AssignTenantPlanRequest, AssignTenantPlanResponse,
         SetPlanCapabilitiesRequest, SetPlanCapabilitiesResponse,
     },
-    tenant_registry::{GetTenantRequest, tenant_registry_client::TenantRegistryClient},
+    tenant_registry::GetTenantRequest,
 };
 use tonic::{Request, Response, Status};
 
