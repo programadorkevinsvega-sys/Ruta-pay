@@ -72,8 +72,8 @@ pub async fn verify(context: OperatorRoleMatrixContext<'_>) {
         ] {
             let decision = authorization_client
                 .authorize_operator_operation(AuthorizeOperatorOperationRequest {
-                    session_token: matrix_operator_session_cookie.clone(),
-                    csrf_token: matrix_operator_csrf_cookie.clone(),
+                    session_token: matrix_operator_session_cookie.to_owned(),
+                    csrf_token: matrix_operator_csrf_cookie.to_owned(),
                     permission: permission.to_owned(),
                     correlation_id: format!("corr_operator_role_{role}_{permission}"),
                 })
