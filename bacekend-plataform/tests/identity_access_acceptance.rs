@@ -470,12 +470,14 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let grpc_pool = runtime_pool.clone();
     let grpc_task = tokio::spawn(platform_runtime::module_config::serve(
         grpc_listener,
-        grpc_pool,
-        redis_manager.clone(),
-        redis_client,
-        module_identity_client,
-        module_catalog_client,
-        module_tenant_client,
+        platform_runtime::module_config::RuntimeModuleDependencies {
+            pool: grpc_pool,
+            redis: redis_manager.clone(),
+            redis_client,
+            identity_client: module_identity_client,
+            catalog_client: module_catalog_client,
+            tenant_client: module_tenant_client,
+        },
         async move {
             let _ = grpc_signal.await;
         },
