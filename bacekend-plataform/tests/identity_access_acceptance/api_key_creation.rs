@@ -1,4 +1,3 @@
-use super::*;
 use reqwest::{Client, StatusCode, header};
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
