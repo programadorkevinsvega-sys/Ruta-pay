@@ -3,16 +3,22 @@ use sqlx::PgPool;
 use std::net::SocketAddr;
 use uuid::Uuid;
 
-pub async fn verify(
-    client: &Client,
-    migration_pool: &PgPool,
-    http_addr: SocketAddr,
-    origin: &str,
-    matrix_operator_session_cookie: &str,
-    matrix_operator_csrf_cookie: &str,
-    runtime_pool: &PgPool,
-    created_tenant_id: Uuid,
-) {
+pub struct PlatformReplayAndLogoutContext<'a> {
+    pub client: &'a Client,
+    pub migration_pool: &'a PgPool,
+    pub http_addr: SocketAddr,
+    pub origin: &'a str,
+    pub matrix_operator_session_cookie: &'a str,
+    pub matrix_operator_csrf_cookie: &'a str,
+    pub runtime_pool: &'a PgPool,
+    pub created_tenant_id: Uuid,
+}
+
+pub async fn verify(context: PlatformReplayAndLogoutContext<'_>) {
+    let PlatformReplayAndLogoutContext {
+        client, migration_pool, http_addr, origin, matrix_operator_session_cookie,
+        matrix_operator_csrf_cookie, runtime_pool, created_tenant_id,
+    } = context;
     // A retained-journal gap must surface as a conflict at the HTTP edge,
     // not as a successful partial replay that silently skips an old event.
     let first_platform_event: Uuid =
