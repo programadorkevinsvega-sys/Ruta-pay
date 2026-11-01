@@ -1,3 +1,4 @@
+use super::*;
 use async_nats::jetstream;
 use platform_contracts::realtime::realtime_gateway_client::RealtimeGatewayClient;
 use platform_runtime::event_topology::EventTopology;
@@ -8,7 +9,7 @@ use std::net::SocketAddr;
 use tonic::transport::Channel;
 
 pub async fn verify(
-    stream: &jetstream::stream::Stream,
+    stream: jetstream::stream::Stream,
     event_topology: &EventTopology,
     runtime_pool: &PgPool,
     realtime_redis: &mut ConnectionManager,
@@ -26,7 +27,7 @@ pub async fn verify(
         .await
         .expect("JetStream durably stores administrative status events");
     platform_realtime::infrastructure::grpc::realtime_gateway_api::persist_and_publish(
-        &runtime_pool,
+        runtime_pool,
         &mut realtime_redis,
         &status_event_message.payload,
     )
