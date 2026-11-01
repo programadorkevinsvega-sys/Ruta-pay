@@ -2,12 +2,12 @@ use chrono::{DateTime, Utc};
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::domain::entitlement::{Entitlement, EntitlementError};
 use super::{
     EntitlementService, EntitlementServiceError,
     snapshot::EntitlementSnapshot,
     support::{period_bounds, set_tenant_context, validate_environment},
 };
+use crate::domain::entitlement::{Entitlement, EntitlementError};
 
 impl EntitlementService {
     pub async fn evaluate(
