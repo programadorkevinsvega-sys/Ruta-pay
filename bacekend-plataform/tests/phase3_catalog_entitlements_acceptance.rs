@@ -1,7 +1,9 @@
 use chrono::{Duration, Utc};
 use platform_catalog_pricing::application::catalog_service::CatalogService;
 use platform_entitlements_quotas::{
-    application::entitlement_service::{EntitlementService, EntitlementServiceError},
+    application::entitlement_service::{
+        ConsumeQuotaCommand, EntitlementService, EntitlementServiceError,
+    },
     domain::entitlement::{Capability, EntitlementError},
 };
 use sqlx::postgres::PgPoolOptions;
@@ -261,46 +263,46 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
     assert_eq!(initial.remaining, Some(5));
 
     let (after_four, replayed) = entitlements
-        .consume(
-            actor,
-            tenant_one,
-            "payments.monthly",
-            "test",
-            4,
-            "phase3-payment-001",
-            now,
-            correlation,
-        )
+        .consume(ConsumeQuotaCommand {
+            actor: actor,
+            tenant: tenant_one,
+            key: "payments.monthly",
+            environment: "test",
+            quantity: 4,
+            idempotency_key: "phase3-payment-001",
+            now: now,
+            correlation_id: correlation,
+        })
         .await
         .expect("usage below the quota is accepted");
     assert!(!replayed);
     assert_eq!(after_four.consumed, 4);
     let (replayed_result, replayed) = entitlements
-        .consume(
-            actor,
-            tenant_one,
-            "payments.monthly",
-            "test",
-            4,
-            "phase3-payment-001",
-            now,
-            correlation,
-        )
+        .consume(ConsumeQuotaCommand {
+            actor: actor,
+            tenant: tenant_one,
+            key: "payments.monthly",
+            environment: "test",
+            quantity: 4,
+            idempotency_key: "phase3-payment-001",
+            now: now,
+            correlation_id: correlation,
+        })
         .await
         .expect("identical idempotent replay returns the recorded result");
     assert!(replayed);
     assert_eq!(replayed_result.consumed, 4);
     let conflict = entitlements
-        .consume(
-            actor,
-            tenant_one,
-            "payments.monthly",
-            "test",
-            3,
-            "phase3-payment-001",
-            now,
-            correlation,
-        )
+        .consume(ConsumeQuotaCommand {
+            actor: actor,
+            tenant: tenant_one,
+            key: "payments.monthly",
+            environment: "test",
+            quantity: 3,
+            idempotency_key: "phase3-payment-001",
+            now: now,
+            correlation_id: correlation,
+        })
         .await
         .expect_err("idempotency key cannot be reused with different operation data");
     assert!(is_domain_error(
@@ -309,16 +311,16 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
     ));
 
     let (at_limit, replayed) = entitlements
-        .consume(
-            actor,
-            tenant_one,
-            "payments.monthly",
-            "test",
-            1,
-            "phase3-payment-002",
-            now,
-            correlation,
-        )
+        .consume(ConsumeQuotaCommand {
+            actor: actor,
+            tenant: tenant_one,
+            key: "payments.monthly",
+            environment: "test",
+            quantity: 1,
+            idempotency_key: "phase3-payment-002",
+            now: now,
+            correlation_id: correlation,
+        })
         .await
         .expect("consumption exactly at the limit is accepted");
     assert!(!replayed);
@@ -326,31 +328,31 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
     assert!(!at_limit.allowed);
     assert_eq!(at_limit.remaining, Some(0));
     let exceeded = entitlements
-        .consume(
-            actor,
-            tenant_one,
-            "payments.monthly",
-            "test",
-            1,
-            "phase3-payment-003",
-            now,
-            correlation,
-        )
+        .consume(ConsumeQuotaCommand {
+            actor: actor,
+            tenant: tenant_one,
+            key: "payments.monthly",
+            environment: "test",
+            quantity: 1,
+            idempotency_key: "phase3-payment-003",
+            now: now,
+            correlation_id: correlation,
+        })
         .await
         .expect_err("consumption above the limit is rejected");
     assert!(is_domain_error(exceeded, EntitlementError::QuotaExceeded));
 
     let (overage, _) = entitlements
-        .consume(
-            actor,
-            tenant_one,
-            "reports.export",
-            "test",
-            2,
-            "phase3-overage-001",
-            now,
-            correlation,
-        )
+        .consume(ConsumeQuotaCommand {
+            actor: actor,
+            tenant: tenant_one,
+            key: "reports.export",
+            environment: "test",
+            quantity: 2,
+            idempotency_key: "phase3-overage-001",
+            now: now,
+            correlation_id: correlation,
+        })
         .await
         .expect("allow-overage policy records usage above the configured limit");
     assert!(overage.allowed);
@@ -372,26 +374,26 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
     );
 
     let (concurrent_a, concurrent_b) = tokio::join!(
-        entitlements.consume(
-            actor,
-            tenant_two,
-            "payments.monthly",
-            "test",
-            3,
-            "phase3-race-a",
-            now,
-            correlation
-        ),
-        entitlements.consume(
-            actor,
-            tenant_two,
-            "payments.monthly",
-            "test",
-            3,
-            "phase3-race-b",
-            now,
-            correlation
-        ),
+        entitlements.consume(ConsumeQuotaCommand {
+            actor: actor,
+            tenant: tenant_two,
+            key: "payments.monthly",
+            environment: "test",
+            quantity: 3,
+            idempotency_key: "phase3-race-a",
+            now: now,
+            correlation_id: correlation,
+        }),
+        entitlements.consume(ConsumeQuotaCommand {
+            actor: actor,
+            tenant: tenant_two,
+            key: "payments.monthly",
+            environment: "test",
+            quantity: 3,
+            idempotency_key: "phase3-race-b",
+            now: now,
+            correlation_id: correlation,
+        }),
     );
     let concurrent_successes =
         (if concurrent_a.is_ok() { 1 } else { 0 }) + (if concurrent_b.is_ok() { 1 } else { 0 });
