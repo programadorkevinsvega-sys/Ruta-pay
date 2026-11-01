@@ -1,8 +1,14 @@
+#[path = "phase3_catalog_entitlements_acceptance/concurrency.rs"]
 mod concurrency;
+#[path = "phase3_catalog_entitlements_acceptance/database.rs"]
 mod database;
+#[path = "phase3_catalog_entitlements_acceptance/fixture.rs"]
 mod fixture;
+#[path = "phase3_catalog_entitlements_acceptance/isolation.rs"]
 mod isolation;
+#[path = "phase3_catalog_entitlements_acceptance/quota.rs"]
 mod quota;
+#[path = "phase3_catalog_entitlements_acceptance/versioning.rs"]
 mod versioning;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
