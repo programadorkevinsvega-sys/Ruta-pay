@@ -252,6 +252,7 @@ dependencies = [
 name = "bacekend-plataform"
 version = "0.1.0"
 dependencies = [
+ "bacekend-pasarela",
  "async-nats",
  "axum",
  "base64 0.22.1",
