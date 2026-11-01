@@ -16,7 +16,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         migration_pool,
         runtime_pool,
         runtime_role,
-        mut database_cleanup,
+        database_cleanup,
         redis_manager,
         operator_email,
         operator_password,
@@ -35,7 +35,6 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         operator_csrf_cookie,
         legal_identification_number,
         created_tenant_id,
-        tenant_body,
         tenant_slug,
         tenant_admin_status_body,
     } = tenant;
