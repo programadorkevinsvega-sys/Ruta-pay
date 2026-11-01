@@ -1,17 +1,18 @@
 use std::net::SocketAddr;
 
+use bacekend_pasarela::entitlements::GatewayEntitlementsClient;
 use platform_contracts::{
-    entitlements_quotas::{ConsumeQuotaRequest, entitlements_quotas_client::EntitlementsQuotasClient},
+    entitlements_quotas::ConsumeQuotaRequest,
     identity_access::{AuthorizeApiKeyOperationRequest, identity_access_client::IdentityAccessClient},
 };
-use reqwest::header;
-use reqwest::StatusCode;
+use reqwest::{StatusCode, header};
 use tonic::transport::Channel;
 use uuid::Uuid;
 
 pub async fn verify(
     client: &reqwest::Client,
     http_addr: SocketAddr,
+    grpc_addr: SocketAddr,
     origin: &str,
     session_cookie: &str,
     csrf_cookie: &str,
@@ -19,7 +20,6 @@ pub async fn verify(
     api_key_id: Uuid,
     api_key_secret: &str,
     authorization_client: IdentityAccessClient<Channel>,
-    entitlements_acceptance_client: EntitlementsQuotasClient<Channel>,
 ) {
     let consume_scope_authorization = authorization_client
         .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
@@ -34,6 +34,9 @@ pub async fn verify(
         .into_inner();
     assert_eq!(consume_scope_authorization.key_id, api_key_id.to_string());
 
+    let gateway_client = GatewayEntitlementsClient::connect(format!("http://{grpc_addr}"))
+        .await
+        .expect("gateway entitlement client connects to the platform gRPC service");
     let phase3_entitlement_before = client
         .get(format!(
             "http://{http_addr}/v1/tenants/{tenant_id}/entitlements?environment=live"
@@ -59,22 +62,18 @@ pub async fn verify(
     assert_eq!(phase3_entitlements[0]["capability_key"], "payments.monthly");
     assert_eq!(phase3_entitlements[0]["consumed"], 0);
 
-    let phase3_consumption = entitlements_acceptance_client
-        .clone()
-        .consume_quota(tonic::Request::new(
-            ConsumeQuotaRequest {
-                api_key_secret: api_key_secret.to_owned(),
-                tenant_id: tenant_id.to_string(),
-                capability_key: "payments.monthly".to_owned(),
-                environment: "live".to_owned(),
-                quantity: 1,
-                idempotency_key: "phase3-grpc-consume-001".to_owned(),
-                correlation_id: "corr_phase3_grpc_consume".to_owned(),
-            },
-        ))
+    let phase3_consumption = gateway_client
+        .consume_quota(ConsumeQuotaRequest {
+            api_key_secret: api_key_secret.to_owned(),
+            tenant_id: tenant_id.to_string(),
+            capability_key: "payments.monthly".to_owned(),
+            environment: "live".to_owned(),
+            quantity: 1,
+            idempotency_key: "phase3-grpc-consume-001".to_owned(),
+            correlation_id: "corr_phase3_grpc_consume".to_owned(),
+        })
         .await
-        .expect("quota consumption requires the real API key authorization gRPC path")
-        .into_inner();
+        .expect("gateway client uses the real API key authorization gRPC path");
     assert!(!phase3_consumption.replayed);
     let phase3_consumed_entitlement = phase3_consumption
         .entitlement
@@ -82,22 +81,18 @@ pub async fn verify(
     assert_eq!(phase3_consumed_entitlement.consumed, 1);
     assert_eq!(phase3_consumed_entitlement.remaining, Some(1));
 
-    let phase3_replay = entitlements_acceptance_client
-        .clone()
-        .consume_quota(tonic::Request::new(
-            platform_contracts::entitlements_quotas::ConsumeQuotaRequest {
-                api_key_secret: api_key_secret.to_owned(),
-                tenant_id: tenant_id.to_string(),
-                capability_key: "payments.monthly".to_owned(),
-                environment: "live".to_owned(),
-                quantity: 1,
-                idempotency_key: "phase3-grpc-consume-001".to_owned(),
-                correlation_id: "corr_phase3_grpc_consume_replay".to_owned(),
-            },
-        ))
+    let phase3_replay = gateway_client
+        .consume_quota(ConsumeQuotaRequest {
+            api_key_secret: api_key_secret.to_owned(),
+            tenant_id: tenant_id.to_string(),
+            capability_key: "payments.monthly".to_owned(),
+            environment: "live".to_owned(),
+            quantity: 1,
+            idempotency_key: "phase3-grpc-consume-001".to_owned(),
+            correlation_id: "corr_phase3_grpc_consume_replay".to_owned(),
+        })
         .await
-        .expect("quota consumption replay is idempotent across the gRPC boundary")
-        .into_inner();
+        .expect("gateway quota replay is idempotent across the gRPC boundary");
     assert!(phase3_replay.replayed);
     assert_eq!(
         phase3_replay
