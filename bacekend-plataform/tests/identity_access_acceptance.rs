@@ -520,7 +520,6 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let entitlements_client = EntitlementsQuotasGrpcClient::connect(format!("http://{grpc_addr}"))
         .await
         .expect("entitlements gRPC channel connects");
-    let entitlements_acceptance_client = entitlements_client.clone();
     let mut authorization_client = identity_client.clone();
     let realtime_acceptance_client = realtime_client.clone();
     let http_listener = TcpListener::bind("127.0.0.1:0").await.expect("BFF bind");
@@ -2114,6 +2113,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     phase3_entitlements::verify(
         &client,
         http_addr,
+        grpc_addr,
         &origin,
         &session_cookie,
         &csrf_cookie,
@@ -2121,7 +2121,6 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         api_key_id,
         &api_key_secret,
         authorization_client.clone(),
-        entitlements_acceptance_client.clone(),
     )
     .await;
 
