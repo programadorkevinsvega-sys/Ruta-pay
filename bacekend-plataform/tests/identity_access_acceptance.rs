@@ -379,6 +379,9 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         })
         .await;
     let stream = event_delivery.stream;
+    let event_payload = event_delivery.event_payload;
+    let registration_event_id = event_delivery.registration_event_id;
+    let registration_subject = event_delivery.registration_subject;
     let mut event_stream_cleanup = event_delivery.event_stream_cleanup;
     let mut isolated_stream_cleanup = event_delivery.isolated_stream_cleanup;
 
@@ -505,7 +508,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         platform_realtime::infrastructure::grpc::realtime_gateway_api::persist_and_publish(
             &runtime_pool,
             &mut realtime_redis,
-            &event_message.payload,
+            &event_payload,
         )
         .await
         .expect("realtime consumer persists the event journal and publishes its Redis signal");
