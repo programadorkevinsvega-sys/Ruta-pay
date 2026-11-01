@@ -7,9 +7,16 @@ use axum::{
 use chrono::Utc;
 use std::sync::Arc;
 
-use crate::http::{handlers::identity, middleware::correlation_id::correlation_id, routes::AppState};
-use platform_contracts::entitlements_quotas::{GetTenantEntitlementRequest, ListTenantEntitlementsRequest};
-use super::{shared::tonic_request, types::{EntitlementQuery, EntitlementView}};
+use super::{
+    shared::tonic_request,
+    types::{EntitlementQuery, EntitlementView},
+};
+use crate::http::{
+    handlers::identity, middleware::correlation_id::correlation_id, routes::AppState,
+};
+use platform_contracts::entitlements_quotas::{
+    GetTenantEntitlementRequest, ListTenantEntitlementsRequest,
+};
 
 #[utoipa::path(get, path="/v1/tenants/{tenant_id}/entitlements", params(("tenant_id"=String,Path),("environment"=Option<String>,Query)), responses((status=200, body=Vec<EntitlementView>)))]
 pub async fn list_entitlements(
