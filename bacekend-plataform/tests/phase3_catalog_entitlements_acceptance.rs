@@ -264,13 +264,13 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
 
     let (after_four, replayed) = entitlements
         .consume(ConsumeQuotaCommand {
-            actor: actor,
+            actor,
             tenant: tenant_one,
             key: "payments.monthly",
             environment: "test",
             quantity: 4,
             idempotency_key: "phase3-payment-001",
-            now: now,
+            now,
             correlation_id: correlation,
         })
         .await
@@ -279,13 +279,13 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
     assert_eq!(after_four.consumed, 4);
     let (replayed_result, replayed) = entitlements
         .consume(ConsumeQuotaCommand {
-            actor: actor,
+            actor,
             tenant: tenant_one,
             key: "payments.monthly",
             environment: "test",
             quantity: 4,
             idempotency_key: "phase3-payment-001",
-            now: now,
+            now,
             correlation_id: correlation,
         })
         .await
@@ -294,13 +294,13 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
     assert_eq!(replayed_result.consumed, 4);
     let conflict = entitlements
         .consume(ConsumeQuotaCommand {
-            actor: actor,
+            actor,
             tenant: tenant_one,
             key: "payments.monthly",
             environment: "test",
             quantity: 3,
             idempotency_key: "phase3-payment-001",
-            now: now,
+            now,
             correlation_id: correlation,
         })
         .await
@@ -312,13 +312,13 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
 
     let (at_limit, replayed) = entitlements
         .consume(ConsumeQuotaCommand {
-            actor: actor,
+            actor,
             tenant: tenant_one,
             key: "payments.monthly",
             environment: "test",
             quantity: 1,
             idempotency_key: "phase3-payment-002",
-            now: now,
+            now,
             correlation_id: correlation,
         })
         .await
@@ -329,13 +329,13 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
     assert_eq!(at_limit.remaining, Some(0));
     let exceeded = entitlements
         .consume(ConsumeQuotaCommand {
-            actor: actor,
+            actor,
             tenant: tenant_one,
             key: "payments.monthly",
             environment: "test",
             quantity: 1,
             idempotency_key: "phase3-payment-003",
-            now: now,
+            now,
             correlation_id: correlation,
         })
         .await
@@ -344,13 +344,13 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
 
     let (overage, _) = entitlements
         .consume(ConsumeQuotaCommand {
-            actor: actor,
+            actor,
             tenant: tenant_one,
             key: "reports.export",
             environment: "test",
             quantity: 2,
             idempotency_key: "phase3-overage-001",
-            now: now,
+            now,
             correlation_id: correlation,
         })
         .await
@@ -375,23 +375,23 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
 
     let (concurrent_a, concurrent_b) = tokio::join!(
         entitlements.consume(ConsumeQuotaCommand {
-            actor: actor,
+            actor,
             tenant: tenant_two,
             key: "payments.monthly",
             environment: "test",
             quantity: 3,
             idempotency_key: "phase3-race-a",
-            now: now,
+            now,
             correlation_id: correlation,
         }),
         entitlements.consume(ConsumeQuotaCommand {
-            actor: actor,
+            actor,
             tenant: tenant_two,
             key: "payments.monthly",
             environment: "test",
             quantity: 3,
             idempotency_key: "phase3-race-b",
-            now: now,
+            now,
             correlation_id: correlation,
         }),
     );
