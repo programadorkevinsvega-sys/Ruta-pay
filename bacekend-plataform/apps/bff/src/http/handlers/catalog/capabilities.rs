@@ -6,9 +6,14 @@ use axum::{
 };
 use std::sync::Arc;
 
-use crate::http::{handlers::identity, middleware::correlation_id::correlation_id, routes::AppState};
+use super::{
+    shared::{operator_credentials, tonic_request},
+    types::SetCapabilities,
+};
+use crate::http::{
+    handlers::identity, middleware::correlation_id::correlation_id, routes::AppState,
+};
 use platform_contracts::entitlements_quotas::{CapabilityInput, SetPlanCapabilitiesRequest};
-use super::{shared::{operator_credentials, tonic_request}, types::SetCapabilities};
 
 #[utoipa::path(post, path="/v1/platform/entitlements/capabilities", request_body=SetCapabilities, responses((status=200)))]
 pub async fn set_capabilities(
