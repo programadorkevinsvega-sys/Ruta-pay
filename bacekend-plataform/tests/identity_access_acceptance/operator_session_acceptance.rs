@@ -6,7 +6,7 @@ use sqlx::PgPool;
 use tonic::transport::Channel;
 use uuid::Uuid;
 
-use super::tenant_session_acceptance::TenantSessionCookies;
+use super::{identity_access_acceptance_support::cookie_value, tenant_session_acceptance::TenantSessionCookies};
 
 pub struct OperatorSessionCookies {
     pub session_cookie: String,
