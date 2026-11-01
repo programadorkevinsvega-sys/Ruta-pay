@@ -68,5 +68,3 @@ pub(super) async fn set_tenant_context(
         .await?;
     Ok(())
 }
-
-#[derive(Debug, thiserror::Error)]
