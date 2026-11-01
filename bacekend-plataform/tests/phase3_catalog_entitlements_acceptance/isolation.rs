@@ -59,7 +59,7 @@ pub async fn verify(fixture: &TestFixture) {
             .expect("audit records are queryable by the migration role");
     let outbox_count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM entitlements_quotas.outbox_events")
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("outbox records are queryable by the migration role");
     assert!(
