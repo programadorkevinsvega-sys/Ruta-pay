@@ -97,7 +97,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let second_csrf_cookie = second_tenant.credentials.csrf_cookie;
     let second_legal_identification_number = second_tenant.credentials.legal_identification_number;
 
-    realtime_acceptance_flow::verify(
+    let replay_cursor = realtime_acceptance_flow::verify(
         &redis_manager,
         &runtime_pool,
         &migration_pool,
@@ -140,6 +140,8 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         operator_id,
         &legal_identification_number,
         &second_legal_identification_number,
+        created_tenant_id,
+        replay_cursor,
     )
     .await;
     let matrix_operator_session_cookie = matrix_operator_cookies.session_cookie;
