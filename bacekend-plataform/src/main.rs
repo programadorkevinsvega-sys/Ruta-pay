@@ -105,12 +105,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tenant_module_client = TenantRegistryGrpcClient::new(runtime_channel);
     let runtime_task = tokio::spawn(serve_runtime(
         runtime_listener,
-        database_pool,
-        redis_manager,
-        redis_client,
-        identity_module_client,
-        catalog_module_client,
-        tenant_module_client,
+        platform_runtime::module_config::RuntimeModuleDependencies {
+            pool: database_pool,
+            redis: redis_manager,
+            redis_client,
+            identity_client: identity_module_client,
+            catalog_client: catalog_module_client,
+            tenant_client: tenant_module_client,
+        },
         shutdown_rx.clone(),
     ));
     let endpoint = Endpoint::from_shared(format!("http://{runtime_addr}"))?
@@ -238,24 +240,14 @@ async fn bind_listener(
 
 async fn serve_runtime(
     listener: TcpListener,
-    database_pool: sqlx::PgPool,
-    redis_manager: redis::aio::ConnectionManager,
-    redis_client: redis::Client,
-    identity_client: IdentityAccessGrpcClient<tonic::transport::Channel>,
-    catalog_client: CatalogPricingGrpcClient<tonic::transport::Channel>,
-    tenant_client: TenantRegistryGrpcClient<tonic::transport::Channel>,
+    dependencies: platform_runtime::module_config::RuntimeModuleDependencies,
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<(), tonic::transport::Error> {
     let span = tracing::info_span!("grpc.server", component = "platform_runtime");
     async move {
         platform_runtime::module_config::serve(
             listener,
-            database_pool,
-            redis_manager,
-            redis_client,
-            identity_client,
-            catalog_client,
-            tenant_client,
+            dependencies,
             async move {
                 let _ = shutdown.changed().await;
             },
