@@ -72,8 +72,8 @@ impl From<&Entitlement> for EntitlementResultSnapshot {
             allowed: result.allowed,
             reason: result.reason.clone(),
             environment: result.environment.clone(),
-            period_start: result.period_start.clone(),
-            period_end: result.period_end.clone(),
+            period_start: result.period_start,
+            period_end: result.period_end,
         }
     }
 }
