@@ -2,6 +2,7 @@ use async_nats::jetstream;
 use platform_runtime::event_topology::EventTopology;
 use sqlx::PgPool;
 use uuid::Uuid;
+use super::identity_access_acceptance_support::EventStreamCleanup;
 
 
 pub struct TenantOutboxRecoveryContext<'a> {
