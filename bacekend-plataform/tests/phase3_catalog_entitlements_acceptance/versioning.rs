@@ -63,5 +63,4 @@ pub async fn verify(fixture: &TestFixture) {
     assert_eq!(before_change.price_version_id, price_one.id);
     assert_eq!(after_change.price_version_id, price_two.id);
     assert_eq!(after_change.limit_value, Some(10));
-
 }
