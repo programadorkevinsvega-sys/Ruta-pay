@@ -31,7 +31,7 @@ pub async fn verify(
         platform_realtime::infrastructure::grpc::realtime_gateway_api::persist_and_publish(
             &runtime_pool,
             &mut realtime_redis,
-            &event_message.payload,
+            event_payload,
         )
         .await
         .expect("redelivered JetStream event is safely deduplicated");
