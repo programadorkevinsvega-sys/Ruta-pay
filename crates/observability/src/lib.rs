@@ -45,6 +45,24 @@ pub fn valid_correlation_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
 }
 
+/// Returns the W3C traceparent for the active span, or None outside a valid trace.
+pub fn current_traceparent() -> Option<String> {
+    let context = tracing::Span::current()
+        .context()
+        .span()
+        .span_context()
+        .clone();
+    if !context.is_valid() {
+        return None;
+    }
+    Some(format!(
+        "00-{}-{}-{:02x}",
+        context.trace_id(),
+        context.span_id(),
+        context.trace_flags().to_u8()
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -75,22 +93,4 @@ mod tests {
     fn traceparent_has_no_fabricated_context_without_a_valid_span() {
         assert!(current_traceparent().is_none());
     }
-}
-
-/// Returns the W3C traceparent for the active span, or None outside a valid trace.
-pub fn current_traceparent() -> Option<String> {
-    let context = tracing::Span::current()
-        .context()
-        .span()
-        .span_context()
-        .clone();
-    if !context.is_valid() {
-        return None;
-    }
-    Some(format!(
-        "00-{}-{}-{:02x}",
-        context.trace_id(),
-        context.span_id(),
-        context.trace_flags().to_u8()
-    ))
 }
