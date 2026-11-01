@@ -5,7 +5,10 @@ use platform_contracts::entitlements_quotas::{
 };
 use tonic::{Request, Response, Status};
 
-use super::{EntitlementsQuotasApi, mapping::{entitlement_response, map_error, parse_time, parse_uuid}};
+use super::{
+    EntitlementsQuotasApi,
+    mapping::{entitlement_response, map_error, parse_time, parse_uuid},
+};
 
 impl EntitlementsQuotasApi {
     pub(super) async fn get_tenant_entitlement_handler(
