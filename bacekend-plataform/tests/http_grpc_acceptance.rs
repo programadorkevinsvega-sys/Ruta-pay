@@ -19,7 +19,6 @@ async fn real_http_bff_and_grpc_module_cover_success_and_unavailable() {
     let http_listener = TcpListener::bind("127.0.0.1:0").await.expect("BFF bind");
     let http_addr = http_listener.local_addr().expect("BFF address");
     let (http_shutdown, http_signal) = oneshot::channel();
-    let timeout_identity_client = identity_client.clone();
     let http_task = tokio::spawn(async move {
         axum::serve(
             http_listener,
