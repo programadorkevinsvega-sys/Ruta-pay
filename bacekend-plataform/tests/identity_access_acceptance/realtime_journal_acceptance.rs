@@ -15,7 +15,7 @@ pub async fn verify(
         platform_realtime::infrastructure::grpc::realtime_gateway_api::persist_and_publish(
             runtime_pool,
             &mut realtime_redis,
-            &event_payload,
+            event_payload,
         )
         .await
         .expect("realtime consumer persists the event journal and publishes its Redis signal");
@@ -26,7 +26,7 @@ pub async fn verify(
             .fetch_one(migration_pool)
             .await
             .expect("realtime journal contains the registered tenant event");
-    assert!(!journal_payload.contains(&legal_identification_number));
+    assert!(!journal_payload.contains(legal_identification_number));
     let duplicate_journal_insert =
         platform_realtime::infrastructure::grpc::realtime_gateway_api::persist_and_publish(
             runtime_pool,
