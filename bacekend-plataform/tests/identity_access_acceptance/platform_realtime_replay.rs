@@ -5,16 +5,22 @@ use reqwest::{Client, StatusCode, header};
 use sqlx::PgPool;
 use std::net::SocketAddr;
 
-pub async fn verify(
-    stream: &jetstream::stream::Stream,
-    event_topology: &EventTopology,
-    runtime_pool: &PgPool,
-    realtime_redis: &mut ConnectionManager,
-    client: &Client,
-    http_addr: SocketAddr,
-    operator_session_cookie: &str,
-    operator_csrf_cookie: &str,
-) {
+pub struct PlatformRealtimeReplayContext<'a> {
+    pub stream: &'a jetstream::stream::Stream,
+    pub event_topology: &'a EventTopology,
+    pub runtime_pool: &'a PgPool,
+    pub realtime_redis: &'a mut ConnectionManager,
+    pub client: &'a Client,
+    pub http_addr: SocketAddr,
+    pub operator_session_cookie: &'a str,
+    pub operator_csrf_cookie: &'a str,
+}
+
+pub async fn verify(context: PlatformRealtimeReplayContext<'_>) {
+    let PlatformRealtimeReplayContext {
+        stream, event_topology, runtime_pool, realtime_redis, client, http_addr,
+        operator_session_cookie, operator_csrf_cookie,
+    } = context;
     let status_event_message = stream
         .get_last_raw_message_by_subject(&format!(
             "{}.tenant.status.changed",
