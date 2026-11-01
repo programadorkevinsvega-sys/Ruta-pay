@@ -62,8 +62,8 @@ pub async fn verify_and_reauthenticate(
         .header(header::ORIGIN, origin)
         .header("x-correlation-id", "corr_operator_matrix_login")
         .json(&serde_json::json!({
-            "email": operator_email.clone(),
-            "password": operator_password.clone()
+            "email": operator_email,
+            "password": operator_password
         }))
         .send()
         .await
