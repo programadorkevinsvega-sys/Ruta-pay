@@ -34,7 +34,7 @@ The CI workflow `.github/workflows/platform-quality.yml` provisions these depend
 | Concurrent quota consumption | `concurrency.rs` | Concurrent requests serialize and cannot exceed a deny-policy quota |
 | Price versioning and effective dates | `versioning.rs` | Non-overlapping versions and effective-time selection are verified |
 | Tenant isolation and RLS | `isolation.rs` | Tenant context cannot read or consume another tenant's entitlement or usage |
-| BFF / REST / gRPC / API key | `identity_access_acceptance.rs` and `http_grpc_acceptance.rs` | Real HTTP-to-BFF-to-gRPC path enforces tenant and `usage.consume` scope |
+| BFF / REST / gRPC / API key | `identity_access_acceptance/phase3_catalog.rs`, `identity_access_acceptance/phase3_entitlements.rs` and the shared HTTP/gRPC acceptance harness | Real HTTP-to-BFF-to-gRPC path enforces tenant and `usage.consume` scope |
 | Gateway gRPC contract | `identity_access_acceptance/phase3_entitlements.rs` + `bacekend-pasarela/src/entitlements.rs` | The real gateway client connects to the platform gRPC service, consumes quota with an API key and replays the same idempotency key; mTLS and signed-grant enforcement remain in Phase 5 |
 | Outbox to JetStream | `jetstream.rs` | Real relays receive JetStream ACKs and consumers verify event ID, type, correlation ID and audience |
 | Realtime journal and cursor | `jetstream.rs` | The catalog platform event and tenant quota event are accepted by the realtime journal, signalled through real Redis and replayed from their correct scoped cursors |
