@@ -4,13 +4,13 @@ use uuid::Uuid;
 use crate::domain::entitlement::Entitlement;
 
 pub(super) struct EntitlementSnapshot {
-    tenant_id: Uuid,
-    price_version_id: Uuid,
-    capability_key: String,
-    enabled: bool,
-    limit_value: Option<i64>,
-    overage_policy: String,
-    allowed_environment: String,
+    pub(super) tenant_id: Uuid,
+    pub(super) price_version_id: Uuid,
+    pub(super) capability_key: String,
+    pub(super) enabled: bool,
+    pub(super) limit_value: Option<i64>,
+    pub(super) overage_policy: String,
+    pub(super) allowed_environment: String,
 }
 
 impl EntitlementSnapshot {
