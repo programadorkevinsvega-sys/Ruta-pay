@@ -39,9 +39,10 @@ impl EntitlementService {
             .bind(payvia_observability::current_trace_id())
             .bind(serde_json::json!({"capability_count": capabilities.len()}))
             .execute(&mut *tx).await?;
-        sqlx::query("INSERT INTO entitlements_quotas.outbox_events (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,traceparent,correlation_id) VALUES ($1,$2,1,'entitlement.capabilities.configured',1,'platform',$3,NULL,$4)")
+        sqlx::query("INSERT INTO entitlements_quotas.outbox_events (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,traceparent,correlation_id) VALUES ($1,$2,1,'entitlement.capabilities.configured',1,'platform',$3,$4,$5)")
             .bind(Uuid::new_v4()).bind(price_version)
             .bind(serde_json::json!({"price_version_id": price_version, "capability_count": capabilities.len()}))
+            .bind(payvia_observability::current_traceparent())
             .bind(correlation_id).execute(&mut *tx).await?;
         tx.commit().await?;
         Ok(capabilities.len() as u32)
