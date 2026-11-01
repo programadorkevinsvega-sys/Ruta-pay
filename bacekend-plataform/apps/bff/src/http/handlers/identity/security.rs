@@ -117,7 +117,11 @@ pub(super) fn response_no_content() -> Response {
     StatusCode::NO_CONTENT.into_response()
 }
 
-pub(super) fn clear_session(mut response: Response, session_cookie: &str, csrf_cookie: &str) -> Response {
+pub(super) fn clear_session(
+    mut response: Response,
+    session_cookie: &str,
+    csrf_cookie: &str,
+) -> Response {
     let session_cookie_value =
         format!("{session_cookie}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0");
     let csrf_cookie_value = format!("{csrf_cookie}=; Path=/; Secure; SameSite=Lax; Max-Age=0");
