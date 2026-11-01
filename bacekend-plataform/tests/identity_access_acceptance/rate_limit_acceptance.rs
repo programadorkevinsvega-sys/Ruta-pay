@@ -1,4 +1,4 @@
-use reqwest::{header, Client, StatusCode};
+use reqwest::{Client, StatusCode, header};
 use std::{
     collections::HashMap,
     net::SocketAddr,
@@ -22,9 +22,18 @@ pub struct RateLimitAcceptanceContext<'a> {
 
 pub async fn verify(context: RateLimitAcceptanceContext<'_>) {
     let RateLimitAcceptanceContext {
-        http_addr, origin, default_headers, captured_events, password,
-        operator_password, session_cookie, csrf_cookie, operator_session_cookie,
-        operator_csrf_cookie, legal_identification_number, second_legal_identification_number,
+        http_addr,
+        origin,
+        default_headers,
+        captured_events,
+        password,
+        operator_password,
+        session_cookie,
+        csrf_cookie,
+        operator_session_cookie,
+        operator_csrf_cookie,
+        legal_identification_number,
+        second_legal_identification_number,
     } = context;
     // The public registration endpoint is limited per normalized account and per peer IP.
     // Invalid passwords still consume an attempt, preventing cheap validation probes from
@@ -73,7 +82,7 @@ pub async fn verify(context: RateLimitAcceptanceContext<'_>) {
         .await
         .expect("account-limited registration response arrives");
     assert_eq!(account_limited.status(), StatusCode::TOO_MANY_REQUESTS);
-    
+
     // A separate set of accounts from the same peer proves the independent IP ceiling.
     for attempt in 6..20 {
         let response = rate_limit_client
@@ -103,7 +112,7 @@ pub async fn verify(context: RateLimitAcceptanceContext<'_>) {
         .await
         .expect("IP-limited registration response arrives");
     assert_eq!(ip_limited.status(), StatusCode::TOO_MANY_REQUESTS);
-    
+
     let event_values: Vec<String> = captured_events
         .lock()
         .expect("event capture lock")
