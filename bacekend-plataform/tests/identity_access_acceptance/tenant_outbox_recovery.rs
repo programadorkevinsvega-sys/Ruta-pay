@@ -1,3 +1,4 @@
+use super::*;
 use async_nats::jetstream;
 use platform_runtime::event_topology::EventTopology;
 use sqlx::PgPool;
@@ -39,7 +40,7 @@ pub async fn verify(context: TenantOutboxRecoveryContext<'_>) {
     .bind(&failed_payload)
     .bind(failed_correlation_id)
     .bind(failed_lease_token)
-    .execute(&migration_pool)
+    .execute(migration_pool)
     .await
     .expect("synthetic Outbox event is leased for deterministic failure injection");
     let failed_event = platform_tenant_registry::infrastructure::persistence::PendingOutboxEvent {
@@ -56,7 +57,7 @@ pub async fn verify(context: TenantOutboxRecoveryContext<'_>) {
     };
     let jetstream_error_code =
         platform_tenant_registry::infrastructure::outbox_relay::publish_event(
-            &jetstream,
+            jetstream,
             &failed_event,
             &failed_topology.subject_prefix,
         )
@@ -68,7 +69,7 @@ pub async fn verify(context: TenantOutboxRecoveryContext<'_>) {
     ));
     assert!(
         platform_tenant_registry::infrastructure::persistence::reschedule_outbox_event(
-            &runtime_pool,
+            runtime_pool,
             failed_event_id,
             failed_lease_token,
             jetstream_error_code,
@@ -81,7 +82,7 @@ pub async fn verify(context: TenantOutboxRecoveryContext<'_>) {
         "SELECT last_error_code,published_at IS NULL FROM tenant_registry.outbox_events WHERE event_id=$1",
     )
     .bind(failed_event_id)
-    .fetch_one(&migration_pool)
+    .fetch_one(migration_pool)
     .await
     .expect("deferred JetStream event state is queryable");
     assert_eq!(
@@ -91,7 +92,7 @@ pub async fn verify(context: TenantOutboxRecoveryContext<'_>) {
     assert!(deferred_event_state.1);
 
     let failed_stream = failed_topology
-        .ensure_stream(&jetstream)
+        .ensure_stream(jetstream)
         .await
         .expect("JetStream stream is restored for retry");
     let mut failed_stream_cleanup = EventStreamCleanup {
@@ -105,7 +106,7 @@ pub async fn verify(context: TenantOutboxRecoveryContext<'_>) {
     )
     .bind(failed_event_id)
     .bind(retry_lease_token)
-    .execute(&migration_pool)
+    .execute(migration_pool)
     .await
     .expect("deferred event is leased again after JetStream recovery");
     let retry_event = platform_tenant_registry::infrastructure::persistence::PendingOutboxEvent {
@@ -113,7 +114,7 @@ pub async fn verify(context: TenantOutboxRecoveryContext<'_>) {
         ..failed_event
     };
     platform_tenant_registry::infrastructure::outbox_relay::publish_event(
-        &jetstream,
+        jetstream,
         &retry_event,
         &failed_topology.subject_prefix,
     )
@@ -121,7 +122,7 @@ pub async fn verify(context: TenantOutboxRecoveryContext<'_>) {
     .expect("JetStream retry succeeds after stream recovery");
     assert!(
         platform_tenant_registry::infrastructure::persistence::mark_outbox_published(
-            &runtime_pool,
+            runtime_pool,
             failed_event_id,
             retry_lease_token,
         )
@@ -133,7 +134,7 @@ pub async fn verify(context: TenantOutboxRecoveryContext<'_>) {
         "SELECT published_at IS NOT NULL,last_error_code FROM tenant_registry.outbox_events WHERE event_id=$1",
     )
     .bind(failed_event_id)
-    .fetch_one(&migration_pool)
+    .fetch_one(migration_pool)
     .await
     .expect("successful JetStream retry state is queryable");
     assert!(retried_jetstream_state.0);
