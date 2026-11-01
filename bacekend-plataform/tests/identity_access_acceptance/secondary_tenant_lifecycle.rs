@@ -51,7 +51,7 @@ pub async fn verify(context: SecondaryTenantLifecycleContext<'_>) {
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
         )
-        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .header("x-csrf-token", matrix_operator_csrf_cookie)
         .json(&serde_json::json!({
             "status": "active",
             "reason": "Support role must not activate a tenant",
@@ -76,7 +76,7 @@ pub async fn verify(context: SecondaryTenantLifecycleContext<'_>) {
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
         )
-        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .header("x-csrf-token", matrix_operator_csrf_cookie)
         .json(&serde_json::json!({
             "status": "active",
             "reason": "Authorized platform security verification",
@@ -101,7 +101,7 @@ pub async fn verify(context: SecondaryTenantLifecycleContext<'_>) {
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
         )
-        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .header("x-csrf-token", matrix_operator_csrf_cookie)
         .json(&serde_json::json!({
             "status": "closing",
             "reason": "Support role must not close a tenant",
@@ -126,7 +126,7 @@ pub async fn verify(context: SecondaryTenantLifecycleContext<'_>) {
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
         )
-        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .header("x-csrf-token", matrix_operator_csrf_cookie)
         .json(&serde_json::json!({
             "status": "closing",
             "reason": "Authorized platform security close",
@@ -150,7 +150,7 @@ pub async fn verify(context: SecondaryTenantLifecycleContext<'_>) {
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
         )
-        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .header("x-csrf-token", matrix_operator_csrf_cookie)
         .json(&serde_json::json!({
             "status": "closed",
             "reason": "Authorized platform security final close",
