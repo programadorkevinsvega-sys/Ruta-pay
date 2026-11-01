@@ -78,7 +78,7 @@ pub(super) async fn verify(context: TenantEventDeliveryContext<'_>) -> TenantEve
     let published_count = platform_tenant_registry::infrastructure::outbox_relay::relay_batch(
         runtime_pool,
         jetstream,
-        event_topology.subject_prefix,
+        &event_topology.subject_prefix,
     )
     .await
     .expect("tenant outbox relay publishes through the real JetStream client");
