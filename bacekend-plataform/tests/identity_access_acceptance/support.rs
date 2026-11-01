@@ -141,7 +141,6 @@ impl Visit for FieldCapture<'_> {
     }
 }
 
-
 pub(super) fn cookie_value(cookies: &[String], name: &str) -> String {
     cookies
         .iter()
