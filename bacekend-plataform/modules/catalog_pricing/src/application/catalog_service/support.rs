@@ -1,4 +1,3 @@
-use sqlx::Transaction;
 use uuid::Uuid;
 
 pub(super) async fn set_operator_context(
