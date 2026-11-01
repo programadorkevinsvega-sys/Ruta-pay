@@ -1,6 +1,5 @@
 use platform_contracts::identity_access::{
-    AuthorizeTenantOperationRequest,
-    identity_access_client::IdentityAccessClient,
+    AuthorizeTenantOperationRequest, identity_access_client::IdentityAccessClient,
 };
 use reqwest::{Client, StatusCode, header};
 use sqlx::PgPool;
@@ -66,7 +65,7 @@ pub async fn verify(context: TenantRoleMatrixContext<'_>) {
         .execute(&migration_pool)
         .await
         .expect("tenant membership role can be switched for isolated acceptance");
-    
+
         for permission in [
             "tenant.read",
             "api_keys.manage",
@@ -98,7 +97,7 @@ pub async fn verify(context: TenantRoleMatrixContext<'_>) {
                 );
             }
         }
-    
+
         let tenant_read = client
             .get(format!("http://{http_addr}/v1/tenants/{created_tenant_id}"))
             .header(
@@ -113,7 +112,7 @@ pub async fn verify(context: TenantRoleMatrixContext<'_>) {
             StatusCode::OK,
             "role {role} has tenant.read"
         );
-    
+
         let api_key_list_for_role = client
             .get(format!(
                 "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
@@ -135,7 +134,7 @@ pub async fn verify(context: TenantRoleMatrixContext<'_>) {
             },
             "role {role} API key list permission is enforced at HTTP boundary"
         );
-    
+
         let create_key_for_role = client
             .post(format!(
                 "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
