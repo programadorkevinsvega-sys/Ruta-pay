@@ -33,7 +33,7 @@ pub async fn create() -> IdentityDatabaseFixture {
     .execute(&admin_pool)
     .await
     .expect("isolated acceptance database is created");
-    let mut database_cleanup = AcceptanceDatabaseCleanup {
+    let database_cleanup = AcceptanceDatabaseCleanup {
         admin_pool: admin_pool.clone(),
         database_name: database_name.clone(),
         runtime_role: runtime_role.clone(),
