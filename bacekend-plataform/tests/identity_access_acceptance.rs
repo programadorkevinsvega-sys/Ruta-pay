@@ -6,9 +6,11 @@ mod phase3_entitlements;
 use async_nats::jetstream;
 #[path = "identity_access_acceptance/support.rs"]
 mod identity_access_acceptance_support;
-use identity_access_acceptance_support::{cookie_value, is_stream_not_found, AcceptanceDatabaseCleanup, EventCapture, EventStreamCleanup};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
+use identity_access_acceptance_support::{
+    AcceptanceDatabaseCleanup, EventCapture, EventStreamCleanup, cookie_value, is_stream_not_found,
+};
 use opentelemetry::{global, trace::TracerProvider as _};
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerProvider};
 use platform_contracts::{
@@ -4406,4 +4408,3 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     admin_pool.close().await;
     provider.shutdown().expect("trace provider shuts down");
 }
-
