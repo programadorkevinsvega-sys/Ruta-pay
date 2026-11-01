@@ -279,6 +279,29 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
         .expect("usage below the quota is accepted");
     assert!(!replayed);
     assert_eq!(after_four.consumed, 4);
+
+    let live_before = entitlements
+        .evaluate(actor, tenant_one, "payments.monthly", "live", now)
+        .await
+        .expect("live usage is isolated from test usage");
+    assert_eq!(live_before.consumed, 0);
+    assert_eq!(live_before.remaining, Some(5));
+    let (live_usage, _) = entitlements
+        .consume(ConsumeQuotaCommand {
+            actor,
+            tenant: tenant_one,
+            key: "payments.monthly",
+            environment: "live",
+            quantity: 2,
+            idempotency_key: "phase3-live-payment-001",
+            now,
+            correlation_id: correlation,
+        })
+        .await
+        .expect("live usage consumes from its independent quota");
+    assert_eq!(live_usage.consumed, 2);
+    assert_eq!(live_usage.remaining, Some(3));
+
     let (replayed_result, replayed) = entitlements
         .consume(ConsumeQuotaCommand {
             actor,
