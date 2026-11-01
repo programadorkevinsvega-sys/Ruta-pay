@@ -11,6 +11,8 @@ payvia-observability = { path = "../../../crates/observability" }
 platform-identity-access = { path = "../identity_access" }
 platform-tenant-registry = { path = "../tenant_registry" }
 platform-realtime = { path = "../realtime" }
+platform-catalog-pricing = { path = "../catalog_pricing" }
+platform-entitlements-quotas = { path = "../entitlements_quotas" }
 opentelemetry.workspace = true
 thiserror.workspace = true
 metrics.workspace = true

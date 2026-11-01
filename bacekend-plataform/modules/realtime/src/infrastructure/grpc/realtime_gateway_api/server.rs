@@ -5,16 +5,15 @@ use platform_contracts::realtime::{
     realtime_gateway_server::RealtimeGateway,
 };
 use tokio::sync::mpsc;
-use tokio_stream::{Stream, wrappers::ReceiverStream};
+use tokio_stream::{Stream, StreamExt, wrappers::ReceiverStream};
 use tonic::{Request, Response, Status};
 use tracing::Instrument;
-use uuid::Uuid;
 
-use crate::infrastructure::persistence;
 use super::{
-    BATCH_SIZE, MAX_REPLAY_LIMIT, SIGNAL_CHANNEL, RealtimeGatewayApi,
+    BATCH_SIZE, MAX_REPLAY_LIMIT, RealtimeGatewayApi, SIGNAL_CHANNEL,
     support::{map_journal_error, parse_scope, request_span, send_replay, to_proto},
 };
+use crate::infrastructure::persistence;
 
 #[tonic::async_trait]
 impl RealtimeGateway for RealtimeGatewayApi {

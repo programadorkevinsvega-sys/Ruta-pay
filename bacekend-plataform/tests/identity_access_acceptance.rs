@@ -1,8 +1,20 @@
+#[path = "identity_access_acceptance/phase3_catalog.rs"]
+mod phase3_catalog;
+#[path = "identity_access_acceptance/phase3_entitlements.rs"]
+mod phase3_entitlements;
+
 use async_nats::jetstream;
+#[path = "identity_access_acceptance/support.rs"]
+mod identity_access_acceptance_support;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use identity_access_acceptance_support::{
+    AcceptanceDatabaseCleanup, EventCapture, EventStreamCleanup, cookie_value, is_stream_not_found,
+};
 use opentelemetry::{global, trace::TracerProvider as _};
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerProvider};
 use platform_contracts::{
+    catalog_pricing::catalog_pricing_client::CatalogPricingClient as CatalogPricingGrpcClient,
+    entitlements_quotas::entitlements_quotas_client::EntitlementsQuotasClient as EntitlementsQuotasGrpcClient,
     identity_access::{
         AuthorizeApiKeyOperationRequest, AuthorizeOperatorOperationRequest,
         AuthorizeTenantOperationRequest, identity_access_client::IdentityAccessClient,
@@ -19,150 +31,10 @@ use platform_runtime::event_topology::{EventTopology, delete_e2e_stream};
 use reqwest::{Client, StatusCode, header};
 use sha2::{Digest, Sha256};
 use sqlx::postgres::PgPoolOptions;
-use std::{
-    collections::HashMap,
-    net::SocketAddr,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{net::SocketAddr, time::Duration};
 use tokio::{net::TcpListener, sync::oneshot};
-use tracing::{
-    Event,
-    field::{Field, Visit},
-};
-use tracing_subscriber::{
-    layer::{Context, Layer},
-    prelude::*,
-    registry::LookupSpan,
-};
+use tracing_subscriber::prelude::*;
 use uuid::Uuid;
-
-#[derive(Clone, Default)]
-struct EventCapture(Arc<Mutex<Vec<HashMap<String, String>>>>);
-
-impl<S> Layer<S> for EventCapture
-where
-    S: tracing::Subscriber + for<'lookup> LookupSpan<'lookup>,
-{
-    fn on_event(&self, event: &Event<'_>, context: Context<'_, S>) {
-        let mut fields = HashMap::new();
-        event.record(&mut FieldCapture(&mut fields));
-        if let Some(span) = context.lookup_current() {
-            fields.insert("current_span".to_owned(), span.name().to_owned());
-        }
-        self.0.lock().expect("event capture lock").push(fields);
-    }
-}
-
-struct FieldCapture<'a>(&'a mut HashMap<String, String>);
-
-fn is_stream_not_found(error: async_nats::jetstream::context::GetStreamError) -> bool {
-    matches!(
-        error.kind(),
-        async_nats::jetstream::context::GetStreamErrorKind::JetStream(jetstream_error)
-            if jetstream_error.kind() == async_nats::jetstream::ErrorCode::STREAM_NOT_FOUND
-    )
-}
-
-struct EventStreamCleanup {
-    jetstream: jetstream::Context,
-    namespace: String,
-    armed: bool,
-}
-
-struct AcceptanceDatabaseCleanup {
-    admin_pool: sqlx::PgPool,
-    database_name: String,
-    runtime_role: String,
-    armed: bool,
-}
-
-impl AcceptanceDatabaseCleanup {
-    async fn cleanup(&mut self) {
-        Self::drop_owned_resources(&self.admin_pool, &self.database_name, &self.runtime_role)
-            .await
-            .expect("acceptance database and role are removed");
-        self.armed = false;
-    }
-
-    async fn drop_owned_resources(
-        admin_pool: &sqlx::PgPool,
-        database_name: &str,
-        runtime_role: &str,
-    ) -> Result<(), sqlx::Error> {
-        sqlx::query(
-            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()",
-        )
-        .bind(database_name)
-        .execute(admin_pool)
-        .await?;
-        sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
-            "DROP DATABASE IF EXISTS \"{database_name}\""
-        )))
-        .execute(admin_pool)
-        .await?;
-        sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
-            "DROP ROLE IF EXISTS \"{runtime_role}\""
-        )))
-        .execute(admin_pool)
-        .await?;
-        Ok(())
-    }
-}
-
-impl Drop for AcceptanceDatabaseCleanup {
-    fn drop(&mut self) {
-        if self.armed {
-            let admin_pool = self.admin_pool.clone();
-            let database_name = self.database_name.clone();
-            let runtime_role = self.runtime_role.clone();
-            let runtime = tokio::runtime::Handle::current();
-            tokio::task::block_in_place(|| {
-                runtime.block_on(async move {
-                    Self::drop_owned_resources(&admin_pool, &database_name, &runtime_role)
-                        .await
-                        .expect("panic cleanup removes only this acceptance database and role");
-                })
-            });
-        }
-    }
-}
-
-impl EventStreamCleanup {
-    async fn cleanup(&mut self) {
-        delete_e2e_stream(&self.jetstream, &self.namespace)
-            .await
-            .expect("only the integration test stream is deleted");
-        self.armed = false;
-    }
-}
-
-impl Drop for EventStreamCleanup {
-    fn drop(&mut self) {
-        if self.armed {
-            let jetstream = self.jetstream.clone();
-            let namespace = self.namespace.clone();
-            let runtime = tokio::runtime::Handle::current();
-            tokio::task::block_in_place(|| {
-                runtime.block_on(async move {
-                    delete_e2e_stream(&jetstream, &namespace)
-                        .await
-                        .expect("panic cleanup deletes only this integration stream");
-                })
-            });
-        }
-    }
-}
-
-impl Visit for FieldCapture<'_> {
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-        self.0.insert(field.name().to_owned(), format!("{value:?}"));
-    }
-
-    fn record_str(&mut self, field: &Field, value: &str) {
-        self.0.insert(field.name().to_owned(), value.to_owned());
-    }
-}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() {
@@ -221,6 +93,14 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .run(&migration_pool)
         .await
         .expect("realtime journal migration applies to real PostgreSQL");
+    platform_catalog_pricing::infrastructure::persistence::MIGRATOR
+        .run(&migration_pool)
+        .await
+        .expect("catalog pricing migrations apply to real PostgreSQL");
+    platform_entitlements_quotas::infrastructure::persistence::MIGRATOR
+        .run(&migration_pool)
+        .await
+        .expect("entitlements and quotas migrations apply to real PostgreSQL");
     let tenant_role_permissions: Vec<(String, String)> = sqlx::query_as(
         "SELECT role, permission FROM identity_access.tenant_role_permissions ORDER BY role, permission",
     )
@@ -232,6 +112,8 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         vec![
             ("developer".to_owned(), "api_keys.manage".to_owned()),
             ("developer".to_owned(), "tenant.read".to_owned()),
+            ("developer".to_owned(), "usage.consume".to_owned()),
+            ("developer".to_owned(), "usage.read".to_owned()),
             ("tenant_admin".to_owned(), "api_keys.manage".to_owned()),
             ("tenant_admin".to_owned(), "members.manage".to_owned()),
             ("tenant_admin".to_owned(), "tenant.read".to_owned()),
@@ -239,6 +121,8 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
                 "tenant_admin".to_owned(),
                 "tenant.settings.manage".to_owned()
             ),
+            ("tenant_admin".to_owned(), "usage.consume".to_owned()),
+            ("tenant_admin".to_owned(), "usage.read".to_owned()),
             ("tenant_owner".to_owned(), "api_keys.manage".to_owned()),
             ("tenant_owner".to_owned(), "members.manage".to_owned()),
             ("tenant_owner".to_owned(), "tenant.read".to_owned()),
@@ -246,7 +130,10 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
                 "tenant_owner".to_owned(),
                 "tenant.settings.manage".to_owned()
             ),
+            ("tenant_owner".to_owned(), "usage.consume".to_owned()),
+            ("tenant_owner".to_owned(), "usage.read".to_owned()),
             ("viewer".to_owned(), "tenant.read".to_owned()),
+            ("viewer".to_owned(), "usage.read".to_owned()),
         ],
         "tenant role-to-permission grants must remain explicit and least-privilege"
     );
@@ -259,6 +146,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     assert_eq!(
         operator_role_permissions,
         vec![
+            ("platform_owner".to_owned(), "catalog.manage".to_owned()),
             (
                 "platform_owner".to_owned(),
                 "operators.bootstrap".to_owned()
@@ -268,6 +156,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             ("platform_owner".to_owned(), "tenants.read".to_owned()),
             ("platform_owner".to_owned(), "tenants.suspend".to_owned()),
             ("platform_owner".to_owned(), "tenants.verify".to_owned()),
+            ("platform_security".to_owned(), "catalog.manage".to_owned()),
             (
                 "platform_security".to_owned(),
                 "tenants.activate".to_owned()
@@ -294,15 +183,19 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .await
     .expect("runtime role receives database connect only");
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
-        "GRANT USAGE ON SCHEMA identity_access, tenant_registry, realtime TO \"{runtime_role}\""
+        "GRANT USAGE ON SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas TO \"{runtime_role}\""
     )))
     .execute(&migration_pool)
     .await
     .expect("runtime role receives schema usage");
-    sqlx::raw_sql(sqlx::AssertSqlSafe(format!("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity_access, tenant_registry, realtime TO \"{runtime_role}\"")))
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas TO \"{runtime_role}\"")))
         .execute(&migration_pool)
         .await
         .expect("runtime role receives owned-module table privileges");
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas TO \"{runtime_role}\"")))
+        .execute(&migration_pool)
+        .await
+        .expect("runtime role receives sequence privileges for every migrated module");
     parsed_url
         .set_username(&runtime_role)
         .expect("runtime role is valid in database URL");
@@ -449,19 +342,24 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
 
     let grpc_listener = TcpListener::bind("127.0.0.1:0").await.expect("gRPC bind");
     let grpc_addr = grpc_listener.local_addr().expect("gRPC address");
-    let module_identity_client = IdentityAccessClient::new(
-        tonic::transport::Endpoint::from_shared(format!("http://{grpc_addr}"))
-            .expect("identity module endpoint parses")
-            .connect_lazy(),
-    );
+    let runtime_channel = tonic::transport::Endpoint::from_shared(format!("http://{grpc_addr}"))
+        .expect("identity module endpoint parses")
+        .connect_lazy();
+    let module_identity_client = IdentityAccessClient::new(runtime_channel.clone());
+    let module_catalog_client = CatalogPricingGrpcClient::new(runtime_channel.clone());
+    let module_tenant_client = TenantRegistryGrpcClient::new(runtime_channel);
     let (grpc_stop, grpc_signal) = oneshot::channel();
     let grpc_pool = runtime_pool.clone();
     let grpc_task = tokio::spawn(platform_runtime::module_config::serve(
         grpc_listener,
-        grpc_pool,
-        redis_manager.clone(),
-        redis_client,
-        module_identity_client,
+        platform_runtime::module_config::RuntimeModuleDependencies {
+            pool: grpc_pool,
+            redis: redis_manager.clone(),
+            redis_client,
+            identity_client: module_identity_client,
+            catalog_client: module_catalog_client,
+            tenant_client: module_tenant_client,
+        },
         async move {
             let _ = grpc_signal.await;
         },
@@ -480,6 +378,12 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let realtime_client = RealtimeGatewayGrpcClient::connect(format!("http://{grpc_addr}"))
         .await
         .expect("realtime gRPC channel connects");
+    let catalog_client = CatalogPricingGrpcClient::connect(format!("http://{grpc_addr}"))
+        .await
+        .expect("catalog gRPC channel connects");
+    let entitlements_client = EntitlementsQuotasGrpcClient::connect(format!("http://{grpc_addr}"))
+        .await
+        .expect("entitlements gRPC channel connects");
     let mut authorization_client = identity_client.clone();
     let realtime_acceptance_client = realtime_client.clone();
     let http_listener = TcpListener::bind("127.0.0.1:0").await.expect("BFF bind");
@@ -494,6 +398,8 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
                 identity_client,
                 tenant_client,
                 realtime_client,
+                catalog_client,
+                entitlements_client,
             )
             .into_make_service_with_connect_info::<SocketAddr>(),
         )
@@ -1009,6 +915,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .collect();
     let operator_session_cookie = cookie_value(&operator_cookies, "payvia_platform_session");
     let operator_csrf_cookie = cookie_value(&operator_cookies, "payvia_platform_csrf");
+
     let authorization = authorization_client
         .authorize_operator_operation(AuthorizeOperatorOperationRequest {
             session_token: operator_session_cookie.clone(),
@@ -1844,7 +1751,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .json(&serde_json::json!({
             "name": "Wrong actor",
             "environment": "test",
-            "scopes": ["payment_intents.create"]
+            "scopes": ["payment_intents.create", "usage.consume"]
         }))
         .send()
         .await
@@ -2002,11 +1909,13 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .json(&serde_json::json!({
             "name": "Acceptance live key",
             "environment": "live",
-            "scopes": ["payment_intents.create"]
+            "scopes": ["payment_intents.create", "usage.consume"]
         }))
         .send()
         .await
-        .expect("tenant owner can create an API key through BFF and gRPC");
+        .expect(
+            "tenant owner can create an API key with payment and quota scopes through BFF and gRPC",
+        );
     assert_eq!(api_key_creation.status(), StatusCode::CREATED);
     let api_key_created: serde_json::Value = api_key_creation
         .json()
@@ -2056,6 +1965,29 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         scoped_api_key_authorization.tenant_id,
         created_tenant_id.to_string()
     );
+    phase3_catalog::configure(
+        &client,
+        http_addr,
+        &origin,
+        &operator_session_cookie,
+        &operator_csrf_cookie,
+        created_tenant_id,
+    )
+    .await;
+    phase3_entitlements::verify(phase3_entitlements::EntitlementAcceptanceContext {
+        client: &client,
+        http_addr,
+        grpc_addr,
+        origin: &origin,
+        session_cookie: &session_cookie,
+        csrf_cookie: &csrf_cookie,
+        tenant_id: created_tenant_id,
+        api_key_id,
+        api_key_secret,
+        authorization_client: authorization_client.clone(),
+    })
+    .await;
+
     let denied_api_key_scope = authorization_client
         .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
             secret: api_key_secret.to_owned(),
@@ -4474,16 +4406,4 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     database_cleanup.cleanup().await;
     admin_pool.close().await;
     provider.shutdown().expect("trace provider shuts down");
-}
-
-fn cookie_value(cookies: &[String], name: &str) -> String {
-    cookies
-        .iter()
-        .find_map(|cookie| {
-            cookie
-                .strip_prefix(&format!("{name}="))
-                .and_then(|cookie| cookie.split(';').next())
-                .map(str::to_owned)
-        })
-        .expect("required session cookie is present")
 }

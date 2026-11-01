@@ -1,18 +1,20 @@
 name: Platform Rust quality
 
 concurrency:
-  group: platform-quality-${{ github.event.pull_request.head.ref || github.ref_name }}
+  group: platform-quality-phase3-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 
 on:
   push:
     branches:
       - main
+      - feat/phase-3-catalog-entitlements
     paths:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'bacekend-plataform/**'
       - 'bacekend-pasarela/**'
+      - 'crates/**'
       - 'frontends/**'
       - 'AGENTS.md'
       - 'PROJECT_RULES.md'
@@ -24,6 +26,7 @@ on:
       - 'Cargo.lock'
       - 'bacekend-plataform/**'
       - 'bacekend-pasarela/**'
+      - 'crates/**'
       - 'frontends/**'
       - 'AGENTS.md'
       - 'PROJECT_RULES.md'
@@ -94,9 +97,9 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Tests
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
       - uses: actions/setup-node@v7
         with:
           node-version: 26.13.0
@@ -145,3 +148,5 @@ jobs:
       - name: Remove temporary E2E environment
         if: always()
         run: rm -f bacekend-plataform/.env
+
+# CI validation refresh for the current Phase 3 review head.

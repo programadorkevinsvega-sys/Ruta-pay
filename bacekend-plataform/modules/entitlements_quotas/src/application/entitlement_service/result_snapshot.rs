@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::domain::entitlement::{Entitlement, EntitlementError};
+use super::EntitlementServiceError;
+use crate::domain::entitlement::Entitlement;
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -23,9 +24,9 @@ pub(super) struct EntitlementResultSnapshot {
 }
 
 impl EntitlementResultSnapshot {
-    pub(super) fn encode(result: &Entitlement) -> Result<Value, EntitlementError> {
+    pub(super) fn encode(result: &Entitlement) -> Result<Value, EntitlementServiceError> {
         serde_json::to_value(Self::from(result))
-            .map_err(|_| EntitlementError::IdempotencyResultUnavailable)
+            .map_err(|_| EntitlementServiceError::IdempotencyResultUnavailable)
     }
 
     pub(super) fn decode(
@@ -33,21 +34,26 @@ impl EntitlementResultSnapshot {
         tenant: Uuid,
         capability_key: &str,
         environment: &str,
-    ) -> Result<Entitlement, EntitlementError> {
+    ) -> Result<Entitlement, EntitlementServiceError> {
         let snapshot: Self = serde_json::from_value(value)
-            .map_err(|_| EntitlementError::IdempotencyResultUnavailable)?;
+            .map_err(|_| EntitlementServiceError::IdempotencyResultUnavailable)?;
+        let expected_remaining = snapshot
+            .limit_value
+            .map(|limit| limit.saturating_sub(snapshot.consumed).max(0));
         if snapshot.tenant_id != tenant
             || snapshot.capability_key != capability_key
             || snapshot.environment != environment
             || snapshot.consumed < 0
             || snapshot.limit_value.is_some_and(|limit| limit < 0)
             || snapshot.period_end <= snapshot.period_start
-            || snapshot.remaining
-                != snapshot
-                    .limit_value
-                    .map(|limit| limit.saturating_sub(snapshot.consumed).max(0))
+            || snapshot.remaining != expected_remaining
+            || !matches!(
+                snapshot.reason.as_str(),
+                "allowed" | "capability_disabled" | "environment_restricted" | "quota_exhausted"
+            )
+            || snapshot.allowed != (snapshot.reason == "allowed")
         {
-            return Err(EntitlementError::IdempotencyResultUnavailable);
+            return Err(EntitlementServiceError::IdempotencyResultUnavailable);
         }
         Ok(snapshot.into())
     }

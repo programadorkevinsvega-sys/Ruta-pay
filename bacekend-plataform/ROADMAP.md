@@ -80,11 +80,15 @@ La implementación se ejecuta conforme a la matriz previa de [`docs/phase-2/acce
 - [ ] Planes y versiones inmutables de precio/moneda/periodo; cambios con vigencias explícitas.
 - [ ] Capacidades, límites, cuotas, políticas de excedente y restricciones por entorno.
 - [ ] Evaluación determinista del entitlement por tenant, plan y fecha efectiva.
-- [ ] Ledger durable de consumo/cuotas y protección contra concurrencia y replay.
+- [ ] Ledger durable de consumo/cuotas y protección contra concurrencia y replay, incluyendo replay estable de la respuesta original después de consumos posteriores y rechazo seguro de filas históricas sin snapshot.
 - [ ] API administrativa de catálogo y consulta tenant de su plan/consumo sin filtrar datos internos.
-- [ ] Contrato de entitlement/autorización consumible por gateway mediante gRPC.
+- [ ] Contrato gRPC versionado y cliente tipado en gateway; mTLS, grants firmados y enforcement runtime pertenecen a Fase 5.
+- [ ] Outbox de catálogo/entitlements → JetStream → realtime journal, cursor de plataforma/tenant y señal Redis; traceparent W3C propagado.
+- [ ] Matriz de integración previa, límites N/A y evidencia de aceptación registrados.
 
-**Salida:** pruebas reales cubren límites exactos, excedentes, concurrencia, cambio versionado de plan, fechas y aislamiento.
+Acta: [`docs/phase-3/acceptance.md`](docs/phase-3/acceptance.md). Matriz específica: [`docs/phase-3/integration-matrix.md`](docs/phase-3/integration-matrix.md). La aceptación usa PostgreSQL, Redis y JetStream reales; prueba inmutabilidad, rollback, replay original, concurrencia, RLS y entrega de eventos de catálogo/cuota al journal realtime. No se marcan las casillas hasta que CI y aceptación estén verdes sobre el mismo SHA y se registre la verificación de despliegue requerida.
+
+**Salida:** pruebas reales cubren límites exactos, excedentes, replay original, concurrencia, cambio versionado de plan, fechas, aislamiento, BFF/gRPC, gateway contract client y entrega realtime con cursor.
 
 ## Fase 4 — Suscripciones y facturación de uso Payvia
 
@@ -175,4 +179,4 @@ Referencias oficiales para la implementación: [Wompi — ambientes y llaves](ht
 
 ## Estado
 
-Fases 0, 1 y 2 están cerradas dentro de sus alcances documentados. Las evidencias están en [`docs/phase-0/`](docs/phase-0/), [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md) y [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md). Fase 2 está integrada en `main` mediante PR #2 (squash merge). Las fases posteriores siguen pendientes; cuentas sandbox, credenciales o decisiones legales faltantes se documentan como bloqueos concretos, sin simulaciones.
+Fases 0, 1 y 2 están cerradas dentro de sus alcances documentados. Las evidencias están en [`docs/phase-0/`](docs/phase-0/), [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md) y [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md). Fase 2 está integrada en `main` mediante PR #5 (merge confirmado). Fase 3 está en remediación y aceptación final en `feat/phase-3-catalog-entitlements` y PR #7 (draft). Sus casillas permanecen abiertas hasta demostrar en el mismo SHA pruebas reales de límites, excedentes, replay idempotente original, concurrencia, cambio versionado, fechas, aislamiento multi-tenant, BFF/gRPC, gateway contract client, Outbox, JetStream, realtime journal/cursor, CI verde y verificación de despliegue. Las fases 4–9 siguen pendientes; cuentas sandbox, credenciales o decisiones legales faltantes se documentan como bloqueos concretos, sin simulaciones.

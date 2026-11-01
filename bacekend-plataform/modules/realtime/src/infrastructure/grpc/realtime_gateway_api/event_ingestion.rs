@@ -4,8 +4,8 @@ use sqlx::PgPool;
 use tracing::Instrument;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-use crate::infrastructure::persistence::{self, JournalError};
 use super::SIGNAL_CHANNEL;
+use crate::infrastructure::persistence::{self, JournalError};
 
 pub async fn persist_and_publish(
     pool: &PgPool,
@@ -48,18 +48,6 @@ pub async fn persist_and_publish(
     }
     .instrument(span)
     .await
-}
-
-struct TraceparentExtractor<'a>(Option<&'a str>);
-
-impl Extractor for TraceparentExtractor<'_> {
-    fn get(&self, key: &str) -> Option<&str> {
-        if key == "traceparent" { self.0 } else { None }
-    }
-
-    fn keys(&self) -> Vec<&str> {
-        vec!["traceparent"]
-    }
 }
 
 struct TraceparentExtractor<'a>(Option<&'a str>);

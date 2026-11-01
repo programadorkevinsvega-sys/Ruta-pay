@@ -1,7 +1,10 @@
 use std::time::Duration;
 
-use opentelemetry::{global, propagation::Extractor, trace::TraceContextExt};
+use super::BATCH_SIZE;
+
+use opentelemetry::{global, trace::TraceContextExt};
 use platform_contracts::realtime::RealtimeEvent;
+use sqlx::PgPool;
 use tokio::sync::mpsc;
 use tonic::{Request, Status};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -9,7 +12,7 @@ use uuid::Uuid;
 
 use crate::infrastructure::persistence::{self, JournalError};
 
-async fn send_replay(
+pub(super) async fn send_replay(
     pool: &PgPool,
     audience: &str,
     tenant_id: Option<Uuid>,
@@ -64,7 +67,7 @@ async fn send_replay(
     }
 }
 
-fn parse_scope(audience: &str, tenant_id: &str) -> Result<Option<Uuid>, Status> {
+pub(super) fn parse_scope(audience: &str, tenant_id: &str) -> Result<Option<Uuid>, Status> {
     match audience {
         "platform" if tenant_id.is_empty() => Ok(None),
         "tenant" => Uuid::parse_str(tenant_id)
@@ -74,7 +77,7 @@ fn parse_scope(audience: &str, tenant_id: &str) -> Result<Option<Uuid>, Status> 
     }
 }
 
-fn to_proto(event: persistence::JournalEvent) -> RealtimeEvent {
+pub(super) fn to_proto(event: persistence::JournalEvent) -> RealtimeEvent {
     RealtimeEvent {
         cursor: event.cursor as u64,
         event_id: event.event_id.to_string(),
@@ -90,7 +93,7 @@ fn to_proto(event: persistence::JournalEvent) -> RealtimeEvent {
     }
 }
 
-fn map_journal_error(error: JournalError) -> Status {
+pub(super) fn map_journal_error(error: JournalError) -> Status {
     match error {
         JournalError::InvalidEnvelope => Status::invalid_argument("realtime request is invalid"),
         JournalError::Database(_) => Status::internal("realtime journal operation failed"),
@@ -107,7 +110,7 @@ fn map_journal_error(error: JournalError) -> Status {
     }
 }
 
-fn request_span<T>(
+pub(super) fn request_span<T>(
     request: &Request<T>,
     operation: &'static str,
     correlation_id: &str,

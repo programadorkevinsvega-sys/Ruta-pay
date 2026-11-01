@@ -2,6 +2,8 @@ use payvia_platform_bff::{
     common::grpc::runtime_probe_client::RuntimeProbeClient, http::routes::router,
 };
 use payvia_platform_core::{config::AppConfig, metrics, shutdown_signal, telemetry};
+use platform_contracts::catalog_pricing::catalog_pricing_client::CatalogPricingClient as CatalogPricingGrpcClient;
+use platform_contracts::entitlements_quotas::entitlements_quotas_client::EntitlementsQuotasClient as EntitlementsQuotasGrpcClient;
 use platform_contracts::identity_access::identity_access_client::IdentityAccessClient as IdentityAccessGrpcClient;
 use platform_contracts::realtime::realtime_gateway_client::RealtimeGatewayClient as RealtimeGatewayGrpcClient;
 use platform_contracts::runtime::runtime_probe_client::RuntimeProbeClient as RuntimeProbeGrpcClient;
@@ -97,15 +99,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
     let runtime_listener = bind_listener(config.grpc_addr, "platform_runtime", "bind_grpc").await?;
     let runtime_addr = runtime_listener.local_addr()?;
-    let identity_module_client = IdentityAccessGrpcClient::new(
-        Endpoint::from_shared(format!("http://{runtime_addr}"))?.connect_lazy(),
-    );
+    let runtime_channel = Endpoint::from_shared(format!("http://{runtime_addr}"))?.connect_lazy();
+    let identity_module_client = IdentityAccessGrpcClient::new(runtime_channel.clone());
+    let catalog_module_client = CatalogPricingGrpcClient::new(runtime_channel.clone());
+    let tenant_module_client = TenantRegistryGrpcClient::new(runtime_channel);
     let runtime_task = tokio::spawn(serve_runtime(
         runtime_listener,
-        database_pool,
-        redis_manager,
-        redis_client,
-        identity_module_client,
+        platform_runtime::module_config::RuntimeModuleDependencies {
+            pool: database_pool,
+            redis: redis_manager,
+            redis_client,
+            identity_client: identity_module_client,
+            catalog_client: catalog_module_client,
+            tenant_client: tenant_module_client,
+        },
         shutdown_rx.clone(),
     ));
     let endpoint = Endpoint::from_shared(format!("http://{runtime_addr}"))?
@@ -166,6 +173,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 retryable = true
             )
         })?;
+    let catalog_client = CatalogPricingGrpcClient::connect(
+        Endpoint::from_shared(format!("http://{runtime_addr}"))?
+            .connect_timeout(Duration::from_secs(2))
+            .timeout(Duration::from_secs(5)),
+    )
+    .await?;
+    let entitlements_client = EntitlementsQuotasGrpcClient::connect(
+        Endpoint::from_shared(format!("http://{runtime_addr}"))?
+            .connect_timeout(Duration::from_secs(2))
+            .timeout(Duration::from_secs(5)),
+    )
+    .await?;
     let metrics_listener =
         bind_listener(config.metrics_addr, "platform_metrics", "bind_metrics").await?;
     let metrics_task = tokio::spawn(metrics::serve(
@@ -178,8 +197,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(event.name = "service.started", service = "payvia-platform", http_addr = %http_listener.local_addr()?, grpc_addr = %runtime_addr, metrics_addr = %config.metrics_addr);
     axum::serve(
         http_listener,
-        router(grpc_client, identity_client, tenant_client, realtime_client)
-            .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        router(
+            grpc_client,
+            identity_client,
+            tenant_client,
+            realtime_client,
+            catalog_client,
+            entitlements_client,
+        )
+        .into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
     .with_graceful_shutdown(async move {
         shutdown_signal::wait_for_shutdown_signal().await;
@@ -214,24 +240,14 @@ async fn bind_listener(
 
 async fn serve_runtime(
     listener: TcpListener,
-    database_pool: sqlx::PgPool,
-    redis_manager: redis::aio::ConnectionManager,
-    redis_client: redis::Client,
-    identity_client: IdentityAccessGrpcClient<tonic::transport::Channel>,
+    dependencies: platform_runtime::module_config::RuntimeModuleDependencies,
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<(), tonic::transport::Error> {
     let span = tracing::info_span!("grpc.server", component = "platform_runtime");
     async move {
-        platform_runtime::module_config::serve(
-            listener,
-            database_pool,
-            redis_manager,
-            redis_client,
-            identity_client,
-            async move {
-                let _ = shutdown.changed().await;
-            },
-        )
+        platform_runtime::module_config::serve(listener, dependencies, async move {
+            let _ = shutdown.changed().await;
+        })
         .await
     }
     .instrument(span)
