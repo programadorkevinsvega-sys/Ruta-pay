@@ -19,7 +19,7 @@ pub async fn verify(
         .header("x-correlation-id", "corr_identity_duplicate_email")
         .json(&serde_json::json!({
             "email": format!(" {} ", email.to_ascii_uppercase()),
-            "password": password.clone()
+            "password": password
         }))
         .send()
         .await
