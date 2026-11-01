@@ -106,4 +106,3 @@ pub(super) async fn migrate() -> Result<(), &'static str> {
     );
     Ok(())
 }
-
