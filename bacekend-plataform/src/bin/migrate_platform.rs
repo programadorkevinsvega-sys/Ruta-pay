@@ -1,5 +1,8 @@
+#[path = "migrate_platform/migration.rs"]
 mod migration;
+#[path = "migrate_platform/privileges.rs"]
 mod privileges;
+#[path = "migrate_platform/validation.rs"]
 mod validation;
 
 use std::process::ExitCode;
