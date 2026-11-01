@@ -68,15 +68,18 @@ The full workspace workflow is authoritative because it also runs the BFF, gatew
 - Gateway has a typed client for the platform entitlement contract. mTLS identity, signed grants, fail-closed authorization and the live gateway request path are Phase 5 acceptance and must not be claimed complete in Phase 3.
 - Legacy usage rows created before the response-snapshot migration cannot be replayed as if the original response were known. They fail explicitly rather than returning current state.
 
-## Closure criteria
+## Existing architecture debt and closure criteria
+
+The Phase 3 modules and newly extracted acceptance/realtime/event-worker files are split below the mandatory 200-lines-of-code limit. The repository still contains pre-existing oversized files that this PR touches for wiring or shared setup: `apps/bff/src/http/handlers/identity.rs`, `src/main.rs`, `src/bin/migrate_platform.rs`, `tests/http_grpc_acceptance.rs` and `tests/identity_access_acceptance.rs`. Their full SRP/200-line refactor is not complete and must not be represented as repository-wide rule compliance.
 
 Phase 3 must remain open until all of the following are true on one final HEAD SHA:
 
-1. Format, Clippy, all Rust tests, frontend tests/builds and browser E2E are green.
-2. The real PostgreSQL/Redis/JetStream acceptance test passes, including immutable result replay and event-specific realtime journal/cursor delivery.
-3. The gateway shared-contract client compiles and the BFF HTTP/gRPC authorization path passes.
-4. The integration matrix has no unclassified applicable boundary.
-5. The PR description, roadmap and this acta reference the same final SHA and workflow.
-6. Deployment/migration execution and health verification for the target environment are recorded; otherwise production readiness remains unverified.
+1. No Phase 3-owned Rust source or test file exceeds 200 lines of code; inherited oversized integration/bootstrap files are tracked as explicit technical debt and are not claimed compliant.
+2. Format, Clippy, all Rust tests, frontend tests/builds and browser E2E are green.
+3. The real PostgreSQL/Redis/JetStream acceptance test passes, including immutable result replay and event-specific realtime journal/cursor delivery.
+4. The gateway shared-contract client compiles and the BFF HTTP/gRPC authorization path passes.
+5. The integration matrix has no unclassified applicable boundary.
+6. The PR description, roadmap and this acta reference the same final SHA and workflow.
+7. Deployment/migration execution and health verification for the target environment are recorded; otherwise production readiness remains unverified.
 
 This document intentionally does not declare Phase 3 closed before those conditions are evidenced.
