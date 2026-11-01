@@ -1,4 +1,3 @@
-use super::*;
 use platform_contracts::identity_access::{
     AuthorizeTenantOperationRequest, identity_access_client::IdentityAccessClient,
 };
