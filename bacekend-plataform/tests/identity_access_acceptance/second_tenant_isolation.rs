@@ -17,7 +17,6 @@ pub async fn create_and_verify(
     registration_subject: &str,
     http_addr: SocketAddr,
     origin: &str,
-    tenant_slug: &str,
     created_tenant_id: Uuid,
     credentials: &SecondTenantCredentials,
 ) -> Uuid {
