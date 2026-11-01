@@ -45,7 +45,7 @@ pub async fn verify(context: TenantStatusRaceContext<'_>) {
             .post(&race_status_url)
             .header(header::ORIGIN, origin)
             .header(header::COOKIE, &race_cookie)
-            .header("x-csrf-token", &matrix_operator_csrf_cookie)
+            .header("x-csrf-token", matrix_operator_csrf_cookie)
             .header("x-correlation-id", "corr_tenant_status_race_suspend")
             .json(&serde_json::json!({
                 "status": "suspended",
@@ -57,7 +57,7 @@ pub async fn verify(context: TenantStatusRaceContext<'_>) {
             .post(&race_status_url)
             .header(header::ORIGIN, origin)
             .header(header::COOKIE, &race_cookie)
-            .header("x-csrf-token", &matrix_operator_csrf_cookie)
+            .header("x-csrf-token", matrix_operator_csrf_cookie)
             .header("x-correlation-id", "corr_tenant_status_race_close")
             .json(&serde_json::json!({
                 "status": "closing",
