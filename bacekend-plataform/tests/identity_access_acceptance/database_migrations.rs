@@ -1,30 +1,31 @@
+use super::*;
 use sqlx::PgPool;
 
 pub async fn migrate_and_verify_permission_seeds(migration_pool: &PgPool) {
     platform_identity_access::infrastructure::persistence::MIGRATOR
-        .run(&migration_pool)
+        .run(migration_pool)
         .await
         .expect("identity access migrations apply to real PostgreSQL");
     platform_tenant_registry::infrastructure::persistence::MIGRATOR
-        .run(&migration_pool)
+        .run(migration_pool)
         .await
         .expect("tenant registry migrations apply to real PostgreSQL");
     platform_realtime::infrastructure::persistence::MIGRATOR
-        .run(&migration_pool)
+        .run(migration_pool)
         .await
         .expect("realtime journal migration applies to real PostgreSQL");
     platform_catalog_pricing::infrastructure::persistence::MIGRATOR
-        .run(&migration_pool)
+        .run(migration_pool)
         .await
         .expect("catalog pricing migrations apply to real PostgreSQL");
     platform_entitlements_quotas::infrastructure::persistence::MIGRATOR
-        .run(&migration_pool)
+        .run(migration_pool)
         .await
         .expect("entitlements and quotas migrations apply to real PostgreSQL");
     let tenant_role_permissions: Vec<(String, String)> = sqlx::query_as(
             "SELECT role, permission FROM identity_access.tenant_role_permissions ORDER BY role, permission",
         )
-        .fetch_all(&migration_pool)
+        .fetch_all(migration_pool)
         .await
         .expect("tenant role permission matrix is queryable");
     assert_eq!(
@@ -60,7 +61,7 @@ pub async fn migrate_and_verify_permission_seeds(migration_pool: &PgPool) {
     let operator_role_permissions: Vec<(String, String)> = sqlx::query_as(
             "SELECT role, permission FROM identity_access.operator_role_permissions ORDER BY role, permission",
         )
-        .fetch_all(&migration_pool)
+        .fetch_all(migration_pool)
         .await
         .expect("operator role permission matrix is queryable");
     assert_eq!(
