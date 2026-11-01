@@ -11,6 +11,7 @@ use crate::http::{handlers::identity, middleware::correlation_id::correlation_id
 use platform_contracts::entitlements_quotas::{GetTenantEntitlementRequest, ListTenantEntitlementsRequest};
 use super::{shared::tonic_request, types::{EntitlementQuery, EntitlementView}};
 
+#[utoipa::path(get, path="/v1/tenants/{tenant_id}/entitlements", params(("tenant_id"=String,Path),("environment"=Option<String>,Query)), responses((status=200, body=Vec<EntitlementView>)))]
 pub async fn list_entitlements(
     State(state): State<Arc<AppState>>,
     Path(tenant_id): Path<String>,
@@ -74,6 +75,7 @@ pub async fn list_entitlements(
 
 #[utoipa::path(get, path="/v1/tenants/{tenant_id}/entitlements/{capability_key}", params(("tenant_id"=String,Path),("capability_key"=String,Path),("environment"=Option<String>,Query)), responses((status=200, body=EntitlementView)))]
 
+#[utoipa::path(get, path="/v1/tenants/{tenant_id}/entitlements/{capability_key}", params(("tenant_id"=String,Path),("capability_key"=String,Path),("environment"=Option<String>,Query)), responses((status=200, body=EntitlementView)))]
 pub async fn get_entitlement(
     State(state): State<Arc<AppState>>,
     Path((tenant_id, capability_key)): Path<(String, String)>,
