@@ -1,7 +1,7 @@
 use uuid::Uuid;
 
-use crate::domain::entitlement::{Capability, EntitlementError};
 use super::{EntitlementService, EntitlementServiceError, support::set_operator_context};
+use crate::domain::entitlement::{Capability, EntitlementError};
 
 impl EntitlementService {
     pub async fn set_capabilities(
