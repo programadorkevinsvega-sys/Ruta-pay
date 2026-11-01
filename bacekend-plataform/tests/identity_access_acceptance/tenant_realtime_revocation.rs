@@ -1,3 +1,4 @@
+use super::*;
 use platform_contracts::realtime::{
     SubscribeEventsRequest, realtime_gateway_client::RealtimeGatewayClient,
 };
@@ -34,12 +35,12 @@ pub async fn verify(
 
     let logout = client
         .delete(format!("http://{http_addr}/v1/identity/session"))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
         )
-        .header("x-csrf-token", &csrf_cookie)
+        .header("x-csrf-token", csrf_cookie)
         .header("x-correlation-id", "corr_identity_logout")
         .send()
         .await
@@ -66,7 +67,7 @@ pub async fn verify(
         "SELECT EXISTS (SELECT 1 FROM identity_access.audit_events WHERE actor_id = $1 AND action = 'identity.session.revoked' AND correlation_id = 'corr_identity_logout')",
     )
     .bind(registered_user_id)
-    .fetch_one(&migration_pool)
+    .fetch_one(migration_pool)
     .await
     .expect("tenant session revocation audit is queryable");
     assert!(
@@ -75,12 +76,12 @@ pub async fn verify(
     );
     let replay = client
         .delete(format!("http://{http_addr}/v1/identity/session"))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
         )
-        .header("x-csrf-token", &csrf_cookie)
+        .header("x-csrf-token", csrf_cookie)
         .send()
         .await
         .expect("revoked session replay is rejected");
