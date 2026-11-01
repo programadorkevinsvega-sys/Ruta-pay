@@ -74,8 +74,6 @@ pub async fn list_entitlements(
 }
 
 #[utoipa::path(get, path="/v1/tenants/{tenant_id}/entitlements/{capability_key}", params(("tenant_id"=String,Path),("capability_key"=String,Path),("environment"=Option<String>,Query)), responses((status=200, body=EntitlementView)))]
-
-#[utoipa::path(get, path="/v1/tenants/{tenant_id}/entitlements/{capability_key}", params(("tenant_id"=String,Path),("capability_key"=String,Path),("environment"=Option<String>,Query)), responses((status=200, body=EntitlementView)))]
 pub async fn get_entitlement(
     State(state): State<Arc<AppState>>,
     Path((tenant_id, capability_key)): Path<(String, String)>,
