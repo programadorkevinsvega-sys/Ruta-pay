@@ -16,7 +16,7 @@ Required variables:
 - `PLATFORM_NATS_URL`, `NATS_USER`, `NATS_PASSWORD`: authenticated JetStream endpoint and credentials.
 - `PLATFORM_REDIS_URL`: authenticated Redis endpoint for realtime signal fan-out.
 
-The CI workflow `.github/workflows/platform-quality.yml` provisions these dependencies and runs `cargo test --workspace`.
+The CI workflow `.github/workflows/platform-quality.yml` provisions these dependencies and runs `cargo test --locked --workspace`.
 
 ## Acceptance matrix
 
@@ -47,7 +47,7 @@ From the repository workspace root:
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
+cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
