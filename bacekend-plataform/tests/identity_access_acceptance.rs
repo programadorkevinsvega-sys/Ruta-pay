@@ -1,8 +1,8 @@
+mod outbox_leases;
 #[path = "identity_access_acceptance/phase3_catalog.rs"]
 mod phase3_catalog;
 #[path = "identity_access_acceptance/phase3_entitlements.rs"]
 mod phase3_entitlements;
-mod outbox_leases;
 mod tenant_role_matrix;
 
 use async_nats::jetstream;
