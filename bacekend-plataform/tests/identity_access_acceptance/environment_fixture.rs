@@ -7,7 +7,7 @@ use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerPro
 use reqwest::{StatusCode, header};
 use tracing_subscriber::prelude::*;
 use uuid::Uuid;
-use super::identity_access_acceptance_support::EventCapture;
+use super::identity_access_acceptance_support::{AcceptanceDatabaseCleanup, EventCapture};
 use sqlx::PgPool;
 
 pub struct IdentityEnvironment {
@@ -18,7 +18,7 @@ pub struct IdentityEnvironment {
     pub migration_pool: PgPool,
     pub runtime_pool: PgPool,
     pub runtime_role: String,
-    pub database_cleanup: identity_access_acceptance_support::AcceptanceDatabaseCleanup,
+    pub database_cleanup: AcceptanceDatabaseCleanup,
     pub redis_manager: redis::aio::ConnectionManager,
     pub operator_email: String,
     pub operator_password: String,
