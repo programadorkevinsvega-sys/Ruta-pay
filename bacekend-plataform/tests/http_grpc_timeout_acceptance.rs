@@ -4,12 +4,12 @@ mod http_grpc_acceptance_support;
 mod http_grpc_timeout_assertions;
 
 use platform_contracts::{
+    catalog_pricing::catalog_pricing_client::CatalogPricingClient as CatalogPricingGrpcClient,
+    entitlements_quotas::entitlements_quotas_client::EntitlementsQuotasClient as EntitlementsQuotasGrpcClient,
     identity_access::identity_access_client::IdentityAccessClient as IdentityAccessGrpcClient,
     realtime::realtime_gateway_client::RealtimeGatewayClient as RealtimeGatewayGrpcClient,
     runtime::runtime_probe_client::RuntimeProbeClient,
     tenant_registry::tenant_registry_client::TenantRegistryClient as TenantRegistryGrpcClient,
-    catalog_pricing::catalog_pricing_client::CatalogPricingClient as CatalogPricingGrpcClient,
-    entitlements_quotas::entitlements_quotas_client::EntitlementsQuotasClient as EntitlementsQuotasGrpcClient,
 };
 use std::time::Duration;
 use tokio::{net::TcpListener, sync::oneshot};
