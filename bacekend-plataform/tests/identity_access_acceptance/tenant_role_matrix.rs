@@ -74,8 +74,8 @@ pub async fn verify(context: TenantRoleMatrixContext<'_>) {
         ] {
             let decision = authorization_client
                 .authorize_tenant_operation(AuthorizeTenantOperationRequest {
-                    session_token: session_cookie.clone(),
-                    csrf_token: csrf_cookie.clone(),
+                    session_token: session_cookie.to_owned(),
+                    csrf_token: csrf_cookie.to_owned(),
                     tenant_id: created_tenant_id.to_string(),
                     permission: permission.to_owned(),
                     correlation_id: format!("corr_role_{role}_{permission}"),
