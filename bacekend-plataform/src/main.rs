@@ -245,13 +245,9 @@ async fn serve_runtime(
 ) -> Result<(), tonic::transport::Error> {
     let span = tracing::info_span!("grpc.server", component = "platform_runtime");
     async move {
-        platform_runtime::module_config::serve(
-            listener,
-            dependencies,
-            async move {
-                let _ = shutdown.changed().await;
-            },
-        )
+        platform_runtime::module_config::serve(listener, dependencies, async move {
+            let _ = shutdown.changed().await;
+        })
         .await
     }
     .instrument(span)
