@@ -31,8 +31,8 @@ pub async fn verify(context: IdentityCredentialValidationContext<'_>) {
         .post(format!("http://{http_addr}/v1/identity/register"))
         .header(header::ORIGIN, "https://attacker.example")
         .json(&serde_json::json!({
-            "email": email.clone(),
-            "password": password.clone()
+            "email": email,
+            "password": password
         }))
         .send()
         .await
@@ -42,8 +42,8 @@ pub async fn verify(context: IdentityCredentialValidationContext<'_>) {
         .post(format!("http://{http_addr}/v1/identity/session"))
         .header(header::ORIGIN, "https://attacker.example")
         .json(&serde_json::json!({
-            "email": email.clone(),
-            "password": password.clone()
+            "email": email,
+            "password": password
         }))
         .send()
         .await
