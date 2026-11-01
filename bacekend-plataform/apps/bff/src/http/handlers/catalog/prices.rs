@@ -10,6 +10,7 @@ use crate::http::{handlers::identity, middleware::correlation_id::correlation_id
 use platform_contracts::catalog_pricing::PublishPriceVersionRequest;
 use super::{shared::{operator_credentials, tonic_request}, types::{NewPriceVersion, PriceView}};
 
+#[utoipa::path(post, path="/v1/platform/catalog/plans/{plan_id}/prices", request_body=NewPriceVersion, responses((status=201, body=PriceView)))]
 pub async fn publish_price(
     State(state): State<Arc<AppState>>,
     Path(plan_id): Path<String>,
@@ -65,8 +66,6 @@ pub async fn publish_price(
         ),
     }
 }
-
-#[utoipa::path(post, path="/v1/platform/entitlements/capabilities", request_body=SetCapabilities, responses((status=200)))]
 
 fn price_view(p: platform_contracts::catalog_pricing::PriceVersionResponse) -> PriceView {
     PriceView {
