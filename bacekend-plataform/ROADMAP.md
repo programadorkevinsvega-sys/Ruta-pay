@@ -80,7 +80,7 @@ La implementación se ejecuta conforme a la matriz previa de [`docs/phase-2/acce
 - [ ] Planes y versiones inmutables de precio/moneda/periodo; cambios con vigencias explícitas.
 - [ ] Capacidades, límites, cuotas, políticas de excedente y restricciones por entorno.
 - [ ] Evaluación determinista del entitlement por tenant, plan y fecha efectiva.
-- [ ] Ledger durable de consumo/cuotas y protección contra concurrencia y replay, incluyendo replay estable de la respuesta original después de consumos posteriores.
+- [ ] Ledger durable de consumo/cuotas y protección contra concurrencia y replay, incluyendo replay estable de la respuesta original después de consumos posteriores y rechazo seguro de filas históricas sin snapshot.
 - [ ] API administrativa de catálogo y consulta tenant de su plan/consumo sin filtrar datos internos.
 - [ ] Contrato gRPC versionado y cliente tipado en gateway; mTLS, grants firmados y enforcement runtime pertenecen a Fase 5.
 - [ ] Outbox de catálogo/entitlements → JetStream → realtime journal, cursor de plataforma/tenant y señal Redis; traceparent W3C propagado.
