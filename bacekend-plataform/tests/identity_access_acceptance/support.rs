@@ -50,7 +50,7 @@ pub(super) struct AcceptanceDatabaseCleanup {
     pub(super) admin_pool: sqlx::PgPool,
     pub(super) database_name: String,
     pub(super) runtime_role: String,
-    armed: bool,
+    pub(super) armed: bool,
 }
 
 impl AcceptanceDatabaseCleanup {
