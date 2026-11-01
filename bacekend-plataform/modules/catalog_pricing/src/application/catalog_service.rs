@@ -9,6 +9,18 @@ pub struct CatalogService {
     pool: PgPool,
 }
 
+pub struct PublishPriceVersionCommand<'a> {
+    pub actor_id: Uuid,
+    pub plan_id: Uuid,
+    pub currency: &'a str,
+    pub amount_minor: i64,
+    pub period_unit: &'a str,
+    pub interval_count: i32,
+    pub effective_from: DateTime<Utc>,
+    pub effective_until: Option<DateTime<Utc>>,
+    pub correlation_id: &'a str,
+}
+
 impl CatalogService {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
@@ -57,16 +69,19 @@ impl CatalogService {
 
     pub async fn publish_price_version(
         &self,
-        actor_id: Uuid,
-        plan_id: Uuid,
-        currency: &str,
-        amount_minor: i64,
-        period_unit: &str,
-        interval_count: i32,
-        effective_from: DateTime<Utc>,
-        effective_until: Option<DateTime<Utc>>,
-        correlation_id: &str,
+        command: PublishPriceVersionCommand<'_>,
     ) -> Result<PriceVersion, CatalogServiceError> {
+        let PublishPriceVersionCommand {
+            actor_id,
+            plan_id,
+            currency,
+            amount_minor,
+            period_unit,
+            interval_count,
+            effective_from,
+            effective_until,
+            correlation_id,
+        } = command;
         PriceVersion::validate(
             currency,
             amount_minor,
