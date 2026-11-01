@@ -105,12 +105,12 @@ mod security;
 mod sessions;
 
 pub use api_keys::{create_api_key, list_api_keys, revoke_api_key};
+pub(crate) use errors::{error, grpc_error};
 pub use memberships::tenant_memberships;
 pub use operator::{logout, operator_login, operator_logout, operator_session};
 pub use registration::register;
-pub use sessions::{login, tenant_session};
-pub(crate) use errors::{error, grpc_error};
 pub(crate) use security::{cookie_value, valid_csrf, valid_origin};
+pub use sessions::{login, tenant_session};
 use security::{append_cookie, clear_session, is_loopback_authority, response_no_content};
 
 #[cfg(test)]
