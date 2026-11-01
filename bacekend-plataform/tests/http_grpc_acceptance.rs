@@ -86,12 +86,14 @@ async fn real_http_bff_and_grpc_module_cover_success_unavailable_and_timeout() {
         .expect("real Redis connection is available");
     let runtime_task = tokio::spawn(platform_runtime::module_config::serve(
         runtime_listener,
-        database_pool,
-        redis_manager,
-        redis_client,
-        module_identity_client,
-        module_catalog_client,
-        module_tenant_client,
+        platform_runtime::module_config::RuntimeModuleDependencies {
+            pool: database_pool,
+            redis: redis_manager,
+            redis_client,
+            identity_client: module_identity_client,
+            catalog_client: module_catalog_client,
+            tenant_client: module_tenant_client,
+        },
         async move {
             let _ = runtime_signal.await;
         },
