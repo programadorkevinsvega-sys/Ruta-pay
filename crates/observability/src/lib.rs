@@ -68,3 +68,21 @@ mod tests {
         assert_eq!(current_span_id(), "unavailable");
     }
 }
+
+/// Returns the W3C traceparent for the active span, or None outside a valid trace.
+pub fn current_traceparent() -> Option<String> {
+    let context = tracing::Span::current()
+        .context()
+        .span()
+        .span_context()
+        .clone();
+    if !context.is_valid() {
+        return None;
+    }
+    Some(format!(
+        "00-{}-{}-{:02x}",
+        context.trace_id(),
+        context.span_id(),
+        context.trace_flags().to_u8()
+    ))
+}
