@@ -83,7 +83,7 @@ impl TestDatabase {
         .execute(&admin_pool)
         .await
         .expect("isolated phase three database is created");
-        let mut cleanup = AcceptanceDatabaseCleanup {
+        let cleanup = AcceptanceDatabaseCleanup {
             admin_pool: admin_pool.clone(),
             database_name: database_name.clone(),
             runtime_role: runtime_role.clone(),
