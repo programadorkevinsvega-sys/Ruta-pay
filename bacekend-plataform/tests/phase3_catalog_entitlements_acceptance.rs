@@ -1,5 +1,7 @@
 use chrono::{Duration, Utc};
-use platform_catalog_pricing::application::catalog_service::CatalogService;
+use platform_catalog_pricing::application::catalog_service::{
+    CatalogService, PublishPriceVersionCommand,
+};
 use platform_entitlements_quotas::{
     application::entitlement_service::{
         ConsumeQuotaCommand, EntitlementService, EntitlementServiceError,
@@ -208,17 +210,17 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
         .await
         .expect("plan creation persists through the application service");
     let price_one = catalog
-        .publish_price_version(
-            actor,
-            plan.id,
-            "USD",
-            1200,
-            "month",
-            1,
-            price_start,
-            Some(future_start),
-            correlation,
-        )
+        .publish_price_version(PublishPriceVersionCommand {
+            actor_id: actor,
+            plan_id: plan.id,
+            currency: "USD",
+            amount_minor: 1200,
+            period_unit: "month",
+            interval_count: 1,
+            effective_from: price_start,
+            effective_until: Some(future_start),
+            correlation_id: correlation,
+        })
         .await
         .expect("first immutable price version is published");
     let capabilities_one = vec![
@@ -414,17 +416,17 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
     assert_eq!(concurrent_usage.consumed, 3);
 
     let price_two = catalog
-        .publish_price_version(
-            actor,
-            plan.id,
-            "USD",
-            1500,
-            "month",
-            1,
-            future_start,
-            None,
-            correlation,
-        )
+        .publish_price_version(PublishPriceVersionCommand {
+            actor_id: actor,
+            plan_id: plan.id,
+            currency: "USD",
+            amount_minor: 1500,
+            period_unit: "month",
+            interval_count: 1,
+            effective_from: future_start,
+            effective_until: None,
+            correlation_id: correlation,
+        })
         .await
         .expect("future price version is published without mutating the previous version");
     entitlements
