@@ -4,6 +4,7 @@ pub mod api_key_creation;
 pub mod api_key_dto_validation;
 pub mod api_key_lifecycle;
 pub mod concurrent_registration;
+pub mod cleanup_fixture;
 pub mod credential_validation;
 pub mod database_fixture;
 pub mod database_migrations;
