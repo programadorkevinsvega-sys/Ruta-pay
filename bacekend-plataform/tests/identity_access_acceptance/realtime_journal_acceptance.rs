@@ -1,4 +1,3 @@
-use super::*;
 use redis::aio::ConnectionManager;
 use sqlx::PgPool;
 use uuid::Uuid;
