@@ -67,6 +67,11 @@ mod tests {
         assert_eq!(current_trace_id(), "unavailable");
         assert_eq!(current_span_id(), "unavailable");
     }
+
+    #[test]
+    fn traceparent_has_no_fabricated_context_without_a_valid_span() {
+        assert!(current_traceparent().is_none());
+    }
 }
 
 /// Returns the W3C traceparent for the active span, or None outside a valid trace.
