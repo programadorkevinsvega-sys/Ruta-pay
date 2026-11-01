@@ -1,7 +1,6 @@
 mod dependencies;
 mod support;
 
-use support::{bind_listener, serve_runtime, verify_runtime_startup};
 use payvia_platform_bff::http::routes::router;
 use payvia_platform_core::{config::AppConfig, metrics, shutdown_signal, telemetry};
 use platform_contracts::catalog_pricing::catalog_pricing_client::CatalogPricingClient as CatalogPricingGrpcClient;
@@ -11,6 +10,7 @@ use platform_contracts::realtime::realtime_gateway_client::RealtimeGatewayClient
 use platform_contracts::runtime::runtime_probe_client::RuntimeProbeClient as RuntimeProbeGrpcClient;
 use platform_contracts::tenant_registry::tenant_registry_client::TenantRegistryClient as TenantRegistryGrpcClient;
 use std::time::Duration;
+use support::{bind_listener, serve_runtime, verify_runtime_startup};
 use tokio::sync::watch;
 use tonic::transport::Endpoint;
 
