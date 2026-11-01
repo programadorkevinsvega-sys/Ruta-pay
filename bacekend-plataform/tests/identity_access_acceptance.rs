@@ -27,6 +27,7 @@ mod platform_replay_and_logout;
 mod rate_limit_acceptance;
 mod rate_limit_telemetry;
 mod realtime_journal_acceptance;
+mod api_key_acceptance_flow;
 mod api_key_authorization;
 mod api_key_lifecycle;
 mod second_tenant_isolation;
@@ -270,93 +271,20 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let mut event_stream_cleanup = event_fixture.event_stream_cleanup;
     let mut isolated_stream_cleanup = event_fixture.isolated_stream_cleanup;
 
-    api_key_dto_validation::verify(
+    api_key_acceptance_flow::verify(
         &client,
         &migration_pool,
-        http_addr,
-        &origin,
-        &session_cookie,
-        &csrf_cookie,
-        &operator_session_cookie,
-        &operator_csrf_cookie,
-        created_tenant_id,
-    )
-    .await;
-
-    let (api_key_id, api_key_secret, api_key_created) = api_key_creation::verify(
-        &client,
-        &migration_pool,
-        http_addr,
-        &origin,
-        &session_cookie,
-        &csrf_cookie,
-        created_tenant_id,
-    )
-    .await;
-
-    api_key_authorization::verify_allowed(
         &mut authorization_client,
-        created_tenant_id,
-        api_key_id,
-        &api_key_secret,
-    )
-    .await;
-    phase3_catalog::configure(
-        &client,
-        http_addr,
-        &origin,
-        &operator_session_cookie,
-        &operator_csrf_cookie,
-        created_tenant_id,
-    )
-    .await;
-    phase3_entitlements::verify(phase3_entitlements::EntitlementAcceptanceContext {
-        client: &client,
         http_addr,
         grpc_addr,
-        origin: &origin,
-        session_cookie: &session_cookie,
-        csrf_cookie: &csrf_cookie,
-        tenant_id: created_tenant_id,
-        api_key_id,
-        api_key_secret,
-        authorization_client: authorization_client.clone(),
-    })
-    .await;
-    api_key_authorization::verify_denials(
-        &mut authorization_client,
-        &migration_pool,
-        created_tenant_id,
-        api_key_id,
-        &api_key_secret,
-    )
-    .await;
-    api_key_lifecycle::verify(
-        &client,
-        &mut authorization_client,
-        &migration_pool,
-        http_addr,
         &origin,
         &session_cookie,
         &csrf_cookie,
-        created_tenant_id,
-        api_key_id,
-        &api_key_secret,
-        &api_key_created,
-    )
-    .await;
-
-    tenant_role_matrix::verify(tenant_role_matrix::TenantRoleMatrixContext {
-        client: &client,
-        migration_pool: &migration_pool,
-        authorization_client: &mut authorization_client,
-        http_addr,
-        session_cookie: &session_cookie,
-        csrf_cookie: &csrf_cookie,
-        origin: &origin,
+        &operator_session_cookie,
+        &operator_csrf_cookie,
         created_tenant_id,
         registered_user_id,
-    })
+    )
     .await;
 
     let second_tenant_credentials = second_tenant_registration::register(
