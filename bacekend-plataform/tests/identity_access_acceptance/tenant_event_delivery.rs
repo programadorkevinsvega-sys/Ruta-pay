@@ -1,3 +1,4 @@
+use super::*;
 use async_nats::jetstream;
 use platform_runtime::event_topology::EventTopology;
 use reqwest::{Client, StatusCode, header};
@@ -47,7 +48,7 @@ pub(super) async fn verify(context: TenantEventDeliveryContext<'_>) -> TenantEve
         legal_identification_number,
     } = context;
     let stream = event_topology
-        .ensure_stream(&jetstream)
+        .ensure_stream(jetstream)
         .await
         .expect("isolated real JetStream stream is available");
     let event_stream_cleanup = EventStreamCleanup {
@@ -59,7 +60,7 @@ pub(super) async fn verify(context: TenantEventDeliveryContext<'_>) -> TenantEve
     let isolated_topology = EventTopology::from_namespace(Some(&isolated_namespace))
         .expect("second test namespace is valid");
     isolated_topology
-        .ensure_stream(&jetstream)
+        .ensure_stream(jetstream)
         .await
         .expect("second isolated JetStream stream is available");
     let isolated_stream_cleanup = EventStreamCleanup {
@@ -72,13 +73,13 @@ pub(super) async fn verify(context: TenantEventDeliveryContext<'_>) -> TenantEve
         "SELECT event_id FROM tenant_registry.outbox_events WHERE aggregate_id=$1 AND event_type='tenant.registered'",
     )
     .bind(created_tenant_id)
-    .fetch_one(&migration_pool)
+    .fetch_one(migration_pool)
     .await
     .expect("onboarding event identifier is durable");
     let published_count = platform_tenant_registry::infrastructure::outbox_relay::relay_batch(
-        &runtime_pool,
-        &jetstream,
-        &event_topology.subject_prefix,
+        runtime_pool,
+        jetstream,
+        event_topology.subject_prefix,
     )
     .await
     .expect("tenant outbox relay publishes through the real JetStream client");
@@ -90,7 +91,7 @@ pub(super) async fn verify(context: TenantEventDeliveryContext<'_>) -> TenantEve
         "SELECT published_at IS NOT NULL,last_error_code FROM tenant_registry.outbox_events WHERE event_id=$1",
     )
     .bind(registration_event_id)
-    .fetch_one(&migration_pool)
+    .fetch_one(migration_pool)
     .await
     .expect("retried Outbox event state is queryable");
     assert!(retried_event_state.0);
@@ -113,7 +114,7 @@ pub(super) async fn verify(context: TenantEventDeliveryContext<'_>) -> TenantEve
         "SELECT published_at IS NOT NULL FROM tenant_registry.outbox_events WHERE event_id=$1",
     )
     .bind(registration_event_id)
-    .fetch_one(&migration_pool)
+    .fetch_one(migration_pool)
     .await
     .expect("outbox publication state can be verified");
     assert!(
@@ -134,7 +135,7 @@ pub(super) async fn verify(context: TenantEventDeliveryContext<'_>) -> TenantEve
         !String::from_utf8_lossy(&event_message.payload).contains(&legal_identification_number)
     );
     let membership_created = platform_identity_access::infrastructure::tenant_membership_consumer::consume_tenant_registered(
-        &runtime_pool,
+        runtime_pool,
         &event_message.payload,
     )
     .await
@@ -145,12 +146,12 @@ pub(super) async fn verify(context: TenantEventDeliveryContext<'_>) -> TenantEve
     )
     .bind(created_tenant_id)
     .bind(registered_user_id)
-    .fetch_one(&migration_pool)
+    .fetch_one(migration_pool)
     .await
     .expect("owner membership is persisted in its owning module");
     assert!(owner_membership);
     let duplicate_membership = platform_identity_access::infrastructure::tenant_membership_consumer::consume_tenant_registered(
-        &runtime_pool,
+        runtime_pool,
         &event_message.payload,
     )
     .await
