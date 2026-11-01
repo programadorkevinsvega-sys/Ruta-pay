@@ -40,12 +40,12 @@ pub async fn verify(context: SessionSecurityContext<'_>) {
     // before reaching a module or changing durable state.
     let tenants_before_csrf_rejection: i64 =
         sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants")
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("tenant count before CSRF rejection is queryable");
     let csrf_rejected_tenant_create = client
         .post(format!("http://{http_addr}/v1/tenants"))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
@@ -62,21 +62,21 @@ pub async fn verify(context: SessionSecurityContext<'_>) {
     assert_eq!(csrf_rejected_tenant_create.status(), StatusCode::FORBIDDEN);
     let tenants_after_csrf_rejection: i64 =
         sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants")
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("tenant count after CSRF rejection is queryable");
     assert_eq!(tenants_after_csrf_rejection, tenants_before_csrf_rejection);
 
     let keys_before_csrf_rejection: i64 =
         sqlx::query_scalar("SELECT count(*) FROM identity_access.api_keys")
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("API key count before CSRF rejection is queryable");
     let csrf_rejected_api_key = client
         .post(format!(
             "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
         ))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
@@ -92,7 +92,7 @@ pub async fn verify(context: SessionSecurityContext<'_>) {
     assert_eq!(csrf_rejected_api_key.status(), StatusCode::FORBIDDEN);
     let keys_after_csrf_rejection: i64 =
         sqlx::query_scalar("SELECT count(*) FROM identity_access.api_keys")
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("API key count after CSRF rejection is queryable");
     assert_eq!(keys_after_csrf_rejection, keys_before_csrf_rejection);
@@ -106,7 +106,7 @@ pub async fn verify(context: SessionSecurityContext<'_>) {
             header::COOKIE,
             format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
         )
-        .header("x-csrf-token", &operator_csrf_cookie)
+        .header("x-csrf-token", operator_csrf_cookie)
         .json(&serde_json::json!({
             "status": "suspended",
             "reason": "Must not be applied",
@@ -119,7 +119,7 @@ pub async fn verify(context: SessionSecurityContext<'_>) {
 
     let csrf_rejected_tenant_logout = client
         .delete(format!("http://{http_addr}/v1/identity/session"))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
@@ -131,7 +131,7 @@ pub async fn verify(context: SessionSecurityContext<'_>) {
 
     let csrf_rejected_operator_logout = client
         .delete(format!("http://{http_addr}/v1/platform/identity/session"))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
@@ -152,7 +152,7 @@ pub async fn verify(context: SessionSecurityContext<'_>) {
         "UPDATE identity_access.sessions SET expires_at=now()-interval '1 second' WHERE token_digest=$1",
     )
     .bind(expired_session_digest.as_slice())
-    .execute(&migration_pool)
+    .execute(migration_pool)
     .await
     .expect("active second tenant session is marked expired in isolated PostgreSQL");
     let expired_session_response = client
