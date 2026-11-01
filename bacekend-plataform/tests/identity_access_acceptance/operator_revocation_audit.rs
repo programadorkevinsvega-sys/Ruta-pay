@@ -14,6 +14,7 @@ pub async fn verify_and_reauthenticate(
     client: &Client,
     migration_pool: &PgPool,
     http_addr: SocketAddr,
+    origin: &str,
     operator_id: Uuid,
     operator_session_cookie: &str,
     operator_csrf_cookie: &str,
