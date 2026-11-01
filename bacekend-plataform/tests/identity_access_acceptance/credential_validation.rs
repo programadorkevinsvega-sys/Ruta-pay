@@ -1,3 +1,4 @@
+use super::*;
 use reqwest::{Client, StatusCode, header};
 use sqlx::PgPool;
 use std::net::SocketAddr;
@@ -23,7 +24,7 @@ pub async fn verify(context: IdentityCredentialValidationContext<'_>) {
     let identity_state_before_origin_rejection: (i64, i64) = sqlx::query_as(
         "SELECT (SELECT count(*) FROM identity_access.tenant_users),(SELECT count(*) FROM identity_access.sessions)",
     )
-    .fetch_one(&migration_pool)
+    .fetch_one(migration_pool)
     .await
     .expect("identity and session counts before Origin rejection are queryable");
     let invalid_origin_registration = client
@@ -51,7 +52,7 @@ pub async fn verify(context: IdentityCredentialValidationContext<'_>) {
     let identity_state_after_origin_rejection: (i64, i64) = sqlx::query_as(
         "SELECT (SELECT count(*) FROM identity_access.tenant_users),(SELECT count(*) FROM identity_access.sessions)",
     )
-    .fetch_one(&migration_pool)
+    .fetch_one(migration_pool)
     .await
     .expect("identity and session counts after Origin rejection are queryable");
     assert_eq!(
@@ -60,7 +61,7 @@ pub async fn verify(context: IdentityCredentialValidationContext<'_>) {
     );
     let identities_before_invalid_credentials: i64 =
         sqlx::query_scalar("SELECT count(*) FROM identity_access.tenant_users")
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("identity count before invalid credentials is queryable");
     let invalid_credential_types = [
@@ -71,7 +72,7 @@ pub async fn verify(context: IdentityCredentialValidationContext<'_>) {
     for (index, invalid_body) in invalid_credential_types.into_iter().enumerate() {
         let response = client
             .post(format!("http://{http_addr}/v1/identity/register"))
-            .header(header::ORIGIN, &origin)
+            .header(header::ORIGIN, origin)
             .json(&invalid_body)
             .send()
             .await
@@ -84,7 +85,7 @@ pub async fn verify(context: IdentityCredentialValidationContext<'_>) {
     }
     let invalid_email = client
         .post(format!("http://{http_addr}/v1/identity/register"))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .json(&serde_json::json!({
             "email": format!("{}@example.test", "a".repeat(65)),
             "password": "Valid-password-123!"
@@ -97,7 +98,7 @@ pub async fn verify(context: IdentityCredentialValidationContext<'_>) {
     for invalid_password in invalid_passwords {
         let response = client
             .post(format!("http://{http_addr}/v1/identity/register"))
-            .header(header::ORIGIN, &origin)
+            .header(header::ORIGIN, origin)
             .json(&serde_json::json!({
                 "email": format!("invalid_password_{}@example.test", Uuid::new_v4().simple()),
                 "password": invalid_password
@@ -109,7 +110,7 @@ pub async fn verify(context: IdentityCredentialValidationContext<'_>) {
     }
     let identities_after_invalid_credentials: i64 =
         sqlx::query_scalar("SELECT count(*) FROM identity_access.tenant_users")
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("identity count after invalid credentials is queryable");
     assert_eq!(
@@ -120,7 +121,7 @@ pub async fn verify(context: IdentityCredentialValidationContext<'_>) {
     let weak_password_email = format!("weak_password_{}@example.test", Uuid::new_v4().simple());
     let weak_password_response = client
         .post(format!("http://{http_addr}/v1/identity/register"))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header("x-correlation-id", "corr_identity_weak_password")
         .json(&serde_json::json!({
             "email": weak_password_email,
