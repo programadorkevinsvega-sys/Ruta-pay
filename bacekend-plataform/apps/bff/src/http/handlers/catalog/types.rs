@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+#[derive(Deserialize, ToSchema)]
 pub struct NewPlan {
     slug: String,
     name: String,
