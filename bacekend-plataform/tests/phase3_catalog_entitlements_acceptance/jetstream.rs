@@ -1,6 +1,5 @@
 use super::fixture::TestFixture;
 use async_nats::jetstream::{self, consumer::{AckPolicy, DeliverPolicy}};
-use futures::StreamExt;
 use platform_runtime::event_topology::{EventTopology, delete_e2e_stream};
 use serde_json::Value;
 use std::time::Duration;
