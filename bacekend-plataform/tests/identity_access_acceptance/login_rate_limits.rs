@@ -1,3 +1,4 @@
+use super::*;
 use redis::aio::ConnectionManager;
 use reqwest::{Client, StatusCode, header};
 use std::net::SocketAddr;
@@ -14,7 +15,7 @@ pub async fn verify(
     for attempt in 0..9 {
         let response = client
             .post(format!("http://{http_addr}/v1/identity/session"))
-            .header(header::ORIGIN, &origin)
+            .header(header::ORIGIN, origin)
             .header(
                 "x-correlation-id",
                 format!("corr_identity_rate_limit_{attempt}"),
@@ -54,7 +55,7 @@ pub async fn verify(
     for attempt in 0..51 {
         let response = client
             .post(format!("http://{http_addr}/v1/identity/session"))
-            .header(header::ORIGIN, &origin)
+            .header(header::ORIGIN, origin)
             .header(
                 "x-correlation-id",
                 format!("corr_identity_ip_limit_{attempt}"),
