@@ -22,6 +22,7 @@ mod rate_limit_telemetry;
 mod second_tenant_isolation;
 mod second_tenant_registration;
 mod secondary_tenant_lifecycle;
+mod server_fixture;
 mod session_security;
 mod tenant_dto_validation;
 mod tenant_event_delivery;
@@ -103,94 +104,21 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let redis_client = operator_fixture.redis_client;
     let redis_manager = operator_fixture.redis_manager;
 
-    let grpc_listener = TcpListener::bind("127.0.0.1:0").await.expect("gRPC bind");
-    let grpc_addr = grpc_listener.local_addr().expect("gRPC address");
-    let runtime_channel = tonic::transport::Endpoint::from_shared(format!("http://{grpc_addr}"))
-        .expect("identity module endpoint parses")
-        .connect_lazy();
-    let module_identity_client = IdentityAccessClient::new(runtime_channel.clone());
-    let module_catalog_client = CatalogPricingGrpcClient::new(runtime_channel.clone());
-    let module_tenant_client = TenantRegistryGrpcClient::new(runtime_channel);
-    let (grpc_stop, grpc_signal) = oneshot::channel();
-    let grpc_pool = runtime_pool.clone();
-    let grpc_task = tokio::spawn(platform_runtime::module_config::serve(
-        grpc_listener,
-        platform_runtime::module_config::RuntimeModuleDependencies {
-            pool: grpc_pool,
-            redis: redis_manager.clone(),
-            redis_client,
-            identity_client: module_identity_client,
-            catalog_client: module_catalog_client,
-            tenant_client: module_tenant_client,
-        },
-        async move {
-            let _ = grpc_signal.await;
-        },
-    ));
-    let grpc_endpoint = tonic::transport::Endpoint::from_shared(format!("http://{grpc_addr}"))
-        .expect("gRPC endpoint parses");
-    let runtime_client = RuntimeProbeClient::connect(grpc_endpoint.clone())
-        .await
-        .expect("runtime gRPC channel connects");
-    let identity_client = IdentityAccessClient::connect(grpc_endpoint)
-        .await
-        .expect("identity gRPC channel connects");
-    let tenant_client = TenantRegistryGrpcClient::connect(format!("http://{grpc_addr}"))
-        .await
-        .expect("tenant registry gRPC channel connects");
-    let realtime_client = RealtimeGatewayGrpcClient::connect(format!("http://{grpc_addr}"))
-        .await
-        .expect("realtime gRPC channel connects");
-    let catalog_client = CatalogPricingGrpcClient::connect(format!("http://{grpc_addr}"))
-        .await
-        .expect("catalog gRPC channel connects");
-    let entitlements_client = EntitlementsQuotasGrpcClient::connect(format!("http://{grpc_addr}"))
-        .await
-        .expect("entitlements gRPC channel connects");
-    let mut authorization_client = identity_client.clone();
-    let mut realtime_acceptance_client = realtime_client.clone();
-    let http_listener = TcpListener::bind("127.0.0.1:0").await.expect("BFF bind");
-    let http_addr = http_listener.local_addr().expect("BFF address");
-    let origin = format!("http://localhost:{}", http_addr.port());
-    let (http_stop, http_signal) = oneshot::channel();
-    let http_task = tokio::spawn(async move {
-        axum::serve(
-            http_listener,
-            payvia_platform_bff::http::routes::router(
-                runtime_client,
-                identity_client,
-                tenant_client,
-                realtime_client,
-                catalog_client,
-                entitlements_client,
-            )
-            .into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .with_graceful_shutdown(async move {
-            let _ = http_signal.await;
-        })
-        .await
-    });
-    let mut default_headers = header::HeaderMap::new();
-    default_headers.insert(
-        header::HOST,
-        format!("localhost:{}", http_addr.port())
-            .parse()
-            .expect("local host header is valid"),
-    );
-    let source_id = Uuid::new_v4();
-    let source_bytes = source_id.as_bytes();
-    let test_source_ip = std::net::Ipv4Addr::new(
-        127,
-        source_bytes[0],
-        source_bytes[1],
-        source_bytes[2].max(1),
-    );
-    let client = Client::builder()
-        .local_address(std::net::IpAddr::V4(test_source_ip))
-        .default_headers(default_headers.clone())
-        .build()
-        .expect("HTTP acceptance client builds");
+    let servers = server_fixture::ServerFixture::start(
+        &runtime_pool,
+        &redis_manager,
+        redis_client,
+    )
+    .await;
+    let grpc_addr = servers.grpc_addr;
+    let http_addr = servers.http_addr;
+    let origin = servers.origin.clone();
+    let default_headers = servers.default_headers.clone();
+    let test_source_ip = servers.test_source_ip;
+    let client = servers.client.clone();
+    let mut authorization_client = servers.authorization_client.clone();
+    let mut realtime_acceptance_client = servers.realtime_acceptance_client.clone();
+
     let email = format!("acceptance_{}@example.test", Uuid::new_v4().simple());
     let password = format!("A-valid-password-{}!", Uuid::new_v4().simple());
     credential_validation::verify(credential_validation::IdentityCredentialValidationContext {
@@ -828,16 +756,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             .is_err_and(is_stream_not_found)
     );
 
-    let _ = http_stop.send(());
-    http_task
-        .await
-        .expect("HTTP task joins")
-        .expect("BFF server stops cleanly");
-    let _ = grpc_stop.send(());
-    grpc_task
-        .await
-        .expect("gRPC task joins")
-        .expect("runtime server stops cleanly");
+    servers.shutdown().await;
     runtime_pool.close().await;
     migration_pool.close().await;
     database_cleanup.cleanup().await;
