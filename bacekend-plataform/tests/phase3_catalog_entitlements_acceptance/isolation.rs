@@ -69,5 +69,4 @@ pub async fn verify(fixture: &TestFixture) {
         outbox_count >= 5,
         "business events are committed with their state changes"
     );
-
 }
