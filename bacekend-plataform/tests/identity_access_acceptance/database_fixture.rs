@@ -47,7 +47,7 @@ pub async fn create() -> IdentityDatabaseFixture {
         .connect(parsed_url.as_str())
         .await
         .expect("isolated acceptance database accepts migration connection");
-    database_migrations::migrate_and_verify_permission_seeds(migration_pool).await;
+    database_migrations::migrate_and_verify_permission_seeds(&migration_pool).await;
 
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
         "CREATE ROLE \"{runtime_role}\" LOGIN PASSWORD '{runtime_password}'"
