@@ -1,3 +1,4 @@
+use super::*;
 use reqwest::{Client, StatusCode, header};
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
@@ -22,24 +23,24 @@ pub async fn verify(
          CREATE TRIGGER reject_test_api_key_outbox_event BEFORE INSERT ON identity_access.outbox_events \
          FOR EACH ROW EXECUTE FUNCTION identity_access.reject_test_api_key_outbox_event();",
     )
-    .execute(&migration_pool)
+    .execute(migration_pool)
     .await
     .expect("API key Outbox failure trigger is installed");
     let api_keys_before_outbox_failure: i64 =
         sqlx::query_scalar("SELECT count(*) FROM identity_access.api_keys")
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("API key count before Outbox failure is queryable");
     let api_key_outbox_failure = client
         .post(format!(
             "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
         ))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
         )
-        .header("x-csrf-token", &csrf_cookie)
+        .header("x-csrf-token", csrf_cookie)
         .header("x-correlation-id", "corr_api_key_outbox_failure")
         .json(&serde_json::json!({
             "name": "Rollback API key",
@@ -55,7 +56,7 @@ pub async fn verify(
     );
     let api_keys_after_outbox_failure: i64 =
         sqlx::query_scalar("SELECT count(*) FROM identity_access.api_keys")
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("API key count after Outbox failure is queryable");
     assert_eq!(
@@ -65,26 +66,26 @@ pub async fn verify(
     let failed_api_key_audit_rows: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM identity_access.audit_events WHERE correlation_id='corr_api_key_outbox_failure'",
     )
-    .fetch_one(&migration_pool)
+    .fetch_one(migration_pool)
     .await
     .expect("failed API key transaction leaves no audit row");
     assert_eq!(failed_api_key_audit_rows, 0);
     sqlx::raw_sql(
         "DROP TRIGGER reject_test_api_key_outbox_event ON identity_access.outbox_events;          DROP FUNCTION identity_access.reject_test_api_key_outbox_event();",
     )
-    .execute(&migration_pool)
+    .execute(migration_pool)
     .await
     .expect("API key failure trigger is removed");
     let api_key_creation = client
         .post(format!(
             "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
         ))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
         )
-        .header("x-csrf-token", &csrf_cookie)
+        .header("x-csrf-token", csrf_cookie)
         .header("x-correlation-id", "corr_api_key_create")
         .json(&serde_json::json!({
             "name": "Acceptance live key",
@@ -121,7 +122,7 @@ pub async fn verify(
     )
     .bind(created_tenant_id)
     .bind(api_key_id)
-    .fetch_one(&migration_pool)
+    .fetch_one(migration_pool)
     .await
     .expect("API key digest is persisted");
     assert_eq!(
