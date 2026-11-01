@@ -1,3 +1,4 @@
+use opentelemetry_sdk::trace::SdkTracerProvider;
 use super::*;
 use sqlx::PgPool;
 
