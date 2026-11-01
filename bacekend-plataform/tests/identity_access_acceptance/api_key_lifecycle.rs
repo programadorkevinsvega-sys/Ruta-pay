@@ -1,26 +1,23 @@
-use platform_contracts::identity_access::{
-    AuthorizeApiKeyOperationRequest, identity_access_client::IdentityAccessClient,
-};
-use reqwest::{Client, StatusCode, header};
-use serde_json::Value;
-use sqlx::PgPool;
-use std::net::SocketAddr;
-use tonic::transport::Channel;
-use uuid::Uuid;
+pub struct ApiKeyLifecycleContext<'a> {
+    pub client: &'a Client,
+    pub authorization_client: &'a mut IdentityAccessClient<Channel>,
+    pub migration_pool: &'a PgPool,
+    pub http_addr: SocketAddr,
+    pub origin: &'a str,
+    pub session_cookie: &'a str,
+    pub csrf_cookie: &'a str,
+    pub created_tenant_id: Uuid,
+    pub api_key_id: Uuid,
+    pub api_key_secret: &'a str,
+    pub api_key_created: &'a Value,
+}
 
-pub async fn verify(
-    client: &Client,
-    authorization_client: &mut IdentityAccessClient<Channel>,
-    migration_pool: &PgPool,
-    http_addr: SocketAddr,
-    origin: &str,
-    session_cookie: &str,
-    csrf_cookie: &str,
-    created_tenant_id: Uuid,
-    api_key_id: Uuid,
-    api_key_secret: &str,
-    api_key_created: &Value,
-) {
+pub async fn verify(context: ApiKeyLifecycleContext<'_>) {
+    let ApiKeyLifecycleContext {
+        client, authorization_client, migration_pool, http_addr, origin,
+        session_cookie, csrf_cookie, created_tenant_id, api_key_id,
+        api_key_secret, api_key_created,
+    } = context;
     let foreign_api_key_list = client
         .get(format!(
             "http://{http_addr}/v1/tenants/{}/api-keys",
