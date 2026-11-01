@@ -36,7 +36,6 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         tenant_slug,
         tenant_admin_status_body,
     } = tenant;
-    let grpc_addr = servers.grpc_addr;
     let http_addr = servers.http_addr;
     let origin = servers.origin.clone();
     let default_headers = servers.default_headers.clone();
@@ -71,7 +70,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         &migration_pool,
         &mut authorization_client,
         http_addr,
-        grpc_addr,
+        servers.grpc_addr,
         &origin,
         &session_cookie,
         &csrf_cookie,
@@ -99,9 +98,8 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let second_session_cookie = second_tenant.credentials.session_cookie;
     let second_csrf_cookie = second_tenant.credentials.csrf_cookie;
     let second_legal_identification_number = second_tenant.credentials.legal_identification_number;
-    let second_tenant_id = second_tenant.tenant_id;
 
-    let replay_cursor = realtime_acceptance_flow::verify(
+    realtime_acceptance_flow::verify(
         &redis_manager,
         &runtime_pool,
         &migration_pool,
@@ -164,7 +162,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         registered_user_id,
         &second_session_cookie,
         &second_csrf_cookie,
-        second_tenant_id,
+        second_tenant.tenant_id,
         tenant_admin_status_body["status_version"].clone(),
     )
     .await;
