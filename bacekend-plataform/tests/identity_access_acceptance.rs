@@ -175,10 +175,10 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         http_addr,
         &matrix_operator_session_cookie,
         &matrix_operator_csrf_cookie,
+        &runtime_pool,
+        created_tenant_id,
     )
     .await;
-
-    outbox_leases::verify(&migration_pool, &runtime_pool, created_tenant_id).await;
 
     isolated_stream_cleanup.cleanup().await;
     event_stream_cleanup.cleanup().await;
