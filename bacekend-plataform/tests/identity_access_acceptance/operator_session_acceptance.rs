@@ -1,3 +1,4 @@
+use super::*;
 use platform_contracts::identity_access::{
     AuthorizeOperatorOperationRequest, identity_access_client::IdentityAccessClient,
 };
@@ -43,7 +44,7 @@ pub async fn verify(
 
     let operator_login = client
         .post(format!("http://{http_addr}/v1/platform/identity/session"))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header("x-correlation-id", "corr_operator_login")
         .json(&serde_json::json!({
             "email": operator_email.clone(),
@@ -87,7 +88,7 @@ pub async fn verify(
             "SELECT count(*) FROM identity_access.audit_events WHERE actor_id=$1 AND action='operator.authorization.checked' AND correlation_id IN ('corr_operator_authorization','corr_operator_authorization_denied')",
         )
         .bind(operator_id)
-        .fetch_one(&migration_pool)
+        .fetch_one(migration_pool)
         .await
         .expect("authorization decisions are auditable");
     assert_eq!(authorization_audit_count, 2);
@@ -105,14 +106,14 @@ pub async fn verify(
     assert_eq!(operator_session.status(), StatusCode::OK);
     let operator_session_used_for_tenant = client
             .delete(format!("http://{http_addr}/v1/identity/session"))
-            .header(header::ORIGIN, &origin)
+            .header(header::ORIGIN, origin)
             .header(
                 header::COOKIE,
                 format!(
                     "payvia_tenant_session={operator_session_cookie}; payvia_tenant_csrf={operator_csrf_cookie}"
                 ),
             )
-            .header("x-csrf-token", &operator_csrf_cookie)
+            .header("x-csrf-token", operator_csrf_cookie)
             .send()
             .await
             .expect("operator session cannot access tenant identity");
