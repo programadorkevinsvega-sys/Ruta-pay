@@ -207,7 +207,7 @@ impl EntitlementService {
                 true,
             ));
         }
-        let capability = sqlx::query("SELECT a.price_version_id,c.enabled,c.limit_value,c.overage_policy,c.environment,c.quota_period FROM entitlements_quotas.tenant_plan_assignments a JOIN entitlements_quotas.plan_capabilities c ON c.price_version_id=a.price_version_id WHERE a.tenant_id=$1 AND a.effective_from <= $2 AND (a.effective_until IS NULL OR a.effective_until > $2) AND c.capability_key=$3 FOR SHARE")
+        let capability = sqlx::query("SELECT a.price_version_id,c.enabled,c.limit_value,c.overage_policy,c.environment,c.quota_period FROM entitlements_quotas.tenant_plan_assignments a JOIN entitlements_quotas.plan_capabilities c ON c.price_version_id=a.price_version_id WHERE a.tenant_id=$1 AND a.effective_from <= $2 AND (a.effective_until IS NULL OR a.effective_until > $2) AND c.capability_key=$3 FOR SHARE OF a")
             .bind(tenant).bind(now).bind(key).fetch_optional(&mut *tx).await?.ok_or(EntitlementError::CapabilityUnavailable)?;
         let price_version: Uuid = capability.try_get("price_version_id")?;
         let enabled: bool = capability.try_get("enabled")?;
