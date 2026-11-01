@@ -96,10 +96,10 @@ pub struct ApiKeyMetadataResponse {
     revoked_at: Option<String>,
 }
 
-mod api_keys;
+pub(super) mod api_keys;
 mod errors;
 mod memberships;
-mod operator;
+pub(super) mod operator;
 mod registration;
 mod security;
 mod sessions;
