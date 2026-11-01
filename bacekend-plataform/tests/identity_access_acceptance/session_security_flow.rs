@@ -25,6 +25,7 @@ pub async fn verify(
     default_headers: reqwest::header::HeaderMap,
     password: &str,
     operator_password: &str,
+    operator_email: &str,
     session_cookie: &str,
     csrf_cookie: &str,
     operator_session_cookie: &str,
@@ -50,7 +51,7 @@ pub async fn verify(
         operator_id,
         operator_session_cookie,
         operator_csrf_cookie,
-        &format!("operator_{}", operator_id),
+        operator_email,
         operator_password,
     )
     .await;
