@@ -1,3 +1,4 @@
+use super::*;
 use async_nats::jetstream;
 use platform_runtime::event_topology::EventTopology;
 use reqwest::{Client, StatusCode, header};
@@ -27,7 +28,7 @@ pub async fn create_and_verify(
     let second_legal_identification_number = &credentials.legal_identification_number;
     let second_tenant_create = client
             .post(format!("http://{http_addr}/v1/tenants"))
-            .header(header::ORIGIN, &origin)
+            .header(header::ORIGIN, origin)
             .header(
                 header::COOKIE,
                 format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
@@ -58,7 +59,7 @@ pub async fn create_and_verify(
             "SELECT legal_identification_type, legal_identification_number FROM tenant_registry.tenants WHERE id=$1",
         )
         .bind(second_tenant_id)
-        .fetch_one(&migration_pool)
+        .fetch_one(migration_pool)
         .await
         .expect("tenant registry persists the CC document");
     assert_eq!(second_document.0, "cc");
