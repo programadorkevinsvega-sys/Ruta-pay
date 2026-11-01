@@ -224,6 +224,14 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .run(&migration_pool)
         .await
         .expect("realtime journal migration applies to real PostgreSQL");
+    platform_catalog_pricing::infrastructure::persistence::MIGRATOR
+        .run(&migration_pool)
+        .await
+        .expect("catalog pricing migrations apply to real PostgreSQL");
+    platform_entitlements_quotas::infrastructure::persistence::MIGRATOR
+        .run(&migration_pool)
+        .await
+        .expect("entitlements and quotas migrations apply to real PostgreSQL");
     let tenant_role_permissions: Vec<(String, String)> = sqlx::query_as(
         "SELECT role, permission FROM identity_access.tenant_role_permissions ORDER BY role, permission",
     )
@@ -306,15 +314,19 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .await
     .expect("runtime role receives database connect only");
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
-        "GRANT USAGE ON SCHEMA identity_access, tenant_registry, realtime TO \"{runtime_role}\""
+        "GRANT USAGE ON SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas TO \"{runtime_role}\""
     )))
     .execute(&migration_pool)
     .await
     .expect("runtime role receives schema usage");
-    sqlx::raw_sql(sqlx::AssertSqlSafe(format!("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity_access, tenant_registry, realtime TO \"{runtime_role}\"")))
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas TO \"{runtime_role}\"")))
         .execute(&migration_pool)
         .await
         .expect("runtime role receives owned-module table privileges");
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas TO \"{runtime_role}\"")))
+        .execute(&migration_pool)
+        .await
+        .expect("runtime role receives sequence privileges for every migrated module");
     parsed_url
         .set_username(&runtime_role)
         .expect("runtime role is valid in database URL");
