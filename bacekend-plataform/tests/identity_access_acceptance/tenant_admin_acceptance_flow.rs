@@ -81,6 +81,8 @@ pub async fn verify(
         migration_pool: migration_pool,
         http_addr,
         origin: origin,
+        matrix_operator_session_cookie: matrix_operator_session_cookie,
+        matrix_operator_csrf_cookie: matrix_operator_csrf_cookie,
         second_session_cookie: &second_session_cookie,
         second_csrf_cookie: &second_csrf_cookie,
         created_tenant_id,
