@@ -30,6 +30,7 @@ mod realtime_journal_acceptance;
 mod api_key_acceptance_flow;
 mod api_key_authorization;
 mod api_key_lifecycle;
+mod second_tenant_flow;
 mod second_tenant_isolation;
 mod second_tenant_registration;
 mod secondary_tenant_lifecycle;
@@ -290,20 +291,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     )
     .await;
 
-    let second_tenant_credentials = second_tenant_registration::register(
-        &client,
-        &migration_pool,
-        http_addr,
-        &origin,
-        &tenant_slug,
-        created_tenant_id,
-    )
-    .await;
-    let second_session_cookie = second_tenant_credentials.session_cookie.clone();
-    let second_csrf_cookie = second_tenant_credentials.csrf_cookie.clone();
-    let second_legal_identification_number =
-        second_tenant_credentials.legal_identification_number.clone();
-    let second_tenant_id = second_tenant_isolation::create_and_verify(
+    let second_tenant = second_tenant_flow::verify(
         &client,
         &migration_pool,
         &runtime_pool,
@@ -315,9 +303,13 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         &origin,
         &tenant_slug,
         created_tenant_id,
-        &second_tenant_credentials,
     )
     .await;
+    let second_session_cookie = second_tenant.credentials.session_cookie;
+    let second_csrf_cookie = second_tenant.credentials.csrf_cookie;
+    let second_legal_identification_number =
+        second_tenant.credentials.legal_identification_number;
+    let second_tenant_id = second_tenant.tenant_id;
 
     let mut realtime_redis = realtime_journal_acceptance::verify(
         &redis_manager,
