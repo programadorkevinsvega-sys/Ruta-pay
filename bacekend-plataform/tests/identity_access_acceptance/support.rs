@@ -12,7 +12,6 @@ use tracing_subscriber::{
     layer::{Context, Layer},
     registry::LookupSpan,
 };
-use uuid::Uuid;
 
 #[derive(Clone, Default)]
 pub(super) struct EventCapture(pub(super) Arc<Mutex<Vec<HashMap<String, String>>>>);
@@ -106,7 +105,7 @@ impl Drop for AcceptanceDatabaseCleanup {
 }
 
 impl EventStreamCleanup {
-    async fn cleanup(&mut self) {
+    pub(super) async fn cleanup(&mut self) {
         delete_e2e_stream(&self.jetstream, &self.namespace)
             .await
             .expect("only the integration test stream is deleted");
