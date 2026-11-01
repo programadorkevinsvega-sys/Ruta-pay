@@ -1,6 +1,7 @@
 use reqwest::{Client, StatusCode, header};
 use sqlx::PgPool;
 use std::net::SocketAddr;
+use uuid::Uuid;
 
 pub async fn verify(client: &Client, migration_pool: &PgPool, http_addr: SocketAddr, origin: &str) {
     // Force the Outbox insert to fail after the identity INSERT. The transaction
