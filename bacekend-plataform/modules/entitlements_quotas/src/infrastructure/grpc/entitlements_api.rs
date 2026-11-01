@@ -8,9 +8,8 @@ use platform_contracts::{
     entitlements_quotas::{
         AssignTenantPlanRequest, AssignTenantPlanResponse, ConsumeQuotaRequest,
         ConsumeQuotaResponse, GetTenantEntitlementRequest, ListTenantEntitlementsRequest,
-        ListTenantEntitlementsResponse, SetPlanCapabilitiesRequest,
-        SetPlanCapabilitiesResponse, TenantEntitlementResponse,
-        entitlements_quotas_server::EntitlementsQuotas,
+        ListTenantEntitlementsResponse, SetPlanCapabilitiesRequest, SetPlanCapabilitiesResponse,
+        TenantEntitlementResponse, entitlements_quotas_server::EntitlementsQuotas,
     },
     identity_access::{
         AuthorizeOperatorOperationRequest, AuthorizeTenantOperationRequest,
@@ -38,7 +37,12 @@ impl EntitlementsQuotasApi {
         catalog: CatalogPricingClient<tonic::transport::Channel>,
         tenants: TenantRegistryClient<tonic::transport::Channel>,
     ) -> Self {
-        Self { service, identity, catalog, tenants }
+        Self {
+            service,
+            identity,
+            catalog,
+            tenants,
+        }
     }
 
     async fn authorize_operator(
