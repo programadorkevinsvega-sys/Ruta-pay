@@ -6,6 +6,8 @@ mod concurrency;
 mod database;
 #[path = "phase3_catalog_entitlements_acceptance/fixture.rs"]
 mod fixture;
+#[path = "phase3_catalog_entitlements_acceptance/jetstream.rs"]
+mod jetstream;
 #[path = "phase3_catalog_entitlements_acceptance/immutability.rs"]
 mod immutability;
 #[path = "phase3_catalog_entitlements_acceptance/isolation.rs"]
@@ -23,6 +25,7 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_rls_and_
     versioning::verify(&fixture).await;
     immutability::verify(&fixture).await;
     atomicity::verify(&fixture).await;
+    jetstream::verify(&fixture).await;
     isolation::verify(&fixture).await;
     fixture.finish().await;
 }
