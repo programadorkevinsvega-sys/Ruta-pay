@@ -17,6 +17,8 @@ mod phase3_catalog;
 mod phase3_entitlements;
 mod rate_limit_acceptance;
 mod rate_limit_telemetry;
+mod second_tenant_isolation;
+mod second_tenant_registration;
 mod secondary_tenant_lifecycle;
 mod session_security;
 mod tenant_dto_validation;
@@ -535,191 +537,34 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     })
     .await;
 
-    let second_email = format!("second_tenant_{}@example.test", Uuid::new_v4().simple());
-    let second_password = format!("Second-tenant-password-{}!", Uuid::new_v4().simple());
-    let second_user_registration = client
-        .post(format!("http://{http_addr}/v1/identity/register"))
-        .header(header::ORIGIN, &origin)
-        .header("x-correlation-id", "corr_second_tenant_register")
-        .json(&serde_json::json!({"email": second_email, "password": second_password}))
-        .send()
-        .await
-        .expect("second tenant user registers through the BFF");
-    assert_eq!(second_user_registration.status(), StatusCode::CREATED);
-    let second_login = client
-        .post(format!("http://{http_addr}/v1/identity/session"))
-        .header(header::ORIGIN, &origin)
-        .header("x-correlation-id", "corr_second_tenant_login")
-        .json(&serde_json::json!({"email": second_email, "password": second_password}))
-        .send()
-        .await
-        .expect("second tenant user logs in through the BFF");
-    assert_eq!(second_login.status(), StatusCode::OK);
-    let second_cookies: Vec<String> = second_login
-        .headers()
-        .get_all(header::SET_COOKIE)
-        .iter()
-        .filter_map(|value| value.to_str().ok().map(str::to_owned))
-        .collect();
-    let second_session_cookie = cookie_value(&second_cookies, "payvia_tenant_session");
-    let second_csrf_cookie = cookie_value(&second_cookies, "payvia_tenant_csrf");
-    let second_legal_identification_number = format!(
-        "8{:018}",
-        Uuid::new_v4().as_u128() % 1_000_000_000_000_000_000
-    );
-    let duplicate_slug_identification = format!(
-        "8{:018}",
-        Uuid::new_v4().as_u128() % 1_000_000_000_000_000_000
-    );
-    let conflicting_slug = client
-        .post(format!("http://{http_addr}/v1/tenants"))
-        .header(header::ORIGIN, &origin)
-        .header(
-            header::COOKIE,
-            format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
-        )
-        .header("x-csrf-token", &second_csrf_cookie)
-        .header("x-correlation-id", "corr_duplicate_tenant_slug")
-        .json(&serde_json::json!({
-            "display_name": "Duplicate slug tenant",
-            "slug": tenant_slug.clone(),
-            "legal_identification_type": "cc",
-            "legal_identification_number": duplicate_slug_identification
-        }))
-        .send()
-        .await
-        .expect("duplicate tenant slug returns a conflict");
-    assert_eq!(conflicting_slug.status(), StatusCode::CONFLICT);
-    let duplicate_slug_count: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants WHERE slug=$1")
-            .bind(&tenant_slug)
-            .fetch_one(&migration_pool)
-            .await
-            .expect("duplicate slug count is queryable");
-    assert_eq!(duplicate_slug_count, 1, "tenant slug remains unique");
-    let duplicate_slug_event_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM tenant_registry.outbox_events WHERE aggregate_id=$1 AND event_type='tenant.registered'",
-    )
-    .bind(created_tenant_id)
-    .fetch_one(&migration_pool)
-    .await
-    .expect("tenant registration event count is queryable");
-    assert_eq!(duplicate_slug_event_count, 1);
-
-    tenant_registration_races::verify(tenant_registration_races::TenantRegistrationRaceContext {
-        client: &client,
-        migration_pool: &migration_pool,
+    let second_tenant_credentials = second_tenant_registration::register(
+        &client,
+        &migration_pool,
         http_addr,
-        origin: &origin,
-        second_session_cookie: &second_session_cookie,
-        second_csrf_cookie: &second_csrf_cookie,
-    })
+        &origin,
+        &tenant_slug,
+        created_tenant_id,
+    )
     .await;
-
-    let second_tenant_create = client
-        .post(format!("http://{http_addr}/v1/tenants"))
-        .header(header::ORIGIN, &origin)
-        .header(
-            header::COOKIE,
-            format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
-        )
-        .header("x-csrf-token", &second_csrf_cookie)
-        .header("x-correlation-id", "corr_second_tenant_onboarding")
-        .json(&serde_json::json!({
-            "display_name": "Second acceptance tenant",
-            "slug": format!("second-acceptance-{}", Uuid::new_v4().simple()),
-            "legal_identification_type": "cc",
-            "legal_identification_number": second_legal_identification_number.clone()
-        }))
-        .send()
-        .await
-        .expect("second tenant onboarding reaches its owning module");
-    assert_eq!(second_tenant_create.status(), StatusCode::CREATED);
-    let second_tenant_body: serde_json::Value = second_tenant_create
-        .json()
-        .await
-        .expect("second tenant response is safe JSON");
-    let second_tenant_id = Uuid::parse_str(
-        second_tenant_body["tenant_id"]
-            .as_str()
-            .expect("second tenant identifier is present"),
-    )
-    .expect("second tenant identifier is a UUID");
-    let second_document: (String, String) = sqlx::query_as(
-        "SELECT legal_identification_type, legal_identification_number FROM tenant_registry.tenants WHERE id=$1",
-    )
-    .bind(second_tenant_id)
-    .fetch_one(&migration_pool)
-    .await
-    .expect("tenant registry persists the CC document");
-    assert_eq!(second_document.0, "cc");
-    assert_eq!(second_document.1, second_legal_identification_number);
-    platform_tenant_registry::infrastructure::outbox_relay::relay_batch(
+    let second_session_cookie = second_tenant_credentials.session_cookie.clone();
+    let second_csrf_cookie = second_tenant_credentials.csrf_cookie.clone();
+    let second_legal_identification_number =
+        second_tenant_credentials.legal_identification_number.clone();
+    let second_tenant_id = second_tenant_isolation::create_and_verify(
+        &client,
+        &migration_pool,
         &runtime_pool,
         &jetstream,
-        &event_topology.subject_prefix,
+        &event_topology,
+        &stream,
+        &registration_subject,
+        http_addr,
+        &origin,
+        &tenant_slug,
+        created_tenant_id,
+        &second_tenant_credentials,
     )
-    .await
-    .expect("second tenant registration publishes through the real JetStream relay");
-    let second_tenant_event = stream
-        .get_last_raw_message_by_subject(&registration_subject)
-        .await
-        .expect("JetStream durably stores second tenant registration");
-    let second_tenant_envelope: serde_json::Value =
-        serde_json::from_slice(&second_tenant_event.payload)
-            .expect("second tenant event is a versioned envelope");
-    assert_eq!(
-        second_tenant_envelope["payload"]["tenant_id"],
-        second_tenant_id.to_string()
-    );
-    assert!(platform_identity_access::infrastructure::tenant_membership_consumer::consume_tenant_registered(
-        &runtime_pool,
-        &second_tenant_event.payload,
-    )
-    .await
-    .expect("second membership is provisioned from JetStream event"));
-
-    let cross_tenant_details = client
-        .get(format!("http://{http_addr}/v1/tenants/{created_tenant_id}"))
-        .header(
-            header::COOKIE,
-            format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
-        )
-        .header("x-correlation-id", "corr_cross_tenant_details")
-        .send()
-        .await
-        .expect("second tenant user cannot read the first tenant");
-    assert_eq!(cross_tenant_details.status(), StatusCode::FORBIDDEN);
-    let cross_tenant_api_keys = client
-        .get(format!("http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"))
-        .header(
-            header::COOKIE,
-            format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
-        )
-        .send()
-        .await
-        .expect("second tenant user cannot enumerate first tenant API keys");
-    assert_eq!(cross_tenant_api_keys.status(), StatusCode::FORBIDDEN);
-    let mut isolation_transaction = runtime_pool
-        .begin()
-        .await
-        .expect("runtime tenant-isolation transaction begins");
-    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
-        .bind(second_tenant_id.to_string())
-        .execute(&mut *isolation_transaction)
-        .await
-        .expect("runtime tenant context is set");
-    let foreign_key_count: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM identity_access.api_keys WHERE tenant_id=$1")
-            .bind(created_tenant_id)
-            .fetch_one(&mut *isolation_transaction)
-            .await
-            .expect("RLS filters API keys belonging to another tenant");
-    assert_eq!(foreign_key_count, 0);
-    isolation_transaction
-        .commit()
-        .await
-        .expect("tenant-isolation transaction completes");
+    .await;
 
     let mut realtime_redis = redis_manager.clone();
     let first_journal_insert =
