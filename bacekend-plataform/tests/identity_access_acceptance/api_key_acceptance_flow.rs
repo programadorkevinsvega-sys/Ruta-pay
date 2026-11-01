@@ -69,7 +69,7 @@ pub async fn verify(
         csrf_cookie: csrf_cookie,
         tenant_id: created_tenant_id,
         api_key_id,
-        api_key_secret,
+        api_key_secret: &api_key_secret,
         authorization_client: authorization_client.clone(),
     })
     .await;
