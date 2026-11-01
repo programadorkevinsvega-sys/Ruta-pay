@@ -116,4 +116,11 @@ pub use environment_fixture::IdentityEnvironment;
 pub use identity_access_acceptance_support::is_stream_not_found;
 pub use tenant_onboarding_phase::TenantOnboardingFixture;
 
+mod scenario;#[path = "support.rs"]
+mod identity_access_acceptance_support;
+
+pub use environment_fixture::IdentityEnvironment;
+pub use identity_access_acceptance_support::is_stream_not_found;
+pub use tenant_onboarding_phase::TenantOnboardingFixture;
+
 mod scenario;
