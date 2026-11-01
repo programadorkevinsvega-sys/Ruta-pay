@@ -14,6 +14,7 @@ pub struct EventEnvelope {
     pub aggregate_version: i64,
     pub audience: String,
     pub correlation_id: String,
+    pub traceparent: Option<String>,
     pub payload: Value,
     pub occurred_at: DateTime<Utc>,
 }
