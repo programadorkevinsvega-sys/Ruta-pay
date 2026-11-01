@@ -68,4 +68,3 @@ impl CatalogService {
                 .collect())
         }
     }
-}
