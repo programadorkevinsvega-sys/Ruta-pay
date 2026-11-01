@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use super::identity_access_acceptance_support::EventStreamCleanup;
 
-pub struct TenantEventDeliveryContext<'a> {
+pub(super) struct TenantEventDeliveryContext<'a> {
     pub client: &'a Client,
     pub migration_pool: &'a PgPool,
     pub runtime_pool: &'a PgPool,
@@ -22,13 +22,13 @@ pub struct TenantEventDeliveryContext<'a> {
     pub legal_identification_number: &'a str,
 }
 
-pub struct TenantEventDeliveryResult {
-    pub stream: jetstream::stream::Stream,
-    pub event_stream_cleanup: EventStreamCleanup,
-    pub isolated_stream_cleanup: EventStreamCleanup,
+pub(super) struct TenantEventDeliveryResult {
+    pub(super) stream: jetstream::stream::Stream,
+    pub(super) event_stream_cleanup: EventStreamCleanup,
+    pub(super) isolated_stream_cleanup: EventStreamCleanup,
 }
 
-pub async fn verify(context: TenantEventDeliveryContext<'_>) -> TenantEventDeliveryResult {
+pub(super) async fn verify(context: TenantEventDeliveryContext<'_>) -> TenantEventDeliveryResult {
     let TenantEventDeliveryContext {
         client, migration_pool, runtime_pool, jetstream, event_topology, event_namespace,
         http_addr, session_cookie, csrf_cookie, created_tenant_id, registered_user_id,
