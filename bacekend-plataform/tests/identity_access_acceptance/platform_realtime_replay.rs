@@ -1,18 +1,15 @@
 use async_nats::jetstream;
-use platform_contracts::realtime::realtime_gateway_client::RealtimeGatewayClient;
 use platform_runtime::event_topology::EventTopology;
 use redis::aio::ConnectionManager;
 use reqwest::{Client, StatusCode, header};
 use sqlx::PgPool;
 use std::net::SocketAddr;
-use tonic::transport::Channel;
 
 pub async fn verify(
-    stream: jetstream::stream::Stream,
+    stream: &jetstream::stream::Stream,
     event_topology: &EventTopology,
     runtime_pool: &PgPool,
     realtime_redis: &mut ConnectionManager,
-    realtime_acceptance_client: &mut RealtimeGatewayClient<Channel>,
     client: &Client,
     http_addr: SocketAddr,
     operator_session_cookie: &str,
@@ -27,7 +24,7 @@ pub async fn verify(
         .expect("JetStream durably stores administrative status events");
     platform_realtime::infrastructure::grpc::realtime_gateway_api::persist_and_publish(
         runtime_pool,
-        &mut realtime_redis,
+        realtime_redis,
         &status_event_message.payload,
     )
     .await
