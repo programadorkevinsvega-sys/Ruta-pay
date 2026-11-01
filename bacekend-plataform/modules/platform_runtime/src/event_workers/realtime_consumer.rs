@@ -2,6 +2,7 @@ use async_nats::jetstream;
 use sqlx::PgPool;
 use std::time::Duration;
 use tokio::{sync::watch, time};
+use tokio_stream::StreamExt;
 
 pub(super) async fn run_realtime_consumer(
     pool: PgPool,
