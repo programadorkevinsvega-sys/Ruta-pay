@@ -36,7 +36,7 @@ pub async fn verify(context: TenantStatusLifecycleContext<'_>) {
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
         )
-        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .header("x-csrf-token", matrix_operator_csrf_cookie)
         .json(&serde_json::json!({
             "status": "suspended",
             "reason": "Support role must not change tenant lifecycle",
@@ -68,7 +68,7 @@ pub async fn verify(context: TenantStatusLifecycleContext<'_>) {
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
         )
-        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .header("x-csrf-token", matrix_operator_csrf_cookie)
         .json(&serde_json::json!({
             "status": "suspended",
             "reason": "Authorized platform security suspension",
@@ -93,7 +93,7 @@ pub async fn verify(context: TenantStatusLifecycleContext<'_>) {
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
         )
-        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .header("x-csrf-token", matrix_operator_csrf_cookie)
         .json(&serde_json::json!({
             "status": "active",
             "reason": "Authorized platform owner reactivation",
@@ -113,7 +113,7 @@ pub async fn verify(context: TenantStatusLifecycleContext<'_>) {
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
         )
-        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .header("x-csrf-token", matrix_operator_csrf_cookie)
         .json(&serde_json::json!({
             "status": "suspended",
             "reason": "Authorized platform owner suspension",
@@ -138,7 +138,7 @@ pub async fn verify(context: TenantStatusLifecycleContext<'_>) {
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
         )
-        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .header("x-csrf-token", matrix_operator_csrf_cookie)
         .json(&serde_json::json!({
             "status": "active",
             "reason": "Authorized platform security reactivation",
