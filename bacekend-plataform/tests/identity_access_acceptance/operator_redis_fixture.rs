@@ -1,4 +1,4 @@
-use super::*;
+use platform_identity_access::application::operator_bootstrap::OperatorBootstrapService;
 use sqlx::PgPool;
 use uuid::Uuid;
 
