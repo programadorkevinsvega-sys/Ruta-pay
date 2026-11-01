@@ -1,5 +1,5 @@
 use super::{
-    EventCapture, database_fixture, duplicate_registration, operator_redis_fixture,
+    database_fixture, duplicate_registration, operator_redis_fixture,
     outbox_transaction_rollback, server_fixture, credential_validation, concurrent_registration,
 };
 use opentelemetry::{global, trace::TracerProvider as _};
@@ -7,6 +7,7 @@ use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerPro
 use reqwest::{StatusCode, header};
 use tracing_subscriber::prelude::*;
 use uuid::Uuid;
+use super::identity_access_acceptance_support::EventCapture;
 use sqlx::PgPool;
 
 pub struct IdentityEnvironment {
@@ -62,14 +63,9 @@ pub async fn setup() -> IdentityEnvironment {
 
     let servers =
         server_fixture::ServerFixture::start(&runtime_pool, &redis_manager, redis_client).await;
-    let grpc_addr = servers.grpc_addr;
     let http_addr = servers.http_addr;
     let origin = servers.origin.clone();
-    let default_headers = servers.default_headers.clone();
-    let test_source_ip = servers.test_source_ip;
     let client = servers.client.clone();
-    let authorization_client = servers.authorization_client.clone();
-    let realtime_acceptance_client = servers.realtime_acceptance_client.clone();
 
     let email = format!("acceptance_{}@example.test", Uuid::new_v4().simple());
     let password = format!("A-valid-password-{}!", Uuid::new_v4().simple());
