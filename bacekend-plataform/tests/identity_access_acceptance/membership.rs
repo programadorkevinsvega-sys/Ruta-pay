@@ -1,6 +1,5 @@
 use crate::identity_access_acceptance_context::AcceptanceContext;
 use reqwest::{header, StatusCode};
-use uuid::Uuid;
 
 pub(super) async fn verify(ctx: &mut AcceptanceContext) {
 let event_message = ctx.state.stream.as_ref().expect("outbox stream is initialized")
