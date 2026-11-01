@@ -77,7 +77,7 @@ pub async fn register(
     assert_eq!(conflicting_slug.status(), StatusCode::CONFLICT);
     let duplicate_slug_count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants WHERE slug=$1")
-            .bind(&tenant_slug)
+            .bind(tenant_slug)
             .fetch_one(migration_pool)
             .await
             .expect("duplicate slug count is queryable");
