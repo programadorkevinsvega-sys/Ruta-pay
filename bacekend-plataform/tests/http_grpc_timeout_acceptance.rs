@@ -11,9 +11,7 @@ use platform_contracts::{
     runtime::runtime_probe_client::RuntimeProbeClient,
     tenant_registry::tenant_registry_client::TenantRegistryClient as TenantRegistryGrpcClient,
 };
-use std::time::Duration;
 use tokio::{net::TcpListener, sync::oneshot};
-use tonic::transport::Endpoint;
 
 #[tokio::test]
 async fn real_http_bff_classifies_grpc_dependency_timeout() {
