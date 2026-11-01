@@ -31,7 +31,7 @@ pub async fn create_and_verify(
                 header::COOKIE,
                 format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
             )
-            .header("x-csrf-token", &second_csrf_cookie)
+            .header("x-csrf-token", second_csrf_cookie)
             .header("x-correlation-id", "corr_second_tenant_onboarding")
             .json(&serde_json::json!({
                 "display_name": "Second acceptance tenant",
@@ -61,7 +61,7 @@ pub async fn create_and_verify(
         .await
         .expect("tenant registry persists the CC document");
     assert_eq!(second_document.0, "cc");
-    assert_eq!(second_document.1, second_legal_identification_number);
+    assert_eq!(second_document.1, second_legal_identification_number.as_str());
     platform_tenant_registry::infrastructure::outbox_relay::relay_batch(
         &runtime_pool,
         &jetstream,
