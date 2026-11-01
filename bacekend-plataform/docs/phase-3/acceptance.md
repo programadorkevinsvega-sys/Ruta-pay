@@ -74,7 +74,7 @@ The Phase 3 modules and newly extracted acceptance/realtime/event-worker files a
 
 Phase 3 must remain open until all of the following are true on one final HEAD SHA:
 
-1. No Phase 3-owned Rust source or test file exceeds 200 lines of code; inherited oversized integration/bootstrap files are tracked as explicit technical debt and are not claimed compliant.
+1. Every `.rs` file modified by this PR, including inherited handlers, bootstrap and integration tests, is refactored to no more than 200 lines of code. The oversized files listed above currently block this criterion; tracking them in documentation is not a waiver.
 2. Format, Clippy, all Rust tests, frontend tests/builds and browser E2E are green.
 3. The real PostgreSQL/Redis/JetStream acceptance test passes, including immutable result replay and event-specific realtime journal/cursor delivery.
 4. The gateway shared-contract client compiles and the BFF HTTP/gRPC authorization path passes.
