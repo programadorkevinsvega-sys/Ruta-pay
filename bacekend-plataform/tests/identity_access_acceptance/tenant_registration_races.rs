@@ -1,3 +1,4 @@
+use super::*;
 use reqwest::{Client, StatusCode, header};
 use sqlx::PgPool;
 use std::net::SocketAddr;
@@ -38,7 +39,7 @@ pub async fn verify(context: TenantRegistrationRaceContext<'_>) {
     let (concurrent_slug_a, concurrent_slug_b) = tokio::join!(
         client
             .post(&concurrent_slug_url)
-            .header(header::ORIGIN, &origin)
+            .header(header::ORIGIN, origin)
             .header(header::COOKIE, &concurrent_slug_cookie)
             .header("x-csrf-token", &second_csrf_cookie)
             .header("x-correlation-id", "corr_tenant_slug_race_a")
@@ -51,7 +52,7 @@ pub async fn verify(context: TenantRegistrationRaceContext<'_>) {
             .send(),
         client
             .post(&concurrent_slug_url)
-            .header(header::ORIGIN, &origin)
+            .header(header::ORIGIN, origin)
             .header(header::COOKIE, &concurrent_slug_cookie)
             .header("x-csrf-token", &second_csrf_cookie)
             .header("x-correlation-id", "corr_tenant_slug_race_b")
@@ -93,7 +94,7 @@ pub async fn verify(context: TenantRegistrationRaceContext<'_>) {
     let concurrent_slug_rows: i64 =
         sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants WHERE slug=$1")
             .bind(&concurrent_slug)
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("concurrent slug row count is queryable");
     assert_eq!(concurrent_slug_rows, 1);
@@ -101,7 +102,7 @@ pub async fn verify(context: TenantRegistrationRaceContext<'_>) {
         "SELECT count(*) FROM tenant_registry.outbox_events WHERE aggregate_id=$1 AND event_type='tenant.registered'",
     )
     .bind(concurrent_slug_winner_id)
-    .fetch_one(&migration_pool)
+    .fetch_one(migration_pool)
     .await
     .expect("concurrent slug Outbox count is queryable");
     assert_eq!(concurrent_slug_events, 1);
@@ -115,7 +116,7 @@ pub async fn verify(context: TenantRegistrationRaceContext<'_>) {
     let (concurrent_document_a, concurrent_document_b) = tokio::join!(
         client
             .post(&concurrent_slug_url)
-            .header(header::ORIGIN, &origin)
+            .header(header::ORIGIN, origin)
             .header(header::COOKIE, &concurrent_slug_cookie)
             .header("x-csrf-token", &second_csrf_cookie)
             .header("x-correlation-id", "corr_tenant_document_race_a")
@@ -128,7 +129,7 @@ pub async fn verify(context: TenantRegistrationRaceContext<'_>) {
             .send(),
         client
             .post(&concurrent_slug_url)
-            .header(header::ORIGIN, &origin)
+            .header(header::ORIGIN, origin)
             .header(header::COOKIE, &concurrent_slug_cookie)
             .header("x-csrf-token", &second_csrf_cookie)
             .header("x-correlation-id", "corr_tenant_document_race_b")
@@ -176,7 +177,7 @@ pub async fn verify(context: TenantRegistrationRaceContext<'_>) {
         "SELECT count(*) FROM tenant_registry.tenants WHERE legal_identification_type='cc' AND legal_identification_number=$1",
     )
     .bind(&concurrent_document)
-    .fetch_one(&migration_pool)
+    .fetch_one(migration_pool)
     .await
     .expect("concurrent legal identity row count is queryable");
     assert_eq!(concurrent_document_rows, 1);
@@ -184,7 +185,7 @@ pub async fn verify(context: TenantRegistrationRaceContext<'_>) {
         "SELECT count(*) FROM tenant_registry.outbox_events WHERE aggregate_id=$1 AND event_type='tenant.registered'",
     )
     .bind(concurrent_document_winner_id)
-    .fetch_one(&migration_pool)
+    .fetch_one(migration_pool)
     .await
     .expect("concurrent legal identity Outbox count is queryable");
     assert_eq!(concurrent_document_events, 1);
