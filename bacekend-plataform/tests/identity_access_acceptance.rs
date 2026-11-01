@@ -1,2 +1,1 @@
-#[path = "identity_access_acceptance/modules.rs"]
-mod acceptance_modules;
+include!("identity_access_acceptance/modules.rs");
