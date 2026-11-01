@@ -54,7 +54,7 @@ pub async fn verify(
                     "payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"
                 ),
             )
-            .header("x-csrf-token", &matrix_operator_csrf_cookie)
+            .header("x-csrf-token", matrix_operator_csrf_cookie)
             .send()
             .await
             .expect("operator matrix session can be revoked");
