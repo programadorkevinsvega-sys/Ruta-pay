@@ -1,14 +1,17 @@
 use platform_contracts::{
     catalog_pricing::GetPriceVersionRequest,
     entitlements_quotas::{
-        AssignTenantPlanRequest, AssignTenantPlanResponse,
-        SetPlanCapabilitiesRequest, SetPlanCapabilitiesResponse,
+        AssignTenantPlanRequest, AssignTenantPlanResponse, SetPlanCapabilitiesRequest,
+        SetPlanCapabilitiesResponse,
     },
     tenant_registry::GetTenantRequest,
 };
 use tonic::{Request, Response, Status};
 
-use super::{EntitlementsQuotasApi, mapping::{map_capability, map_error, parse_time, parse_uuid}};
+use super::{
+    EntitlementsQuotasApi,
+    mapping::{map_capability, map_error, parse_time, parse_uuid},
+};
 
 impl EntitlementsQuotasApi {
     pub(super) async fn set_plan_capabilities_handler(
