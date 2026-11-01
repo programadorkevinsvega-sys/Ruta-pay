@@ -17,7 +17,9 @@ use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
 use crate::{
-    application::entitlement_service::{EntitlementService, EntitlementServiceError},
+    application::entitlement_service::{
+        ConsumeQuotaCommand, EntitlementService, EntitlementServiceError,
+    },
     domain::entitlement::{Capability, Entitlement},
 };
 
@@ -277,16 +279,16 @@ impl EntitlementsQuotas for EntitlementsQuotasApi {
         let actor = parse_uuid(&authorization.key_id)?;
         let (entitlement, replayed) = self
             .service
-            .consume(
+            .consume(ConsumeQuotaCommand {
                 actor,
                 tenant,
-                &body.capability_key,
-                &body.environment,
-                body.quantity,
-                &body.idempotency_key,
-                Utc::now(),
-                &correlation_id,
-            )
+                key: &body.capability_key,
+                environment: &body.environment,
+                quantity: body.quantity,
+                idempotency_key: &body.idempotency_key,
+                now: Utc::now(),
+                correlation_id: &correlation_id,
+            })
             .await
             .map_err(map_error)?;
         Ok(Response::new(ConsumeQuotaResponse {
