@@ -53,10 +53,7 @@ impl Visit for FieldCapture<'_> {
     }
 }
 
-pub fn initialize_capture() -> (
-    SdkTracerProvider,
-    Arc<Mutex<Vec<HashMap<String, String>>>>,
-) {
+pub fn initialize_capture() -> (SdkTracerProvider, Arc<Mutex<Vec<HashMap<String, String>>>>) {
     let provider = SdkTracerProvider::builder().build();
     global::set_tracer_provider(provider.clone());
     global::set_text_map_propagator(TraceContextPropagator::new());
