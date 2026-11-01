@@ -46,18 +46,18 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let mut authorization_client = servers.authorization_client.clone();
     let mut realtime_acceptance_client = servers.realtime_acceptance_client.clone();
 
-    let event_fixture = event_fixture::create(
-        &migration_pool,
-        &runtime_pool,
-        &runtime_role,
-        &client,
+    let event_fixture = event_fixture::create(event_fixture::EventFixtureContext {
+        migration_pool: &migration_pool,
+        runtime_pool: &runtime_pool,
+        runtime_role: &runtime_role,
+        client: &client,
         http_addr,
-        &session_cookie,
-        &csrf_cookie,
+        session_cookie: &session_cookie,
+        csrf_cookie: &csrf_cookie,
         created_tenant_id,
         registered_user_id,
-        &legal_identification_number,
-    )
+        legal_identification_number: &legal_identification_number,
+    })
     .await;
     let jetstream = event_fixture.jetstream;
     let event_topology = event_fixture.event_topology;
