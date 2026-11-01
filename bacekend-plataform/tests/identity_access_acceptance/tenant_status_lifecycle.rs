@@ -16,8 +16,14 @@ pub struct TenantStatusLifecycleContext<'a> {
 
 pub async fn verify(context: TenantStatusLifecycleContext<'_>) {
     let TenantStatusLifecycleContext {
-        client, migration_pool, http_addr, origin, matrix_operator_session_cookie,
-        matrix_operator_csrf_cookie, operator_id, created_tenant_id,
+        client,
+        migration_pool,
+        http_addr,
+        origin,
+        matrix_operator_session_cookie,
+        matrix_operator_csrf_cookie,
+        operator_id,
+        created_tenant_id,
     } = context;
     // platform_support may read tenants but must not suspend them. Verify that
     // the denial leaves both status and version unchanged.
@@ -47,7 +53,7 @@ pub async fn verify(context: TenantStatusLifecycleContext<'_>) {
             .await
             .expect("tenant state after support denial is queryable");
     assert_eq!(status_after_support_denial, ("active".to_owned(), 2));
-    
+
     sqlx::query("UPDATE identity_access.operator_users SET role='platform_security' WHERE id=$1")
         .bind(operator_id)
         .execute(&migration_pool)
@@ -72,7 +78,7 @@ pub async fn verify(context: TenantStatusLifecycleContext<'_>) {
         .await
         .expect("platform security can suspend a tenant");
     assert_eq!(security_status_change.status(), StatusCode::OK);
-    
+
     sqlx::query("UPDATE identity_access.operator_users SET role='platform_owner' WHERE id=$1")
         .bind(operator_id)
         .execute(&migration_pool)
@@ -97,7 +103,7 @@ pub async fn verify(context: TenantStatusLifecycleContext<'_>) {
         .await
         .expect("platform owner can reactivate a suspended tenant");
     assert_eq!(owner_status_change.status(), StatusCode::OK);
-    
+
     let owner_suspend_status_change = client
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
@@ -117,7 +123,7 @@ pub async fn verify(context: TenantStatusLifecycleContext<'_>) {
         .await
         .expect("platform owner can suspend a tenant");
     assert_eq!(owner_suspend_status_change.status(), StatusCode::OK);
-    
+
     sqlx::query("UPDATE identity_access.operator_users SET role='platform_security' WHERE id=$1")
         .bind(operator_id)
         .execute(&migration_pool)

@@ -16,8 +16,14 @@ pub struct TenantDtoValidationContext<'a> {
 
 pub async fn verify(context: TenantDtoValidationContext<'_>) {
     let TenantDtoValidationContext {
-        client, migration_pool, http_addr, origin, second_session_cookie,
-        second_csrf_cookie, created_tenant_id, tenant_before_invalid_transitions,
+        client,
+        migration_pool,
+        http_addr,
+        origin,
+        second_session_cookie,
+        second_csrf_cookie,
+        created_tenant_id,
+        tenant_before_invalid_transitions,
     } = context;
     for invalid_query in ["limit=0", "limit=101", "offset=-1", "limit=not-a-number"] {
         let invalid_list = client
@@ -48,7 +54,7 @@ pub async fn verify(context: TenantDtoValidationContext<'_>) {
         .await
         .expect("oversized tenant search query receives an HTTP response");
     assert_eq!(oversized_tenant_query.status(), StatusCode::BAD_REQUEST);
-    
+
     let tenants_before_invalid_dtos: i64 =
         sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants")
             .fetch_one(&migration_pool)
@@ -114,7 +120,7 @@ pub async fn verify(context: TenantDtoValidationContext<'_>) {
         tenants_after_invalid_dtos, tenants_before_invalid_dtos,
         "invalid tenant values and types must not create tenant rows"
     );
-    
+
     let invalid_tenant_dto = client
         .post(format!("http://{http_addr}/v1/tenants"))
         .header(header::ORIGIN, &origin)
@@ -136,7 +142,7 @@ pub async fn verify(context: TenantDtoValidationContext<'_>) {
         invalid_tenant_dto.status(),
         StatusCode::UNPROCESSABLE_ENTITY
     );
-    
+
     let tenant_after_invalid_transitions: (String, i64) =
         sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
             .bind(created_tenant_id)

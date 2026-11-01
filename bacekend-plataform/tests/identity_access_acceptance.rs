@@ -1,27 +1,27 @@
-mod operator_role_matrix;
-mod secondary_tenant_lifecycle;
-mod session_security;
-mod tenant_status_race;
-mod tenant_dto_validation;
-mod tenant_event_delivery;
-mod tenant_status_input_validation;
-mod tenant_status_lifecycle;
-mod tenant_status_version_validation;
 mod concurrent_registration;
 mod credential_validation;
 mod duplicate_registration;
 mod identity_outbox_recovery;
+mod operator_role_matrix;
 mod outbox_database_failures;
 mod outbox_leases;
 mod outbox_transaction_rollback;
-mod rate_limit_acceptance;
 #[path = "identity_access_acceptance/phase3_catalog.rs"]
 mod phase3_catalog;
 #[path = "identity_access_acceptance/phase3_entitlements.rs"]
 mod phase3_entitlements;
+mod rate_limit_acceptance;
+mod secondary_tenant_lifecycle;
+mod session_security;
+mod tenant_dto_validation;
+mod tenant_event_delivery;
 mod tenant_outbox_recovery;
 mod tenant_registration_races;
 mod tenant_role_matrix;
+mod tenant_status_input_validation;
+mod tenant_status_lifecycle;
+mod tenant_status_race;
+mod tenant_status_version_validation;
 
 use async_nats::jetstream;
 #[path = "identity_access_acceptance/support.rs"]
@@ -450,16 +450,14 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .expect("HTTP acceptance client builds");
     let email = format!("acceptance_{}@example.test", Uuid::new_v4().simple());
     let password = format!("A-valid-password-{}!", Uuid::new_v4().simple());
-    credential_validation::verify(
-        credential_validation::IdentityCredentialValidationContext {
-            client: &client,
-            migration_pool: &migration_pool,
-            http_addr,
-            origin: &origin,
-            email: &email,
-            password: &password,
-        },
-    )
+    credential_validation::verify(credential_validation::IdentityCredentialValidationContext {
+        client: &client,
+        migration_pool: &migration_pool,
+        http_addr,
+        origin: &origin,
+        email: &email,
+        password: &password,
+    })
     .await;
 
     let register_response = client
@@ -485,11 +483,21 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
 
     outbox_transaction_rollback::verify(&client, &migration_pool, http_addr, &origin).await;
     duplicate_registration::verify(
-        &client, &migration_pool, http_addr, &origin, &email, &password, registered_user_id,
+        &client,
+        &migration_pool,
+        http_addr,
+        &origin,
+        &email,
+        &password,
+        registered_user_id,
     )
     .await;
     concurrent_registration::verify(
-        &client, &migration_pool, http_addr, &origin, registered_user_id,
+        &client,
+        &migration_pool,
+        http_addr,
+        &origin,
+        registered_user_id,
     )
     .await;
 
@@ -1068,15 +1076,13 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let event_topology = EventTopology::from_namespace(Some(&event_namespace))
         .expect("test event namespace is valid");
 
-    outbox_database_failures::verify(
-        outbox_database_failures::OutboxDatabaseFailureContext {
-            migration_pool: &migration_pool,
-            runtime_pool: &runtime_pool,
-            runtime_role: &runtime_role,
-            jetstream: &jetstream,
-            event_topology: &event_topology,
-        },
-    )
+    outbox_database_failures::verify(outbox_database_failures::OutboxDatabaseFailureContext {
+        migration_pool: &migration_pool,
+        runtime_pool: &runtime_pool,
+        runtime_role: &runtime_role,
+        jetstream: &jetstream,
+        event_topology: &event_topology,
+    })
     .await;
     tenant_outbox_recovery::verify(tenant_outbox_recovery::TenantOutboxRecoveryContext {
         migration_pool: &migration_pool,
@@ -1089,8 +1095,8 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .await;
     identity_outbox_recovery::verify(&migration_pool, &runtime_pool, &jetstream).await;
 
-    let event_delivery = tenant_event_delivery::verify(
-        tenant_event_delivery::TenantEventDeliveryContext {
+    let event_delivery =
+        tenant_event_delivery::verify(tenant_event_delivery::TenantEventDeliveryContext {
             client: &client,
             migration_pool: &migration_pool,
             runtime_pool: &runtime_pool,
@@ -1103,9 +1109,8 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             created_tenant_id,
             registered_user_id,
             legal_identification_number: &legal_identification_number,
-        },
-    )
-    .await;
+        })
+        .await;
     let stream = event_delivery.stream;
     let mut event_stream_cleanup = event_delivery.event_stream_cleanup;
     let mut isolated_stream_cleanup = event_delivery.isolated_stream_cleanup;
@@ -1608,16 +1613,14 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .expect("tenant registration event count is queryable");
     assert_eq!(duplicate_slug_event_count, 1);
 
-    tenant_registration_races::verify(
-        tenant_registration_races::TenantRegistrationRaceContext {
-            client: &client,
-            migration_pool: &migration_pool,
-            http_addr,
-            origin: &origin,
-            second_session_cookie: &second_session_cookie,
-            second_csrf_cookie: &second_csrf_cookie,
-        },
-    )
+    tenant_registration_races::verify(tenant_registration_races::TenantRegistrationRaceContext {
+        client: &client,
+        migration_pool: &migration_pool,
+        http_addr,
+        origin: &origin,
+        second_session_cookie: &second_session_cookie,
+        second_csrf_cookie: &second_csrf_cookie,
+    })
     .await;
 
     let second_tenant_create = client
@@ -2251,18 +2254,16 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     })
     .await;
 
-    tenant_status_lifecycle::verify(
-        tenant_status_lifecycle::TenantStatusLifecycleContext {
-            client: &client,
-            migration_pool: &migration_pool,
-            http_addr,
-            origin: &origin,
-            matrix_operator_session_cookie: &matrix_operator_session_cookie,
-            matrix_operator_csrf_cookie: &matrix_operator_csrf_cookie,
-            operator_id,
-            created_tenant_id,
-        },
-    )
+    tenant_status_lifecycle::verify(tenant_status_lifecycle::TenantStatusLifecycleContext {
+        client: &client,
+        migration_pool: &migration_pool,
+        http_addr,
+        origin: &origin,
+        matrix_operator_session_cookie: &matrix_operator_session_cookie,
+        matrix_operator_csrf_cookie: &matrix_operator_csrf_cookie,
+        operator_id,
+        created_tenant_id,
+    })
     .await;
 
     let (tenant_before_invalid_transitions, current_status_version) =

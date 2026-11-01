@@ -15,8 +15,13 @@ pub struct TenantStatusVersionContext<'a> {
 
 pub async fn verify(context: TenantStatusVersionContext<'_>) {
     let TenantStatusVersionContext {
-        client, http_addr, origin, matrix_operator_session_cookie,
-        matrix_operator_csrf_cookie, created_tenant_id, current_status_version,
+        client,
+        http_addr,
+        origin,
+        matrix_operator_session_cookie,
+        matrix_operator_csrf_cookie,
+        created_tenant_id,
+        current_status_version,
     } = context;
     let stale_status_version = client
         .post(format!(
@@ -38,7 +43,7 @@ pub async fn verify(context: TenantStatusVersionContext<'_>) {
         .await
         .expect("stale tenant status version is rejected");
     assert_eq!(stale_status_version.status(), StatusCode::CONFLICT);
-    
+
     let zero_expected_version = client
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
@@ -58,7 +63,7 @@ pub async fn verify(context: TenantStatusVersionContext<'_>) {
         .await
         .expect("negative expected version is rejected as invalid input");
     assert_eq!(zero_expected_version.status(), StatusCode::BAD_REQUEST);
-    
+
     let wrong_version_type = client
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
@@ -114,7 +119,7 @@ pub async fn verify(context: TenantStatusVersionContext<'_>) {
             "wrong lifecycle DTO type case {index} must be rejected"
         );
     }
-    
+
     let invalid_status_value = client
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"

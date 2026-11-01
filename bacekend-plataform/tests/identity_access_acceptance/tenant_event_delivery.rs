@@ -30,8 +30,17 @@ pub(super) struct TenantEventDeliveryResult {
 
 pub(super) async fn verify(context: TenantEventDeliveryContext<'_>) -> TenantEventDeliveryResult {
     let TenantEventDeliveryContext {
-        client, migration_pool, runtime_pool, jetstream, event_topology, event_namespace,
-        http_addr, session_cookie, csrf_cookie, created_tenant_id, registered_user_id,
+        client,
+        migration_pool,
+        runtime_pool,
+        jetstream,
+        event_topology,
+        event_namespace,
+        http_addr,
+        session_cookie,
+        csrf_cookie,
+        created_tenant_id,
+        registered_user_id,
         legal_identification_number,
     } = context;
     let stream = event_topology

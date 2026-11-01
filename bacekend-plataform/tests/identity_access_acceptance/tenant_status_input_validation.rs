@@ -15,8 +15,13 @@ pub struct TenantStatusInputContext<'a> {
 
 pub async fn verify(context: TenantStatusInputContext<'_>) -> ((String, i64), i64) {
     let TenantStatusInputContext {
-        client, migration_pool, http_addr, origin,
-        matrix_operator_session_cookie, matrix_operator_csrf_cookie, created_tenant_id,
+        client,
+        migration_pool,
+        http_addr,
+        origin,
+        matrix_operator_session_cookie,
+        matrix_operator_csrf_cookie,
+        created_tenant_id,
     } = context;
     // Invalid reasons and stale optimistic-lock versions must be rejected
     // before changing the tenant aggregate or its version. Read the committed
@@ -30,7 +35,7 @@ pub async fn verify(context: TenantStatusInputContext<'_>) -> ((String, i64), i6
     assert_eq!(tenant_before_invalid_transitions.0, "active");
     let current_status_version = tenant_before_invalid_transitions.1;
     assert!(current_status_version > 0);
-    
+
     let missing_status_reason = client
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"

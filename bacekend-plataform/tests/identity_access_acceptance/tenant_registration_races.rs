@@ -13,7 +13,12 @@ pub struct TenantRegistrationRaceContext<'a> {
 
 pub async fn verify(context: TenantRegistrationRaceContext<'_>) {
     let TenantRegistrationRaceContext {
-        client, migration_pool, http_addr, origin, second_session_cookie, second_csrf_cookie,
+        client,
+        migration_pool,
+        http_addr,
+        origin,
+        second_session_cookie,
+        second_csrf_cookie,
     } = context;
     // Concurrent tenant registration with the same slug must commit exactly
     // one aggregate and one durable registration event.
@@ -100,7 +105,7 @@ pub async fn verify(context: TenantRegistrationRaceContext<'_>) {
     .await
     .expect("concurrent slug Outbox count is queryable");
     assert_eq!(concurrent_slug_events, 1);
-    
+
     // The legal-identity unique constraint must provide the same guarantee
     // when requests use different slugs but the same normalized document.
     let concurrent_document = format!(

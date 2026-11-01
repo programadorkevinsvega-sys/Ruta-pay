@@ -16,7 +16,12 @@ pub struct TenantOutboxRecoveryContext<'a> {
 
 pub async fn verify(context: TenantOutboxRecoveryContext<'_>) {
     let TenantOutboxRecoveryContext {
-        migration_pool, runtime_pool, jetstream, failed_topology, failed_namespace, created_tenant_id,
+        migration_pool,
+        runtime_pool,
+        jetstream,
+        failed_topology,
+        failed_namespace,
+        created_tenant_id,
     } = context;
     // Exercise a deterministic JetStream failure without racing the
     // application's background relay: the synthetic Outbox row is leased
@@ -84,7 +89,7 @@ pub async fn verify(context: TenantOutboxRecoveryContext<'_>) {
         Some(jetstream_error_code)
     );
     assert!(deferred_event_state.1);
-    
+
     let failed_stream = failed_topology
         .ensure_stream(&jetstream)
         .await
