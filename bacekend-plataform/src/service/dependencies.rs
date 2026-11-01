@@ -29,7 +29,7 @@ pub async fn connect_database(
 
 pub async fn connect_redis(
     config: &AppConfig,
-) -> Result<(redis::Client, redis::aio::ConnectionManager), redis::RedisError> {
+) -> Result<(redis::Client, redis::aio::ConnectionManager), Box<dyn std::error::Error>> {
     let redis_client = redis::Client::open(config.redis_url.as_str())
         .map_err(|_| std::io::Error::other("platform Redis URL is invalid"))?;
     let redis_config = redis::aio::ConnectionManagerConfig::new()
