@@ -43,7 +43,8 @@ impl EntitlementService {
             if old_key != key || old_quantity != quantity || old_environment != environment {
                 return Err(EntitlementError::IdempotencyConflict.into());
             }
-            let snapshot = result_snapshot.ok_or(EntitlementServiceError::IdempotencyResultUnavailable)?;
+            let snapshot =
+                result_snapshot.ok_or(EntitlementServiceError::IdempotencyResultUnavailable)?;
             let original_result =
                 EntitlementResultSnapshot::decode(snapshot, tenant, key, environment)?;
             tx.commit().await?;
