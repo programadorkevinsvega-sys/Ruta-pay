@@ -100,9 +100,9 @@ pub(super) mod api_keys;
 mod errors;
 mod memberships;
 pub(super) mod operator;
-mod registration;
+pub(super) mod registration;
 mod security;
-mod sessions;
+pub(super) mod sessions;
 
 pub use api_keys::{create_api_key, list_api_keys, revoke_api_key};
 pub(crate) use errors::{error, grpc_error};
