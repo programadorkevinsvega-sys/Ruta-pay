@@ -242,6 +242,11 @@ dependencies = [
 [[package]]
 name = "bacekend-pasarela"
 version = "0.1.0"
+dependencies = [
+ "platform-contracts",
+ "thiserror",
+ "tonic",
+]
 
 [[package]]
 name = "bacekend-plataform"
