@@ -15,8 +15,8 @@ pub struct GatewayEntitlementsClient {
 
 #[derive(Debug, thiserror::Error)]
 pub enum GatewayEntitlementsConnectError {
-    #[error("platform entitlement endpoint is invalid")]
-    InvalidEndpoint(#[from] tonic::codegen::http::uri::InvalidUri),
+    #[error("platform entitlement endpoint is invalid: {0}")]
+    InvalidEndpoint(String),
     #[error("platform entitlement service is unavailable")]
     Transport(#[from] tonic::transport::Error),
 }
@@ -25,7 +25,8 @@ impl GatewayEntitlementsClient {
     pub async fn connect(
         endpoint: impl Into<String>,
     ) -> Result<Self, GatewayEntitlementsConnectError> {
-        let endpoint = Endpoint::from_shared(endpoint.into())?;
+        let endpoint = Endpoint::from_shared(endpoint.into())
+            .map_err(|error| GatewayEntitlementsConnectError::InvalidEndpoint(error.to_string()))?;
         let channel = endpoint.connect().await?;
         Ok(Self {
             inner: EntitlementsQuotasClient::new(channel),
