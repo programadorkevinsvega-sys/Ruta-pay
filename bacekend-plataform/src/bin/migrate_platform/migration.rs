@@ -1,9 +1,9 @@
-use std::{env, time::Duration};
-use sqlx::postgres::PgPoolOptions;
 use super::{privileges::grant_runtime_privileges, validation::validate_database_targets};
+use sqlx::postgres::PgPoolOptions;
+use std::{env, time::Duration};
 
 pub(super) async fn migrate() -> Result<(), &'static str> {
-let database_url = env::var("PLATFORM_MIGRATION_DATABASE_URL")
+    let database_url = env::var("PLATFORM_MIGRATION_DATABASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
         .ok_or("platform_migration_database_url_missing")?;
