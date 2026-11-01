@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
 use platform_contracts::{
-    entitlements_quotas::{entitlements_quotas_client::EntitlementsQuotasClient},
+    entitlements_quotas::{ConsumeQuotaRequest, entitlements_quotas_client::EntitlementsQuotasClient},
     identity_access::{AuthorizeApiKeyOperationRequest, identity_access_client::IdentityAccessClient},
 };
 use reqwest::header;
