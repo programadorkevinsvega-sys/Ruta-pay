@@ -66,7 +66,7 @@ pub async fn verify(context: SessionSecurityContext<'_>) {
             .await
             .expect("tenant count after CSRF rejection is queryable");
     assert_eq!(tenants_after_csrf_rejection, tenants_before_csrf_rejection);
-    
+
     let keys_before_csrf_rejection: i64 =
         sqlx::query_scalar("SELECT count(*) FROM identity_access.api_keys")
             .fetch_one(&migration_pool)
@@ -96,7 +96,7 @@ pub async fn verify(context: SessionSecurityContext<'_>) {
             .await
             .expect("API key count after CSRF rejection is queryable");
     assert_eq!(keys_after_csrf_rejection, keys_before_csrf_rejection);
-    
+
     let csrf_rejected_status_change = client
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
@@ -116,7 +116,7 @@ pub async fn verify(context: SessionSecurityContext<'_>) {
         .await
         .expect("untrusted Origin rejects status mutation");
     assert_eq!(csrf_rejected_status_change.status(), StatusCode::FORBIDDEN);
-    
+
     let csrf_rejected_tenant_logout = client
         .delete(format!("http://{http_addr}/v1/identity/session"))
         .header(header::ORIGIN, &origin)
@@ -128,7 +128,7 @@ pub async fn verify(context: SessionSecurityContext<'_>) {
         .await
         .expect("missing CSRF token rejects tenant logout");
     assert_eq!(csrf_rejected_tenant_logout.status(), StatusCode::FORBIDDEN);
-    
+
     let csrf_rejected_operator_logout = client
         .delete(format!("http://{http_addr}/v1/platform/identity/session"))
         .header(header::ORIGIN, &origin)
@@ -143,7 +143,7 @@ pub async fn verify(context: SessionSecurityContext<'_>) {
         csrf_rejected_operator_logout.status(),
         StatusCode::FORBIDDEN
     );
-    
+
     // Expired and revoked sessions are rejected at the HTTP boundary.
     // The second tenant session has not been revoked; expire it explicitly so
     // this assertion distinguishes expiration from the separate logout checks.
