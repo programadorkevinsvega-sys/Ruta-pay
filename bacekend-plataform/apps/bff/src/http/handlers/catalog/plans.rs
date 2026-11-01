@@ -6,9 +6,14 @@ use axum::{
 };
 use std::sync::Arc;
 
-use crate::http::{handlers::identity, middleware::correlation_id::correlation_id, routes::AppState};
+use super::{
+    shared::{operator_credentials, tonic_request},
+    types::{NewPlan, PlanView},
+};
+use crate::http::{
+    handlers::identity, middleware::correlation_id::correlation_id, routes::AppState,
+};
 use platform_contracts::catalog_pricing::{CreatePlanRequest, ListPlansRequest};
-use super::{shared::{operator_credentials, tonic_request}, types::{NewPlan, PlanView}};
 
 #[utoipa::path(post, path="/v1/platform/catalog/plans", request_body=NewPlan, responses((status=201, body=PlanView)))]
 pub async fn create_plan(
