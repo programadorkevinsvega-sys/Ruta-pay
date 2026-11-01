@@ -37,6 +37,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         created_tenant_id,
         tenant_slug,
         tenant_admin_status_body,
+        ..
     } = tenant;
     let http_addr = servers.http_addr;
     let origin = servers.origin.clone();
