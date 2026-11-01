@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 async-nats.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
 platform-contracts = { path = "../../crates/platform_contracts" }
