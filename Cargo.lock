@@ -2083,6 +2083,7 @@ name = "payvia-platform-bff"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "chrono",
  "metrics",
  "opentelemetry",
  "payvia-observability",
@@ -2294,6 +2295,7 @@ dependencies = [
  "tonic",
  "tracing",
  "tracing-opentelemetry",
+ "thiserror",
 ]
 
 [[package]]
