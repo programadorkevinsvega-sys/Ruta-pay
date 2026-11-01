@@ -55,7 +55,7 @@ pub async fn verify(
     .await
     .expect("concurrent identity count is queryable");
     assert_eq!(concurrent_identity_count, 1);
-    
+
     let registration_event: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM identity_access.outbox_events WHERE aggregate_id = $1 AND event_type = 'identity.tenant_user.registered')",
     )
