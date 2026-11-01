@@ -35,11 +35,6 @@ pub async fn verify(
         created_tenant_id,
     )
     .await;
-    let second_session_cookie = second_tenant_credentials.session_cookie.clone();
-    let second_csrf_cookie = second_tenant_credentials.csrf_cookie.clone();
-    let second_legal_identification_number = second_tenant_credentials
-        .legal_identification_number
-        .clone();
     let second_tenant_id = second_tenant_isolation::create_and_verify(
         client,
         migration_pool,
