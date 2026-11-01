@@ -2,7 +2,6 @@ use super::fixture::TestFixture;
 use chrono::Duration;
 use platform_catalog_pricing::application::catalog_service::PublishPriceVersionCommand;
 use platform_entitlements_quotas::application::entitlement_service::ConsumeQuotaCommand;
-use uuid::Uuid;
 
 pub async fn verify(fixture: &TestFixture) {
     verify_catalog_rollback(fixture).await;
@@ -47,5 +46,4 @@ async fn verify_usage_rollback(fixture: &TestFixture) {
     let after: (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM entitlements_quotas.usage_ledger),(SELECT count(*) FROM entitlements_quotas.audit_events)")
         .fetch_one(pool).await.expect("usage state after failure is measurable");
     assert_eq!(before, after, "usage and audit writes roll back with the outbox");
-    let _: Uuid = fixture.price_one.id;
 }
