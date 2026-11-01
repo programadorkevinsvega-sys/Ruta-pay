@@ -1,11 +1,9 @@
 use async_nats::jetstream;
-use platform_contracts::realtime::realtime_gateway_client::RealtimeGatewayClient;
 use platform_runtime::event_topology::EventTopology;
 use redis::aio::ConnectionManager;
 use reqwest::Client;
 use sqlx::PgPool;
 use std::net::SocketAddr;
-use tonic::transport::Channel;
 use uuid::Uuid;
 
 pub async fn verify(
@@ -22,7 +20,6 @@ pub async fn verify(
     created_tenant_id: Uuid,
     stream: &jetstream::stream::Stream,
     event_topology: &EventTopology,
-    realtime_client: &mut RealtimeGatewayClient<Channel>,
     operator_session_cookie: &str,
     operator_csrf_cookie: &str,
 ) -> u64 {
@@ -48,7 +45,6 @@ pub async fn verify(
         event_topology,
         runtime_pool,
         &mut realtime_redis,
-        realtime_client,
         client,
         http_addr,
         operator_session_cookie,
