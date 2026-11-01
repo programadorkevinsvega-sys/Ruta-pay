@@ -1,5 +1,5 @@
+use super::fixture::{TestFixture, is_domain_error};
 use platform_entitlements_quotas::domain::entitlement::EntitlementError;
-use super::{fixture::{TestFixture, is_domain_error}};
 
 pub async fn verify(fixture: &TestFixture) {
     let entitlements = &fixture.entitlements;
@@ -17,7 +17,7 @@ pub async fn verify(fixture: &TestFixture) {
         unassigned,
         EntitlementError::CapabilityUnavailable
     ));
-    
+
     let mut tenant_scope = runtime_pool
         .begin()
         .await
@@ -50,7 +50,7 @@ pub async fn verify(fixture: &TestFixture) {
         .rollback()
         .await
         .expect("tenant scope transaction rolls back");
-    
+
     let audit_count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM entitlements_quotas.audit_events")
             .fetch_one(&migration_pool)
@@ -69,5 +69,5 @@ pub async fn verify(fixture: &TestFixture) {
         outbox_count >= 5,
         "business events are committed with their state changes"
     );
-    
+
 }
