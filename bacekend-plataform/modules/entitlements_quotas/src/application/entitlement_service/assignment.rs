@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::domain::entitlement::EntitlementError;
 use super::{EntitlementService, EntitlementServiceError, support::set_operator_context};
+use crate::domain::entitlement::EntitlementError;
 
 impl EntitlementService {
     pub async fn assign_plan(
