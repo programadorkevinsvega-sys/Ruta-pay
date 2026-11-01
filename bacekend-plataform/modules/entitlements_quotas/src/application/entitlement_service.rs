@@ -40,4 +40,6 @@ pub enum EntitlementServiceError {
     Domain(#[from] EntitlementError),
     #[error(transparent)]
     Database(#[from] sqlx::Error),
+    #[error("idempotent response snapshot is unavailable or invalid")]
+    IdempotencyResultUnavailable,
 }
