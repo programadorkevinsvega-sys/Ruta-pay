@@ -75,6 +75,7 @@ pub(super) struct ScenarioState {
     pub(super) registration_subject: String,
     pub(super) registration_event_id: Uuid,
     pub(super) registration_event_payload: Vec<u8>,
+    pub(super) replay_cursor: u64,
     pub(super) api_key_id: Uuid,
     pub(super) api_key_secret: String,
     pub(super) second_session_cookie: String,
