@@ -32,9 +32,10 @@ impl CatalogService {
             .bind(payvia_observability::current_trace_id())
             .bind(serde_json::json!({"slug": slug, "status": "draft"}))
             .execute(&mut *transaction).await?;
-        sqlx::query("INSERT INTO catalog_pricing.outbox_events (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,traceparent,correlation_id) VALUES ($1,$2,1,'catalog.plan.created',1,'platform',$3,NULL,$4)")
+        sqlx::query("INSERT INTO catalog_pricing.outbox_events (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,traceparent,correlation_id) VALUES ($1,$2,1,'catalog.plan.created',1,'platform',$3,$4,$5)")
             .bind(Uuid::new_v4()).bind(row.0)
             .bind(serde_json::json!({"plan_id": row.0, "slug": slug, "name": name.trim()}))
+            .bind(payvia_observability::current_traceparent())
             .bind(correlation_id).execute(&mut *transaction).await?;
         transaction.commit().await?;
         Ok(Plan {
