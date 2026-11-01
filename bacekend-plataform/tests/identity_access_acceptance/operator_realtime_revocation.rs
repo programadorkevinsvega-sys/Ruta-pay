@@ -1,3 +1,4 @@
+use super::*;
 use platform_contracts::realtime::{
     SubscribeEventsRequest, realtime_gateway_client::RealtimeGatewayClient,
 };
@@ -32,7 +33,7 @@ pub async fn verify(
 
     let operator_logout = client
         .delete(format!("http://{http_addr}/v1/platform/identity/session"))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!(
