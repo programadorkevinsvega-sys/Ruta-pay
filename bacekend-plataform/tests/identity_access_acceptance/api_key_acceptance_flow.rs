@@ -1,3 +1,4 @@
+use super::{api_key_authorization, api_key_creation, api_key_dto_validation, api_key_lifecycle, phase3_catalog, phase3_entitlements, tenant_role_matrix};
 use platform_contracts::identity_access::identity_access_client::IdentityAccessClient;
 use reqwest::Client;
 use sqlx::PgPool;
@@ -20,25 +21,25 @@ pub async fn verify(
     registered_user_id: Uuid,
 ) {
     api_key_dto_validation::verify(
-        &client,
-        &migration_pool,
+        client,
+        migration_pool,
         http_addr,
-        &origin,
-        &session_cookie,
-        &csrf_cookie,
-        &operator_session_cookie,
-        &operator_csrf_cookie,
+        origin,
+        session_cookie,
+        csrf_cookie,
+        operator_session_cookie,
+        operator_csrf_cookie,
         created_tenant_id,
     )
     .await;
 
     let (api_key_id, api_key_secret, api_key_created) = api_key_creation::verify(
-        &client,
-        &migration_pool,
+        client,
+        migration_pool,
         http_addr,
-        &origin,
-        &session_cookie,
-        &csrf_cookie,
+        origin,
+        session_cookie,
+        csrf_cookie,
         created_tenant_id,
     )
     .await;
@@ -51,21 +52,21 @@ pub async fn verify(
     )
     .await;
     phase3_catalog::configure(
-        &client,
+        client,
         http_addr,
-        &origin,
-        &operator_session_cookie,
-        &operator_csrf_cookie,
+        origin,
+        operator_session_cookie,
+        operator_csrf_cookie,
         created_tenant_id,
     )
     .await;
     phase3_entitlements::verify(phase3_entitlements::EntitlementAcceptanceContext {
-        client: &client,
+        client: client,
         http_addr,
         grpc_addr,
-        origin: &origin,
-        session_cookie: &session_cookie,
-        csrf_cookie: &csrf_cookie,
+        origin: origin,
+        session_cookie: session_cookie,
+        csrf_cookie: csrf_cookie,
         tenant_id: created_tenant_id,
         api_key_id,
         api_key_secret,
@@ -74,20 +75,20 @@ pub async fn verify(
     .await;
     api_key_authorization::verify_denials(
         &mut authorization_client,
-        &migration_pool,
+        migration_pool,
         created_tenant_id,
         api_key_id,
         &api_key_secret,
     )
     .await;
     api_key_lifecycle::verify(
-        &client,
+        client,
         &mut authorization_client,
-        &migration_pool,
+        migration_pool,
         http_addr,
-        &origin,
-        &session_cookie,
-        &csrf_cookie,
+        origin,
+        session_cookie,
+        csrf_cookie,
         created_tenant_id,
         api_key_id,
         &api_key_secret,
@@ -96,13 +97,13 @@ pub async fn verify(
     .await;
 
     tenant_role_matrix::verify(tenant_role_matrix::TenantRoleMatrixContext {
-        client: &client,
-        migration_pool: &migration_pool,
+        client: client,
+        migration_pool: migration_pool,
         authorization_client: &mut authorization_client,
         http_addr,
-        session_cookie: &session_cookie,
-        csrf_cookie: &csrf_cookie,
-        origin: &origin,
+        session_cookie: session_cookie,
+        csrf_cookie: csrf_cookie,
+        origin: origin,
         created_tenant_id,
         registered_user_id,
     })
