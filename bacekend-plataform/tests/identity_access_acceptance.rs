@@ -189,10 +189,13 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             .is_err_and(is_stream_not_found)
     );
 
-    servers.shutdown().await;
-    runtime_pool.close().await;
-    migration_pool.close().await;
-    database_cleanup.cleanup().await;
-    admin_pool.close().await;
-    provider.shutdown().expect("trace provider shuts down");
+    cleanup_fixture::shutdown(
+        servers,
+        runtime_pool,
+        migration_pool,
+        database_cleanup,
+        admin_pool,
+        provider,
+    )
+    .await;
 }
