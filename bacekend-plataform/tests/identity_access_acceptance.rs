@@ -5,6 +5,7 @@ mod credential_validation;
 mod database_fixture;
 mod database_migrations;
 mod duplicate_registration;
+mod event_fixture;
 mod identity_outbox_recovery;
 mod operator_redis_fixture;
 mod operator_revocation_audit;
@@ -17,9 +18,16 @@ mod outbox_transaction_rollback;
 mod phase3_catalog;
 #[path = "identity_access_acceptance/phase3_entitlements.rs"]
 mod phase3_entitlements;
+mod platform_realtime_replay;
+mod operator_realtime_revocation;
+mod tenant_realtime_replay;
+mod tenant_realtime_revocation;
+mod login_rate_limits;
 mod platform_replay_and_logout;
 mod rate_limit_acceptance;
 mod rate_limit_telemetry;
+mod api_key_authorization;
+mod api_key_lifecycle;
 mod second_tenant_isolation;
 mod second_tenant_registration;
 mod secondary_tenant_lifecycle;
@@ -238,82 +246,28 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     )
     .await;
 
-    let nats_client = async_nats::ConnectOptions::with_user_and_password(
-        std::env::var("NATS_USER").expect("development NATS user is configured"),
-        std::env::var("NATS_PASSWORD").expect("development NATS password is configured"),
-    )
-    .connect(std::env::var("PLATFORM_NATS_URL").expect("development JetStream URL is configured"))
-    .await
-    .expect("real development NATS accepts authenticated connection");
-    let jetstream = jetstream::new(nats_client);
-    let failed_namespace = format!("e2e_failure_{}", Uuid::new_v4().simple());
-    let failed_topology = EventTopology::from_namespace(Some(&failed_namespace))
-        .expect("failure-path namespace is valid");
-    failed_topology
-        .ensure_stream(&jetstream)
-        .await
-        .expect("failure-path stream is created in real JetStream");
-    let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _cleanup = EventStreamCleanup {
-            jetstream: jetstream.clone(),
-            namespace: failed_namespace.clone(),
-            armed: true,
-        };
-        panic!("exercise E2E stream cleanup during test unwinding");
-    }));
-    assert!(failure.is_err(), "the cleanup failure path was exercised");
-    assert!(
-        jetstream
-            .get_stream(&failed_topology.stream_name)
-            .await
-            .is_err_and(is_stream_not_found),
-        "panic cleanup removes only the stream created for that failed execution"
-    );
-    let event_namespace = format!("e2e_test_{}", Uuid::new_v4().simple());
-    let event_topology = EventTopology::from_namespace(Some(&event_namespace))
-        .expect("test event namespace is valid");
-
-    outbox_database_failures::verify(outbox_database_failures::OutboxDatabaseFailureContext {
-        migration_pool: &migration_pool,
-        runtime_pool: &runtime_pool,
-        runtime_role: &runtime_role,
-        jetstream: &jetstream,
-        event_topology: &event_topology,
-    })
-    .await;
-    tenant_outbox_recovery::verify(tenant_outbox_recovery::TenantOutboxRecoveryContext {
-        migration_pool: &migration_pool,
-        runtime_pool: &runtime_pool,
-        jetstream: &jetstream,
-        failed_topology: &failed_topology,
-        failed_namespace: &failed_namespace,
+    let event_fixture = event_fixture::create(
+        &migration_pool,
+        &runtime_pool,
+        &runtime_role,
+        &client,
+        http_addr,
+        &session_cookie,
+        &csrf_cookie,
         created_tenant_id,
-    })
+        registered_user_id,
+        &legal_identification_number,
+    )
     .await;
-    identity_outbox_recovery::verify(&migration_pool, &runtime_pool, &jetstream).await;
-
-    let event_delivery =
-        tenant_event_delivery::verify(tenant_event_delivery::TenantEventDeliveryContext {
-            client: &client,
-            migration_pool: &migration_pool,
-            runtime_pool: &runtime_pool,
-            jetstream: &jetstream,
-            event_topology: &event_topology,
-            event_namespace,
-            http_addr,
-            session_cookie: &session_cookie,
-            csrf_cookie: &csrf_cookie,
-            created_tenant_id,
-            registered_user_id,
-            legal_identification_number: &legal_identification_number,
-        })
-        .await;
-    let stream = event_delivery.stream;
-    let event_payload = event_delivery.event_payload;
-    let registration_event_id = event_delivery.registration_event_id;
-    let registration_subject = event_delivery.registration_subject;
-    let mut event_stream_cleanup = event_delivery.event_stream_cleanup;
-    let mut isolated_stream_cleanup = event_delivery.isolated_stream_cleanup;
+    let jetstream = event_fixture.jetstream;
+    let failed_topology = event_fixture.failed_topology;
+    let event_topology = event_fixture.event_topology;
+    let stream = event_fixture.stream;
+    let event_payload = event_fixture.event_payload;
+    let registration_event_id = event_fixture.registration_event_id;
+    let registration_subject = event_fixture.registration_subject;
+    let mut event_stream_cleanup = event_fixture.event_stream_cleanup;
+    let mut isolated_stream_cleanup = event_fixture.isolated_stream_cleanup;
 
     api_key_dto_validation::verify(
         &client,
