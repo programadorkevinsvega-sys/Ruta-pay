@@ -13,7 +13,6 @@ use std::time::Duration;
 use tokio::sync::watch;
 use tonic::transport::Endpoint;
 
-#[tokio::main]
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let config = match AppConfig::from_env() {
         Ok(config) => config,
