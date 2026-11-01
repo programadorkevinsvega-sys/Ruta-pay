@@ -1,8 +1,8 @@
 pub mod assignments;
 pub mod capabilities;
 pub mod entitlements;
-mod plans;
-mod prices;
+pub mod plans;
+pub mod prices;
 mod shared;
 mod types;
 
