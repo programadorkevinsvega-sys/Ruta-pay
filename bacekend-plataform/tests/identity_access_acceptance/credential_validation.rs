@@ -13,7 +13,12 @@ pub struct IdentityCredentialValidationContext<'a> {
 
 pub async fn verify(context: IdentityCredentialValidationContext<'_>) {
     let IdentityCredentialValidationContext {
-        client, migration_pool, http_addr, origin, email, password,
+        client,
+        migration_pool,
+        http_addr,
+        origin,
+        email,
+        password,
     } = context;
     let identity_state_before_origin_rejection: (i64, i64) = sqlx::query_as(
         "SELECT (SELECT count(*) FROM identity_access.tenant_users),(SELECT count(*) FROM identity_access.sessions)",
@@ -111,7 +116,7 @@ pub async fn verify(context: IdentityCredentialValidationContext<'_>) {
         identities_after_invalid_credentials, identities_before_invalid_credentials,
         "invalid credential values and types must not create identities"
     );
-    
+
     let weak_password_email = format!("weak_password_{}@example.test", Uuid::new_v4().simple());
     let weak_password_response = client
         .post(format!("http://{http_addr}/v1/identity/register"))
