@@ -6,6 +6,7 @@ use async_nats::jetstream::{
 use platform_runtime::event_topology::{EventTopology, delete_e2e_stream};
 use serde_json::Value;
 use std::time::Duration;
+use tokio_stream::StreamExt;
 use uuid::Uuid;
 
 pub async fn verify(fixture: &TestFixture) {
