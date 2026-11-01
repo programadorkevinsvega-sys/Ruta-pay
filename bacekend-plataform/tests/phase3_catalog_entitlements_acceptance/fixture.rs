@@ -73,11 +73,25 @@ impl TestFixture {
             .await
             .expect("capability snapshot is persisted");
         entitlements
-            .assign_plan(actor, tenant_one, price_one.id, price_start, None, correlation)
+            .assign_plan(
+                actor,
+                tenant_one,
+                price_one.id,
+                price_start,
+                None,
+                correlation,
+            )
             .await
             .expect("first tenant receives the plan");
         entitlements
-            .assign_plan(actor, tenant_two, price_one.id, price_start, None, correlation)
+            .assign_plan(
+                actor,
+                tenant_two,
+                price_one.id,
+                price_start,
+                None,
+                correlation,
+            )
             .await
             .expect("second tenant receives the same plan");
 
