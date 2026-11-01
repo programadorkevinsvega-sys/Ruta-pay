@@ -9,7 +9,7 @@ use platform_contracts::identity_access::{
     identity_access_client::IdentityAccessClient,
 };
 use sqlx::PgPool;
-use tonic::{Request, Status};
+use tonic::Status;
 use uuid::Uuid;
 
 const SIGNAL_CHANNEL: &str = "payvia:platform:realtime:v1";
