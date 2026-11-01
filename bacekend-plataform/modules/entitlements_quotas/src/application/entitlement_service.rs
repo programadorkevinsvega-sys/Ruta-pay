@@ -2,6 +2,7 @@ mod assignment;
 mod capabilities;
 mod consumption;
 mod evaluation;
+mod result_snapshot;
 mod snapshot;
 mod support;
 
