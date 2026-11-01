@@ -1,4 +1,3 @@
-use super::*;
 use async_nats::jetstream;
 use platform_runtime::event_topology::EventTopology;
 use reqwest::{Client, StatusCode, header};
@@ -6,7 +5,6 @@ use sqlx::PgPool;
 use std::net::SocketAddr;
 use uuid::Uuid;
 
-use super::identity_access_acceptance_support::EventStreamCleanup;
 use super::second_tenant_registration::SecondTenantCredentials;
 
 pub async fn create_and_verify(
