@@ -1,3 +1,4 @@
+use super::*;
 use async_nats::jetstream;
 use platform_runtime::event_topology::{EventTopology, delete_e2e_stream};
 use sqlx::PgPool;
@@ -13,7 +14,7 @@ pub async fn verify(
     sqlx::query(
         "UPDATE identity_access.outbox_events SET available_at=now()+interval '1 hour' WHERE published_at IS NULL",
     )
-    .execute(&migration_pool)
+    .execute(migration_pool)
     .await
     .expect("existing identity Outbox events are deferred for isolated retry acceptance");
     let identity_failure_namespace = format!("e2e_identity_{}", Uuid::new_v4().simple());
@@ -27,12 +28,12 @@ pub async fn verify(
     .bind(identity_failed_event_id)
     .bind(Uuid::new_v4())
     .bind(serde_json::json!({"session_id": Uuid::new_v4()}))
-    .execute(&migration_pool)
+    .execute(migration_pool)
     .await
     .expect("identity Outbox retry event is inserted");
     let failed_identity_delivery =
         platform_identity_access::infrastructure::outbox_relay::relay_batch(
-            &runtime_pool,
+            runtime_pool,
             &jetstream,
             &identity_failure_topology.subject_prefix,
         )
@@ -43,7 +44,7 @@ pub async fn verify(
         "SELECT last_error_code,published_at IS NULL,lease_token IS NULL FROM identity_access.outbox_events WHERE event_id=$1",
     )
     .bind(identity_failed_event_id)
-    .fetch_one(&migration_pool)
+    .fetch_one(migration_pool)
     .await
     .expect("identity deferred Outbox state is queryable");
     assert_eq!(
@@ -58,12 +59,12 @@ pub async fn verify(
         .expect("identity JetStream stream is restored for retry");
     sqlx::query("UPDATE identity_access.outbox_events SET available_at=now() WHERE event_id=$1")
         .bind(identity_failed_event_id)
-        .execute(&migration_pool)
+        .execute(migration_pool)
         .await
         .expect("identity failed event becomes eligible after dependency recovery");
     let identity_retried_delivery =
         platform_identity_access::infrastructure::outbox_relay::relay_batch(
-            &runtime_pool,
+            runtime_pool,
             &jetstream,
             &identity_failure_topology.subject_prefix,
         )
@@ -74,7 +75,7 @@ pub async fn verify(
         "SELECT published_at IS NOT NULL,last_error_code FROM identity_access.outbox_events WHERE event_id=$1",
     )
     .bind(identity_failed_event_id)
-    .fetch_one(&migration_pool)
+    .fetch_one(migration_pool)
     .await
     .expect("identity successful retry state is queryable");
     assert!(identity_retried_state.0);
