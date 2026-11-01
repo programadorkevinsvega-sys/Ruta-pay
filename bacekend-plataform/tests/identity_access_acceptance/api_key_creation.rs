@@ -12,7 +12,7 @@ pub async fn verify(
     session_cookie: &str,
     csrf_cookie: &str,
     created_tenant_id: Uuid,
-) -> (Uuid, String) {
+) -> (Uuid, String, serde_json::Value) {
     sqlx::raw_sql(
         "CREATE OR REPLACE FUNCTION identity_access.reject_test_api_key_outbox_event() RETURNS trigger \
          LANGUAGE plpgsql AS $api_key$ BEGIN \
@@ -128,5 +128,5 @@ pub async fn verify(
         stored_key_digest.as_slice(),
         Sha256::digest(api_key_secret.as_bytes()).as_slice()
     );
-    (api_key_id, api_key_secret.to_owned())
+    (api_key_id, api_key_secret.to_owned(), api_key_created)
 }
