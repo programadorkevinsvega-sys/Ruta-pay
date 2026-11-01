@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::domain::catalog::{CatalogError, Plan, PriceVersion};
+use crate::domain::catalog::CatalogError;
 
 #[derive(Clone)]
 pub struct CatalogService {
