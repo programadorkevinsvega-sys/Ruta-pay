@@ -10,6 +10,7 @@ use crate::http::{handlers::identity, middleware::correlation_id::correlation_id
 use platform_contracts::catalog_pricing::{CreatePlanRequest, ListPlansRequest};
 use super::{shared::{operator_credentials, tonic_request}, types::{NewPlan, PlanView}};
 
+#[utoipa::path(post, path="/v1/platform/catalog/plans", request_body=NewPlan, responses((status=201, body=PlanView)))]
 pub async fn create_plan(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -113,5 +114,3 @@ pub async fn list_plans(State(state): State<Arc<AppState>>, headers: HeaderMap) 
         ),
     }
 }
-
-#[utoipa::path(post, path="/v1/platform/catalog/plans/{plan_id}/prices", request_body=NewPriceVersion, responses((status=201, body=PriceView)))]
