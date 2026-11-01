@@ -1,4 +1,3 @@
-use super::*;
 use async_nats::jetstream;
 use platform_contracts::realtime::realtime_gateway_client::RealtimeGatewayClient;
 use platform_runtime::event_topology::EventTopology;
