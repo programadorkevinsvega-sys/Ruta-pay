@@ -1,4 +1,3 @@
-use super::*;
 use sqlx::PgPool;
 use uuid::Uuid;
 
