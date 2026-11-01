@@ -260,7 +260,9 @@ dependencies = [
  "opentelemetry_sdk",
  "payvia-platform-bff",
  "payvia-platform-core",
+ "platform-catalog-pricing",
  "platform-contracts",
+ "platform-entitlements-quotas",
  "platform-identity-access",
  "platform-realtime",
  "platform-runtime",
@@ -2174,6 +2176,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
+name = "platform-catalog-pricing"
+version = "0.1.0"
+dependencies = [
+ "async-nats",
+ "chrono",
+ "payvia-observability",
+ "platform-contracts",
+ "serde_json",
+ "sqlx",
+ "thiserror",
+ "tonic",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "platform-contracts"
 version = "0.1.0"
 dependencies = [
@@ -2182,6 +2200,23 @@ dependencies = [
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
+]
+
+[[package]]
+name = "platform-entitlements-quotas"
+version = "0.1.0"
+dependencies = [
+ "async-nats",
+ "chrono",
+ "payvia-observability",
+ "platform-contracts",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror",
+ "tonic",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -2241,7 +2276,9 @@ dependencies = [
  "opentelemetry",
  "payvia-observability",
  "payvia-platform-core",
+ "platform-catalog-pricing",
  "platform-contracts",
+ "platform-entitlements-quotas",
  "platform-identity-access",
  "platform-realtime",
  "platform-tenant-registry",
