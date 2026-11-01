@@ -152,5 +152,4 @@ pub async fn verify(fixture: &TestFixture) {
             .expect("live environment is accepted")
             .allowed
     );
-
 }
