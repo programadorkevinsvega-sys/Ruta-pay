@@ -12,7 +12,9 @@ use platform_contracts::{
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
-use crate::application::catalog_service::{CatalogService, CatalogServiceError};
+use crate::application::catalog_service::{
+    CatalogService, CatalogServiceError, PublishPriceVersionCommand,
+};
 
 #[derive(Clone)]
 pub struct CatalogPricingApi {
@@ -102,17 +104,17 @@ impl CatalogPricing for CatalogPricingApi {
             .map_err(|_| Status::invalid_argument("interval_count is invalid"))?;
         let price = self
             .service
-            .publish_price_version(
-                actor,
+            .publish_price_version(PublishPriceVersionCommand {
+                actor_id: actor,
                 plan_id,
-                &body.currency,
-                body.amount_minor,
-                &body.period_unit,
-                interval,
-                from,
-                until,
-                &correlation_id,
-            )
+                currency: &body.currency,
+                amount_minor: body.amount_minor,
+                period_unit: &body.period_unit,
+                interval_count: interval,
+                effective_from: from,
+                effective_until: until,
+                correlation_id: &correlation_id,
+            })
             .await
             .map_err(map_error)?;
         Ok(Response::new(price_response(price)))
