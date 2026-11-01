@@ -1,4 +1,6 @@
 use crate::identity_access_acceptance_context::AcceptanceContext;
+use crate::{phase3_catalog, phase3_entitlements};
+use platform_contracts::identity_access::AuthorizeApiKeyOperationRequest;
 use reqwest::{header, StatusCode};
 use uuid::Uuid;
 
@@ -76,15 +78,15 @@ phase3_catalog::configure(
     &ctx.client,
     ctx.http_addr,
     &ctx.origin,
-    &operator_session_cookie,
-    &operator_csrf_cookie,
+    &ctx.state.operator_session_cookie,
+    &ctx.state.operator_csrf_cookie,
     ctx.state.created_tenant_id,
 )
 .await;
 phase3_entitlements::verify(
     &ctx.client,
     ctx.http_addr,
-    grpc_addr,
+    ctx.grpc_addr,
     &ctx.origin,
     &ctx.state.session_cookie,
     &ctx.state.csrf_cookie,
