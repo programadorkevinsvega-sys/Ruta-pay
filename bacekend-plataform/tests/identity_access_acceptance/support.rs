@@ -40,13 +40,13 @@ pub fn is_stream_not_found(error: async_nats::jetstream::context::GetStreamError
     )
 }
 
-pub(super) struct EventStreamCleanup {
+pub struct EventStreamCleanup {
     pub(super) jetstream: jetstream::Context,
     pub(super) namespace: String,
     pub(super) armed: bool,
 }
 
-pub(super) struct AcceptanceDatabaseCleanup {
+pub struct AcceptanceDatabaseCleanup {
     pub(super) admin_pool: sqlx::PgPool,
     pub(super) database_name: String,
     pub(super) runtime_role: String,
