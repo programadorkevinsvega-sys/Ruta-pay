@@ -1,39 +1,49 @@
-# Fase 3 — acta de aceptación y verificaciones
+# Phase 3 — catalog, pricing, entitlements and quotas acceptance
 
-## Alcance
+## Scope and evidence policy
 
-Esta acta acompaña el PR #7 y documenta pruebas de integración ejecutables sobre PostgreSQL y JetStream reales. La evidencia de CI debe asociarse siempre al SHA exacto del HEAD del PR; un run verde de un SHA anterior no valida cambios posteriores.
+This acceptance record covers the Rust platform modules `catalog_pricing` and `entitlements_quotas`, their PostgreSQL ownership, gRPC contracts, BFF routes, Outbox/JetStream delivery and the realtime journal boundary.
 
-## Entorno requerido
+A criterion is accepted only when its executable test passes on the exact PR HEAD SHA. A test file existing, a prior green workflow, or a successful compile alone is not acceptance evidence. CI and deployment evidence are recorded separately.
 
-El test de aceptación crea una base de datos y un rol runtime aislados, aplica las migraciones reales de los módulos y elimina los recursos al finalizar. Requiere PostgreSQL con permisos para crear/eliminar bases y roles, y JetStream con autenticación:
+## Required test environment
 
-- `PLATFORM_TEST_DATABASE_ADMIN_URL`: URL administrativa PostgreSQL.
-- `PLATFORM_NATS_URL`: URL NATS.
-- `NATS_USER` y `NATS_PASSWORD`: credenciales NATS/JetStream.
+The acceptance suite provisions isolated PostgreSQL databases and restricted runtime roles and uses real Redis and authenticated JetStream services. It does not substitute mocks for persistence, brokers or realtime infrastructure.
 
-En CI, el workflow `.github/workflows/platform-quality.yml` provisiona PostgreSQL y JetStream autenticado y ejecuta `cargo test --workspace`.
+Required variables:
 
-## Matriz de aceptación
+- `PLATFORM_TEST_DATABASE_ADMIN_URL`: PostgreSQL administrator URL used only to create and remove isolated test databases and roles.
+- `PLATFORM_NATS_URL`, `NATS_USER`, `NATS_PASSWORD`: authenticated JetStream endpoint and credentials.
+- `PLATFORM_REDIS_URL`: authenticated Redis endpoint for realtime signal fan-out.
 
-| Criterio | Verificación automatizada | Evidencia / estado |
+The CI workflow `.github/workflows/platform-quality.yml` provisions these dependencies and runs `cargo test --workspace`.
+
+## Acceptance matrix
+
+| Criterion | Executable evidence | Acceptance condition |
 |---|---|---|
-| Precio/versiones inmutables | `immutability.rs`: UPDATE y DELETE de `price_versions` deben fallar con SQLSTATE `55000` | Prueba añadida; CI del HEAD pendiente |
-| Capacidades inmutables | `immutability.rs`: UPDATE y DELETE de `plan_capabilities` deben fallar con SQLSTATE `55000` | Prueba añadida; CI del HEAD pendiente |
-| Ledger append-only | `immutability.rs`: UPDATE y DELETE de `usage_ledger` deben fallar con SQLSTATE `55000` | Prueba añadida; CI del HEAD pendiente |
-| Atomicidad catálogo | `atomicity.rs`: una falla forzada en Outbox revierte versión de precio y auditoría | Prueba añadida; CI del HEAD pendiente |
-| Atomicidad consumo | `atomicity.rs`: una falla forzada en Outbox revierte ledger y auditoría | Prueba añadida; CI del HEAD pendiente |
-| Entrega JetStream catálogo | `jetstream.rs`: relay real, ACK de publicación y lectura del envelope con event ID/tipo/correlation ID | Prueba añadida; CI del HEAD pendiente |
-| Entrega JetStream entitlement | `jetstream.rs`: relay real, ACK de publicación y lectura del envelope con event ID/tipo/correlation ID | Prueba añadida; CI del HEAD pendiente |
-| Cuotas y límites exactos | `quota.rs`: consumo inferior, exacto, excedente, overage, entorno e idempotencia | Cubierto por prueba existente |
-| Concurrencia | `concurrency.rs`: dos consumos concurrentes compiten por cuota limitada; solo uno se confirma | Cubierto por prueba existente |
-| Versionado y fechas | `versioning.rs`: versión futura, vigencia anterior/nueva y snapshot de capacidades | Cubierto por prueba existente |
-| Aislamiento multi-tenant / RLS | `isolation.rs`: tenant no asignado y visibilidad de ledger/asignaciones ajenas | Cubierto por prueba existente |
-| BFF/HTTP/gRPC y autorización de consumo | `identity_access_acceptance.rs`: recorrido HTTP, BFF, gRPC y API key con scope `usage.consume` | Cubierto por prueba existente; no sustituye autorización de gateway de Fase 5 |
+| PostgreSQL ownership and migrations | `phase3_catalog_entitlements_acceptance/database.rs` | All owner migrations apply to an isolated database; runtime role has no RLS bypass |
+| Price version immutability | `immutability.rs` | Real UPDATE/DELETE attempts fail with SQLSTATE `55000` |
+| Capability immutability | `immutability.rs` | Real UPDATE/DELETE attempts fail with SQLSTATE `55000` |
+| Usage ledger append-only | `immutability.rs` | Real UPDATE/DELETE attempts fail with SQLSTATE `55000` |
+| Atomic catalog write | `atomicity.rs` | Forced Outbox failure rolls back price version and audit write |
+| Atomic quota consumption | `atomicity.rs` | Forced Outbox failure rolls back usage ledger and audit write |
+| Quota boundaries and policy | `quota.rs` | Below-limit, exact-limit, deny-overage, allow-overage and environment restriction are verified |
+| Stable idempotent replay | `quota.rs` + migration `202610310006_usage_idempotency_result.sql` | Replay after a later same-scope consumption returns the original serialized entitlement snapshot; changed request data returns a conflict |
+| Legacy idempotency rows | `consumption.rs` | A historical ledger row without a response snapshot fails closed with `IdempotencyResultUnavailable`; it is never recalculated into a misleading response |
+| Concurrent quota consumption | `concurrency.rs` | Concurrent requests serialize and cannot exceed a deny-policy quota |
+| Price versioning and effective dates | `versioning.rs` | Non-overlapping versions and effective-time selection are verified |
+| Tenant isolation and RLS | `isolation.rs` | Tenant context cannot read or consume another tenant's entitlement or usage |
+| BFF / REST / gRPC / API key | `identity_access_acceptance.rs` and `http_grpc_acceptance.rs` | Real HTTP-to-BFF-to-gRPC path enforces tenant and `usage.consume` scope |
+| Gateway gRPC contract | `bacekend-pasarela/src/entitlements.rs` | Gateway backend compiles against the shared versioned gRPC contract and exposes typed consume/read calls; mTLS and runtime policy enforcement remain in Phase 5 |
+| Outbox to JetStream | `jetstream.rs` | Real relays receive JetStream ACKs and consumers verify event ID, type, correlation ID and audience |
+| Realtime journal and cursor | `jetstream.rs` | The catalog platform event and tenant quota event are accepted by the realtime journal, signalled through real Redis and replayed from their correct scoped cursors |
+| W3C trace propagation | Outbox writes, relay envelope and realtime consumer | Active `traceparent` is persisted with the business transaction, carried in the JetStream envelope and extracted as the realtime consumer's parent context |
+| Frontend behavior | Existing tenant/platform Playwright suites | No new product UI is introduced by this backend phase; product screens and TanStack Query presentation are owned by Phase 7. The REST/OpenAPI boundary is verified independently here |
 
-## Comandos
+## Commands
 
-Desde la raíz del workspace:
+From the repository workspace root:
 
 ```bash
 cargo fmt --all -- --check
@@ -41,20 +51,32 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-Para ejecutar solo la aceptación de catálogo/cuotas:
+Focused Phase 3 acceptance:
 
 ```bash
 cargo test -p bacekend-plataform --test phase3_catalog_entitlements_acceptance
 ```
 
-En CI se usa `cargo test --workspace` como comando autoritativo.
+The full workspace workflow is authoritative because it also runs the BFF, gateway client, frontend tests/builds and browser E2E.
 
-## Criterio de cierre
+## Compatibility and operational boundaries
 
-No declarar Fase 3 cerrada hasta que:
-1. Format, Clippy, todas las pruebas Rust, pruebas frontend y E2E del workflow estén verdes sobre el SHA actual del PR.
-2. La ejecución de esta aceptación demuestre PostgreSQL y JetStream reales, incluyendo las nuevas verificaciones de integridad, rollback y entrega.
-3. Los contratos y endpoints HTTP/BFF/gRPC existentes sigan pasando.
-4. La matriz se actualice con el enlace y SHA de CI definitivo, sin convertir una prueba añadida pero aún no ejecutada en evidencia aprobada.
+- PostgreSQL is the source of truth for price versions, capability definitions, tenant assignments and usage.
+- Redis is not used for quota accounting or authorization decisions. It is used only for realtime wake-up fan-out after the durable journal write.
+- JetStream delivery is at-least-once; consumers deduplicate by immutable `event_id`.
+- Platform Outbox audience `platform` is translated to the realtime journal's `platform_operator` scope. Tenant events remain tenant-scoped and must carry a valid `tenant_id`.
+- Gateway has a typed client for the platform entitlement contract. mTLS identity, signed grants, fail-closed authorization and the live gateway request path are Phase 5 acceptance and must not be claimed complete in Phase 3.
+- Legacy usage rows created before the response-snapshot migration cannot be replayed as if the original response were known. They fail explicitly rather than returning current state.
 
-Las casillas del roadmap permanecen abiertas hasta confirmar los puntos anteriores. Esta acta no declara aprobada la Fase 3 por el mero hecho de incorporar los tests.
+## Closure criteria
+
+Phase 3 must remain open until all of the following are true on one final HEAD SHA:
+
+1. Format, Clippy, all Rust tests, frontend tests/builds and browser E2E are green.
+2. The real PostgreSQL/Redis/JetStream acceptance test passes, including immutable result replay and event-specific realtime journal/cursor delivery.
+3. The gateway shared-contract client compiles and the BFF HTTP/gRPC authorization path passes.
+4. The integration matrix has no unclassified applicable boundary.
+5. The PR description, roadmap and this acta reference the same final SHA and workflow.
+6. Deployment/migration execution and health verification for the target environment are recorded; otherwise production readiness remains unverified.
+
+This document intentionally does not declare Phase 3 closed before those conditions are evidenced.
