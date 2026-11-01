@@ -25,7 +25,7 @@ pub async fn verify(fixture: &TestFixture) {
             tenant: tenant_one,
             key: "payments.monthly",
             environment: "test",
-            quantity: 4,
+            quantity: 3,
             idempotency_key: "phase3-payment-001",
             now,
             correlation_id: correlation,
@@ -33,7 +33,23 @@ pub async fn verify(fixture: &TestFixture) {
         .await
         .expect("usage below the quota is accepted");
     assert!(!replayed);
-    assert_eq!(after_four.consumed, 4);
+    assert_eq!(after_four.consumed, 3);
+
+    let (after_follow_up, replayed) = entitlements
+        .consume(ConsumeQuotaCommand {
+            actor,
+            tenant: tenant_one,
+            key: "payments.monthly",
+            environment: "test",
+            quantity: 1,
+            idempotency_key: "phase3-payment-follow-up",
+            now,
+            correlation_id: correlation,
+        })
+        .await
+        .expect("a later operation changes the current quota snapshot");
+    assert!(!replayed);
+    assert_eq!(after_follow_up.consumed, 4);
 
     let live_before = entitlements
         .evaluate(actor, tenant_one, "payments.monthly", "live", now)
@@ -71,7 +87,7 @@ pub async fn verify(fixture: &TestFixture) {
         .await
         .expect("identical idempotent replay returns the recorded result");
     assert!(replayed);
-    assert_eq!(replayed_result.consumed, 4);
+    assert_eq!(replayed_result.consumed, 3, "replay returns the original response, not the newer quota state");
     let conflict = entitlements
         .consume(ConsumeQuotaCommand {
             actor,
@@ -97,7 +113,7 @@ pub async fn verify(fixture: &TestFixture) {
             key: "payments.monthly",
             environment: "test",
             quantity: 1,
-            idempotency_key: "phase3-payment-002",
+            idempotency_key: "phase3-payment-003",
             now,
             correlation_id: correlation,
         })
@@ -114,7 +130,7 @@ pub async fn verify(fixture: &TestFixture) {
             key: "payments.monthly",
             environment: "test",
             quantity: 1,
-            idempotency_key: "phase3-payment-003",
+            idempotency_key: "phase3-payment-004",
             now,
             correlation_id: correlation,
         })
