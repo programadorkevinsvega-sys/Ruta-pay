@@ -145,3 +145,5 @@ jobs:
       - name: Remove temporary E2E environment
         if: always()
         run: rm -f bacekend-plataform/.env
+
+# CI validation refresh for the current Phase 3 review head.
