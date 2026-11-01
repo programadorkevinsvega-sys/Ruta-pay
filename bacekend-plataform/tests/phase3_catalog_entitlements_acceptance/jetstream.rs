@@ -120,7 +120,10 @@ pub async fn verify(fixture: &TestFixture) {
                 .as_str()
                 .unwrap_or_default()
                 .to_owned(),
-            envelope["traceparent"].as_str().unwrap_or_default().to_owned(),
+            envelope["traceparent"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned(),
         ));
         message.ack().await.expect("received event is acknowledged");
     }
@@ -159,11 +162,15 @@ pub async fn verify(fixture: &TestFixture) {
     .await
     .expect("tenant realtime cursor replays quota events");
     assert!(
-        platform_events.iter().any(|event| event.event_id == catalog_event),
+        platform_events
+            .iter()
+            .any(|event| event.event_id == catalog_event),
         "catalog event reaches the platform realtime journal"
     );
     assert!(
-        tenant_events.iter().any(|event| event.event_id == usage_event),
+        tenant_events
+            .iter()
+            .any(|event| event.event_id == usage_event),
         "quota event reaches the authorized tenant realtime journal"
     );
     delete_e2e_stream(&jetstream, &namespace)

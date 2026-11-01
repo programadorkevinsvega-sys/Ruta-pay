@@ -29,7 +29,11 @@ impl RealtimeGatewayApi {
         redis_client: redis::Client,
         identity_client: IdentityAccessClient<tonic::transport::Channel>,
     ) -> Self {
-        Self { pool, redis_client, identity_client }
+        Self {
+            pool,
+            redis_client,
+            identity_client,
+        }
     }
 
     async fn authorize(

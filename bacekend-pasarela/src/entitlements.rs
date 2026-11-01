@@ -1,7 +1,6 @@
 use platform_contracts::entitlements_quotas::{
     ConsumeQuotaRequest, ConsumeQuotaResponse, GetTenantEntitlementRequest,
-    TenantEntitlementResponse,
-    entitlements_quotas_client::EntitlementsQuotasClient,
+    TenantEntitlementResponse, entitlements_quotas_client::EntitlementsQuotasClient,
 };
 use tonic::{
     Request, Status,

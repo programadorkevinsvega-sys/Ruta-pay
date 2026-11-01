@@ -3,7 +3,8 @@ use uuid::Uuid;
 
 use super::{
     ConsumeQuotaCommand, EntitlementService, EntitlementServiceError,
-    result_snapshot::EntitlementResultSnapshot, snapshot::EntitlementSnapshot,
+    result_snapshot::EntitlementResultSnapshot,
+    snapshot::EntitlementSnapshot,
     support::{period_bounds, set_tenant_context, validate_environment},
 };
 use crate::domain::entitlement::{Entitlement, EntitlementError, validate_consumption};
@@ -43,7 +44,8 @@ impl EntitlementService {
                 return Err(EntitlementError::IdempotencyConflict.into());
             }
             let snapshot = result_snapshot.ok_or(EntitlementServiceError::IdempotencyResultUnavailable)?;
-            let original_result = EntitlementResultSnapshot::decode(snapshot, tenant, key, environment)?;
+            let original_result =
+                EntitlementResultSnapshot::decode(snapshot, tenant, key, environment)?;
             tx.commit().await?;
             return Ok((original_result, true));
         }
@@ -70,7 +72,9 @@ impl EntitlementService {
         {
             return Err(EntitlementError::QuotaExceeded.into());
         }
-        let consumed_after = consumed.checked_add(quantity).ok_or(EntitlementError::InvalidQuantity)?;
+        let consumed_after = consumed
+            .checked_add(quantity)
+            .ok_or(EntitlementError::InvalidQuantity)?;
         let result = EntitlementSnapshot {
             tenant_id: tenant,
             price_version_id: price_version,

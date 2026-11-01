@@ -87,7 +87,10 @@ pub async fn verify(fixture: &TestFixture) {
         .await
         .expect("identical idempotent replay returns the recorded result");
     assert!(replayed);
-    assert_eq!(replayed_result.consumed, 3, "replay returns the original response, not the newer quota state");
+    assert_eq!(
+        replayed_result.consumed, 3,
+        "replay returns the original response, not the newer quota state"
+    );
     let conflict = entitlements
         .consume(ConsumeQuotaCommand {
             actor,

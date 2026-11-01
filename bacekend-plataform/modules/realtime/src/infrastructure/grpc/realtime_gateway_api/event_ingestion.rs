@@ -4,8 +4,8 @@ use sqlx::PgPool;
 use tracing::Instrument;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-use crate::infrastructure::persistence::{self, JournalError};
 use super::SIGNAL_CHANNEL;
+use crate::infrastructure::persistence::{self, JournalError};
 
 pub async fn persist_and_publish(
     pool: &PgPool,
