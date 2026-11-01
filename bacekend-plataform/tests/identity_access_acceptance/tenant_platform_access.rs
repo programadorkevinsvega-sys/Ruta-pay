@@ -1,3 +1,4 @@
+use super::*;
 use reqwest::{Client, StatusCode, header};
 use sqlx::PgPool;
 use std::net::SocketAddr;
@@ -32,12 +33,12 @@ pub async fn verify(
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
         ))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
         )
-        .header("x-csrf-token", &csrf_cookie)
+        .header("x-csrf-token", csrf_cookie)
         .json(&serde_json::json!({
             "status": "active",
             "reason": "Tenant cannot administer platform state",
