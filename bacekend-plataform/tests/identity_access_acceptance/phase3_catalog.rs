@@ -12,7 +12,7 @@ pub async fn configure(
     operator_session_cookie: &str,
     operator_csrf_cookie: &str,
     tenant_id: Uuid,
-) -> String {
+) {
     let phase3_slug = format!("phase3-{}", Uuid::new_v4().simple());
     let phase3_plan = client
         .post(format!("http://{http_addr}/v1/platform/catalog/plans"))
@@ -42,7 +42,7 @@ pub async fn configure(
         .as_str()
         .expect("catalog plan id is returned")
         .to_owned();
-    
+
     let phase3_effective_from = (Utc::now() - chrono::Duration::seconds(30)).to_rfc3339();
     let phase3_price = client
         .post(format!(
@@ -78,7 +78,7 @@ pub async fn configure(
         .as_str()
         .expect("published price version id is returned")
         .to_owned();
-    
+
     let phase3_capabilities = client
         .post(format!("http://{http_addr}/v1/platform/entitlements/capabilities"))
         .header(header::ORIGIN, origin)
@@ -111,7 +111,7 @@ pub async fn configure(
         .await
         .expect("capability configuration response is valid JSON");
     assert_eq!(phase3_capabilities_body["capabilities_saved"], 1);
-    
+
     let phase3_assignment = client
         .post(format!("http://{http_addr}/v1/platform/entitlements/assignments"))
         .header(header::ORIGIN, origin)
@@ -133,5 +133,4 @@ pub async fn configure(
         .await
         .expect("tenant plan assignment traverses the real BFF and gRPC module");
     assert_eq!(phase3_assignment.status(), StatusCode::CREATED);
-    phase3_price_id
 }

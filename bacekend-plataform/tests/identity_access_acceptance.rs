@@ -2102,7 +2102,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         scoped_api_key_authorization.tenant_id,
         created_tenant_id.to_string()
     );
-    let phase3_price_id = phase3_catalog::configure(
+    phase3_catalog::configure(
         &client,
         http_addr,
         &origin,
@@ -2118,6 +2118,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         &session_cookie,
         &csrf_cookie,
         created_tenant_id,
+        api_key_id,
         &api_key_secret,
         authorization_client.clone(),
         entitlements_acceptance_client.clone(),

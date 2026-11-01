@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
 use platform_contracts::{
-    entitlements_quotas::{ConsumeQuotaRequest, entitlements_quotas_client::EntitlementsQuotasClient},
+    entitlements_quotas::{entitlements_quotas_client::EntitlementsQuotasClient},
     identity_access::{AuthorizeApiKeyOperationRequest, identity_access_client::IdentityAccessClient},
 };
 use reqwest::header;
@@ -16,6 +16,7 @@ pub async fn verify(
     session_cookie: &str,
     csrf_cookie: &str,
     tenant_id: Uuid,
+    api_key_id: Uuid,
     api_key_secret: &str,
     authorization_client: IdentityAccessClient<Channel>,
     entitlements_acceptance_client: EntitlementsQuotasClient<Channel>,
@@ -32,7 +33,7 @@ pub async fn verify(
         .expect("API key explicitly grants the quota consumption scope")
         .into_inner();
     assert_eq!(consume_scope_authorization.key_id, api_key_id.to_string());
-    
+
     let phase3_entitlement_before = client
         .get(format!(
             "http://{http_addr}/v1/tenants/{tenant_id}/entitlements?environment=live"
@@ -57,11 +58,11 @@ pub async fn verify(
     );
     assert_eq!(phase3_entitlements[0]["capability_key"], "payments.monthly");
     assert_eq!(phase3_entitlements[0]["consumed"], 0);
-    
+
     let phase3_consumption = entitlements_acceptance_client
         .clone()
         .consume_quota(tonic::Request::new(
-            platform_contracts::entitlements_quotas::ConsumeQuotaRequest {
+            ConsumeQuotaRequest {
                 api_key_secret: api_key_secret.to_owned(),
                 tenant_id: tenant_id.to_string(),
                 capability_key: "payments.monthly".to_owned(),
@@ -80,7 +81,7 @@ pub async fn verify(
         .expect("quota consumption returns the updated entitlement");
     assert_eq!(phase3_consumed_entitlement.consumed, 1);
     assert_eq!(phase3_consumed_entitlement.remaining, Some(1));
-    
+
     let phase3_replay = entitlements_acceptance_client
         .clone()
         .consume_quota(tonic::Request::new(
@@ -105,7 +106,7 @@ pub async fn verify(
             .consumed,
         1
     );
-    
+
     let phase3_entitlement_after = client
         .get(format!(
             "http://{http_addr}/v1/tenants/{tenant_id}/entitlements/payments.monthly?environment=live"
