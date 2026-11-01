@@ -4,3 +4,6 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+platform-contracts = { path = "../bacekend-plataform/crates/platform_contracts" }
+thiserror.workspace = true
+tonic.workspace = true
