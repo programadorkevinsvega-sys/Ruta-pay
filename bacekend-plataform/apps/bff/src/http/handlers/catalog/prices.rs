@@ -6,9 +6,14 @@ use axum::{
 };
 use std::sync::Arc;
 
-use crate::http::{handlers::identity, middleware::correlation_id::correlation_id, routes::AppState};
+use super::{
+    shared::{operator_credentials, tonic_request},
+    types::{NewPriceVersion, PriceView},
+};
+use crate::http::{
+    handlers::identity, middleware::correlation_id::correlation_id, routes::AppState,
+};
 use platform_contracts::catalog_pricing::PublishPriceVersionRequest;
-use super::{shared::{operator_credentials, tonic_request}, types::{NewPriceVersion, PriceView}};
 
 #[utoipa::path(post, path="/v1/platform/catalog/plans/{plan_id}/prices", request_body=NewPriceVersion, responses((status=201, body=PriceView)))]
 pub async fn publish_price(
