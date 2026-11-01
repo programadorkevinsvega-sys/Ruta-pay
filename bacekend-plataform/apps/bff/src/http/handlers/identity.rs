@@ -23,8 +23,8 @@ use platform_contracts::identity_access::{
     CreateApiKeyRequest, ListApiKeysRequest, ListTenantMembershipsRequest, RevokeApiKeyRequest,
 };
 
-const SESSION_COOKIE: &str = "payvia_tenant_session";
-const CSRF_COOKIE: &str = "payvia_tenant_csrf";
+pub(crate) const SESSION_COOKIE: &str = "payvia_tenant_session";
+pub(crate) const CSRF_COOKIE: &str = "payvia_tenant_csrf";
 const OPERATOR_SESSION_COOKIE: &str = "payvia_platform_session";
 const OPERATOR_CSRF_COOKIE: &str = "payvia_platform_csrf";
 
