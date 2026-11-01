@@ -1,3 +1,4 @@
+use super::*;
 use reqwest::{Client, StatusCode, header};
 use sqlx::PgPool;
 use std::net::SocketAddr;
@@ -57,7 +58,7 @@ pub async fn verify(context: TenantDtoValidationContext<'_>) {
 
     let tenants_before_invalid_dtos: i64 =
         sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants")
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("tenant count before invalid DTO checks is queryable");
     let invalid_tenant_values = [
@@ -70,7 +71,7 @@ pub async fn verify(context: TenantDtoValidationContext<'_>) {
     for (index, invalid_body) in invalid_tenant_values.into_iter().enumerate() {
         let response = client
             .post(format!("http://{http_addr}/v1/tenants"))
-            .header(header::ORIGIN, &origin)
+            .header(header::ORIGIN, origin)
             .header(
                 header::COOKIE,
                 format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
@@ -95,7 +96,7 @@ pub async fn verify(context: TenantDtoValidationContext<'_>) {
     for (index, invalid_body) in invalid_tenant_types.into_iter().enumerate() {
         let response = client
             .post(format!("http://{http_addr}/v1/tenants"))
-            .header(header::ORIGIN, &origin)
+            .header(header::ORIGIN, origin)
             .header(
                 header::COOKIE,
                 format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
@@ -113,7 +114,7 @@ pub async fn verify(context: TenantDtoValidationContext<'_>) {
     }
     let tenants_after_invalid_dtos: i64 =
         sqlx::query_scalar("SELECT count(*) FROM tenant_registry.tenants")
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("tenant count after invalid DTO checks is queryable");
     assert_eq!(
@@ -123,7 +124,7 @@ pub async fn verify(context: TenantDtoValidationContext<'_>) {
 
     let invalid_tenant_dto = client
         .post(format!("http://{http_addr}/v1/tenants"))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
@@ -146,7 +147,7 @@ pub async fn verify(context: TenantDtoValidationContext<'_>) {
     let tenant_after_invalid_transitions: (String, i64) =
         sqlx::query_as("SELECT status,status_version FROM tenant_registry.tenants WHERE id=$1")
             .bind(created_tenant_id)
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("tenant state after invalid transitions is queryable");
     assert_eq!(
