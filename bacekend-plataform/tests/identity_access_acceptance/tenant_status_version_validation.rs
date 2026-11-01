@@ -1,3 +1,4 @@
+use super::*;
 use reqwest::{Client, StatusCode, header};
 use sqlx::PgPool;
 use std::net::SocketAddr;
@@ -27,7 +28,7 @@ pub async fn verify(context: TenantStatusVersionContext<'_>) {
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
         ))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
@@ -48,7 +49,7 @@ pub async fn verify(context: TenantStatusVersionContext<'_>) {
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
         ))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
@@ -68,7 +69,7 @@ pub async fn verify(context: TenantStatusVersionContext<'_>) {
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
         ))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
@@ -103,7 +104,7 @@ pub async fn verify(context: TenantStatusVersionContext<'_>) {
             .post(format!(
                 "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
             ))
-            .header(header::ORIGIN, &origin)
+            .header(header::ORIGIN, origin)
             .header(
                 header::COOKIE,
                 format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
@@ -124,7 +125,7 @@ pub async fn verify(context: TenantStatusVersionContext<'_>) {
         .post(format!(
             "http://{http_addr}/v1/platform/tenants/{created_tenant_id}/status"
         ))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header(
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
