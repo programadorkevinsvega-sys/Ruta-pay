@@ -1,19 +1,20 @@
-use reqwest::{Client, StatusCode, header};
-use sqlx::PgPool;
-use std::net::SocketAddr;
-use uuid::Uuid;
+pub struct ApiKeyDtoValidationContext<'a> {
+    pub client: &'a Client,
+    pub migration_pool: &'a PgPool,
+    pub http_addr: SocketAddr,
+    pub origin: &'a str,
+    pub session_cookie: &'a str,
+    pub csrf_cookie: &'a str,
+    pub operator_session_cookie: &'a str,
+    pub operator_csrf_cookie: &'a str,
+    pub created_tenant_id: Uuid,
+}
 
-pub async fn verify(
-    client: &Client,
-    migration_pool: &PgPool,
-    http_addr: SocketAddr,
-    origin: &str,
-    session_cookie: &str,
-    csrf_cookie: &str,
-    operator_session_cookie: &str,
-    operator_csrf_cookie: &str,
-    created_tenant_id: Uuid,
-) {
+pub async fn verify(context: ApiKeyDtoValidationContext<'_>) {
+    let ApiKeyDtoValidationContext {
+        client, migration_pool, http_addr, origin, session_cookie, csrf_cookie,
+        operator_session_cookie, operator_csrf_cookie, created_tenant_id,
+    } = context;
     let operator_session_api_key_list = client
         .get(format!(
             "http://{http_addr}/v1/tenants/{created_tenant_id}/api-keys"
