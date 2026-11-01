@@ -7,11 +7,11 @@ use platform_contracts::{
 };
 use tonic::{Request, Response, Status};
 
-use crate::application::entitlement_service::ConsumeQuotaCommand;
 use super::{
     EntitlementsQuotasApi,
     mapping::{entitlement_response, map_error, parse_uuid},
 };
+use crate::application::entitlement_service::ConsumeQuotaCommand;
 
 impl EntitlementsQuotasApi {
     pub(super) async fn consume_quota_handler(
