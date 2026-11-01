@@ -1,11 +1,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-pub async fn verify(
-    migration_pool: &PgPool,
-    runtime_pool: &PgPool,
-    created_tenant_id: Uuid,
-) {
+pub async fn verify(migration_pool: &PgPool, runtime_pool: &PgPool, created_tenant_id: Uuid) {
     // Expired Outbox leases are reclaimable, and fencing tokens prevent a
     // previous worker from acknowledging an event after another worker owns it.
     for schema in ["identity_access", "tenant_registry"] {
