@@ -32,7 +32,7 @@ where
 
 struct FieldCapture<'a>(&'a mut HashMap<String, String>);
 
-pub(crate) fn is_stream_not_found(error: async_nats::jetstream::context::GetStreamError) -> bool {
+pub fn is_stream_not_found(error: async_nats::jetstream::context::GetStreamError) -> bool {
     matches!(
         error.kind(),
         async_nats::jetstream::context::GetStreamErrorKind::JetStream(jetstream_error)
