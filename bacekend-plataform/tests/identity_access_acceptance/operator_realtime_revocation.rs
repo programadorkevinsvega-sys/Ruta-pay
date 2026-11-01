@@ -20,8 +20,8 @@ pub async fn verify(
     let mut realtime_subscription_client = realtime_acceptance_client.clone();
     let realtime_subscription = realtime_subscription_client
         .subscribe_events(SubscribeEventsRequest {
-            session_token: operator_session_cookie.clone(),
-            csrf_token: operator_csrf_cookie.clone(),
+            session_token: operator_session_cookie.to_owned(),
+            csrf_token: operator_csrf_cookie.to_owned(),
             audience: "platform".to_owned(),
             tenant_id: String::new(),
             after_cursor: 0,
@@ -40,7 +40,7 @@ pub async fn verify(
                 "payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"
             ),
         )
-        .header("x-csrf-token", &operator_csrf_cookie)
+        .header("x-csrf-token", operator_csrf_cookie)
         .header("x-correlation-id", "corr_operator_logout")
         .send()
         .await
