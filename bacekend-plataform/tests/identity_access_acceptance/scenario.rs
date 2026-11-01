@@ -179,14 +179,16 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .await;
 
     platform_replay_and_logout::verify(
-        &client,
-        &migration_pool,
-        http_addr,
-        &origin,
-        &matrix_operator_session_cookie,
-        &matrix_operator_csrf_cookie,
-        &runtime_pool,
-        created_tenant_id,
+        platform_replay_and_logout::PlatformReplayAndLogoutContext {
+            client: &client,
+            migration_pool: &migration_pool,
+            http_addr,
+            origin: &origin,
+            matrix_operator_session_cookie: &matrix_operator_session_cookie,
+            matrix_operator_csrf_cookie: &matrix_operator_csrf_cookie,
+            runtime_pool: &runtime_pool,
+            created_tenant_id,
+        },
     )
     .await;
 
