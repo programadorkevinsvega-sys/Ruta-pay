@@ -17,7 +17,7 @@ pub(crate) fn valid_origin(headers: &HeaderMap) -> bool {
         || (is_loopback_authority(host) && origin == format!("http://{host}"))
 }
 
-fn is_loopback_authority(host: &str) -> bool {
+pub(super) fn is_loopback_authority(host: &str) -> bool {
     let Ok(authority) = host.parse::<axum::http::uri::Authority>() else {
         return false;
     };
@@ -40,7 +40,7 @@ pub(crate) fn valid_csrf(headers: &HeaderMap, csrf_cookie_name: &str) -> bool {
     cookie.as_bytes().ct_eq(header.as_bytes()).into()
 }
 
-async fn validate_mutation_session(
+pub(super) async fn validate_mutation_session(
     state: &AppState,
     headers: &HeaderMap,
     correlation: &str,
@@ -103,7 +103,7 @@ pub(crate) fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
         })
 }
 
-fn append_cookie(
+pub(super) fn append_cookie(
     response: &mut Response,
     cookie: String,
 ) -> Result<(), axum::http::header::InvalidHeaderValue> {
@@ -113,11 +113,11 @@ fn append_cookie(
     Ok(())
 }
 
-fn response_no_content() -> Response {
+pub(super) fn response_no_content() -> Response {
     StatusCode::NO_CONTENT.into_response()
 }
 
-fn clear_session(mut response: Response, session_cookie: &str, csrf_cookie: &str) -> Response {
+pub(super) fn clear_session(mut response: Response, session_cookie: &str, csrf_cookie: &str) -> Response {
     let session_cookie_value =
         format!("{session_cookie}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0");
     let csrf_cookie_value = format!("{csrf_cookie}=; Path=/; Secure; SameSite=Lax; Max-Age=0");
