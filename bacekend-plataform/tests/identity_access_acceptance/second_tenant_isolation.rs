@@ -11,9 +11,9 @@ pub async fn create_and_verify(
     client: &Client,
     migration_pool: &PgPool,
     runtime_pool: &PgPool,
-    jetstream: &jetstream::Context,
+    jetstream: jetstream::Context,
     event_topology: &EventTopology,
-    stream: &jetstream::stream::Stream,
+    stream: jetstream::stream::Stream,
     registration_subject: &str,
     http_addr: SocketAddr,
     origin: &str,
@@ -62,14 +62,14 @@ pub async fn create_and_verify(
     assert_eq!(second_document.0, "cc");
     assert_eq!(second_document.1, second_legal_identification_number.as_str());
     platform_tenant_registry::infrastructure::outbox_relay::relay_batch(
-        &runtime_pool,
-        &jetstream,
+        runtime_pool,
+        jetstream,
         &event_topology.subject_prefix,
     )
     .await
     .expect("second tenant registration publishes through the real JetStream relay");
     let second_tenant_event = stream
-        .get_last_raw_message_by_subject(&registration_subject)
+        .get_last_raw_message_by_subject(registration_subject)
         .await
         .expect("JetStream durably stores second tenant registration");
     let second_tenant_envelope: serde_json::Value =
@@ -80,7 +80,7 @@ pub async fn create_and_verify(
         second_tenant_id.to_string()
     );
     assert!(platform_identity_access::infrastructure::tenant_membership_consumer::consume_tenant_registered(
-            &runtime_pool,
+            runtime_pool,
             &second_tenant_event.payload,
         )
         .await
