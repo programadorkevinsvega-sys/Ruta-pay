@@ -32,7 +32,7 @@ pub async fn verify(context: TenantStatusVersionContext<'_>) {
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
         )
-        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .header("x-csrf-token", matrix_operator_csrf_cookie)
         .header("x-correlation-id", "corr_tenant_status_stale_version")
         .json(&serde_json::json!({
             "status": "suspended",
@@ -53,7 +53,7 @@ pub async fn verify(context: TenantStatusVersionContext<'_>) {
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
         )
-        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .header("x-csrf-token", matrix_operator_csrf_cookie)
         .json(&serde_json::json!({
             "status": "suspended",
             "reason": "A version must be positive",
@@ -73,7 +73,7 @@ pub async fn verify(context: TenantStatusVersionContext<'_>) {
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
         )
-        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .header("x-csrf-token", matrix_operator_csrf_cookie)
         .json(&serde_json::json!({
             "status": "suspended",
             "reason": "The version must be an integer",
@@ -108,7 +108,7 @@ pub async fn verify(context: TenantStatusVersionContext<'_>) {
                 header::COOKIE,
                 format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
             )
-            .header("x-csrf-token", &matrix_operator_csrf_cookie)
+            .header("x-csrf-token", matrix_operator_csrf_cookie)
             .json(&invalid_body)
             .send()
             .await
@@ -129,7 +129,7 @@ pub async fn verify(context: TenantStatusVersionContext<'_>) {
             header::COOKIE,
             format!("payvia_platform_session={matrix_operator_session_cookie}; payvia_platform_csrf={matrix_operator_csrf_cookie}"),
         )
-        .header("x-csrf-token", &matrix_operator_csrf_cookie)
+        .header("x-csrf-token", matrix_operator_csrf_cookie)
         .json(&serde_json::json!({
             "status": "unknown-state",
             "reason": "Unknown states must not be accepted",
