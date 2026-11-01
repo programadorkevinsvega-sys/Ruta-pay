@@ -21,7 +21,7 @@ pub async fn verify(
     tenant_id: Uuid,
     api_key_id: Uuid,
     api_key_secret: &str,
-    authorization_client: IdentityAccessClient<Channel>,
+    mut authorization_client: IdentityAccessClient<Channel>,
 ) {
     let consume_scope_authorization = authorization_client
         .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
