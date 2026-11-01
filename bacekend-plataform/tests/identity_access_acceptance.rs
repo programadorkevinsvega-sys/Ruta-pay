@@ -26,6 +26,7 @@ mod login_rate_limits;
 mod platform_replay_and_logout;
 mod rate_limit_acceptance;
 mod rate_limit_telemetry;
+mod realtime_acceptance_flow;
 mod realtime_journal_acceptance;
 mod api_key_acceptance_flow;
 mod api_key_authorization;
@@ -311,28 +312,21 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         second_tenant.credentials.legal_identification_number;
     let second_tenant_id = second_tenant.tenant_id;
 
-    let mut realtime_redis = realtime_journal_acceptance::verify(
+    let replay_cursor = realtime_acceptance_flow::verify(
         &redis_manager,
         &runtime_pool,
         &migration_pool,
         &event_payload,
         registration_event_id,
         &legal_identification_number,
-    )
-    .await;
-    let replay_cursor = tenant_realtime_replay::verify(
-        &client, http_addr, &session_cookie, &csrf_cookie, created_tenant_id,
-    )
-    .await;
-
-    platform_realtime_replay::verify(
-        &stream,
-        &event_topology,
-        &runtime_pool,
-        &mut realtime_redis,
-        &mut realtime_acceptance_client,
         &client,
         http_addr,
+        &session_cookie,
+        &csrf_cookie,
+        created_tenant_id,
+        &stream,
+        &event_topology,
+        &mut realtime_acceptance_client,
         &operator_session_cookie,
         &operator_csrf_cookie,
     )
