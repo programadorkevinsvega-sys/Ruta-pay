@@ -168,7 +168,11 @@ impl TestDatabase {
                 .expect("runtime role RLS attribute is readable");
         assert!(!bypass_rls, "application role must not bypass RLS");
 
-        Self { migration_pool, runtime_pool, cleanup }
+        Self {
+            migration_pool,
+            runtime_pool,
+            cleanup,
+        }
     }
 
     pub async fn finish(self) {
