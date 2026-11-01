@@ -80,10 +80,9 @@ impl ServerFixture {
         let catalog_client = CatalogPricingGrpcClient::connect(format!("http://{grpc_addr}"))
             .await
             .expect("catalog gRPC channel connects");
-        let entitlements_client =
-            EntitlementsQuotasClient::connect(format!("http://{grpc_addr}"))
-                .await
-                .expect("entitlements gRPC channel connects");
+        let entitlements_client = EntitlementsQuotasClient::connect(format!("http://{grpc_addr}"))
+            .await
+            .expect("entitlements gRPC channel connects");
         let mut authorization_client = identity_client.clone();
         let mut realtime_acceptance_client = realtime_client.clone();
         let http_listener = TcpListener::bind("127.0.0.1:0").await.expect("BFF bind");
