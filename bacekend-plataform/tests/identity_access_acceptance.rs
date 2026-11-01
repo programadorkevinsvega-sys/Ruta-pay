@@ -468,7 +468,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     )
     .await;
 
-    let (api_key_id, api_key_secret) = api_key_creation::verify(
+    let (api_key_id, api_key_secret, api_key_created) = api_key_creation::verify(
         &client,
         &migration_pool,
         http_addr,
@@ -479,9 +479,8 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     )
     .await;
 
-    api_key_authorization::verify(
+    api_key_authorization::verify_allowed(
         &mut authorization_client,
-        &migration_pool,
         created_tenant_id,
         api_key_id,
         &api_key_secret,
@@ -508,6 +507,14 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         api_key_secret,
         authorization_client: authorization_client.clone(),
     })
+    .await;
+    api_key_authorization::verify_denials(
+        &mut authorization_client,
+        &migration_pool,
+        created_tenant_id,
+        api_key_id,
+        &api_key_secret,
+    )
     .await;
     api_key_lifecycle::verify(
         &client,
