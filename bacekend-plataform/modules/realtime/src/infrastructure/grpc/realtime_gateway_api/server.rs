@@ -8,7 +8,6 @@ use tokio::sync::mpsc;
 use tokio_stream::{Stream, wrappers::ReceiverStream};
 use tonic::{Request, Response, Status};
 use tracing::Instrument;
-use uuid::Uuid;
 
 use crate::infrastructure::persistence;
 use super::{
