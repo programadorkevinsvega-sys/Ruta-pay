@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -12,7 +13,7 @@ pub struct Capability {
     pub quota_period: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Entitlement {
     pub tenant_id: Uuid,
     pub price_version_id: Uuid,
@@ -44,6 +45,8 @@ pub enum EntitlementError {
     QuotaExceeded,
     #[error("idempotency key was reused with different operation data")]
     IdempotencyConflict,
+    #[error("the original idempotent result is unavailable or invalid")]
+    IdempotencyResultUnavailable,
     #[error("plan assignment overlaps an existing assignment")]
     AssignmentConflict,
 }
