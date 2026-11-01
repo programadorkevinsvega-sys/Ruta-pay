@@ -31,14 +31,14 @@ pub async fn setup(environment: &IdentityEnvironment) -> TenantOnboardingFixture
     let captured_events = &environment.captured_events;
     let registered_user_id = environment.registered_user_id;
     let tenant_cookies = tenant_session_acceptance::verify(
-        &client,
+        client,
         http_addr,
-        &origin,
-        &email,
-        &password,
+        origin,
+        email,
+        password,
         test_source_ip,
-        &redis_manager,
-        &captured_events,
+        redis_manager,
+        captured_events,
         registered_user_id,
     )
     .await;
@@ -47,26 +47,26 @@ pub async fn setup(environment: &IdentityEnvironment) -> TenantOnboardingFixture
     let traceparent = tenant_cookies.traceparent.clone();
     let ip_key = tenant_cookies.ip_key.clone();
     let operator_cookies = operator_session_acceptance::verify(
-        &client,
+        client,
         http_addr,
-        &origin,
-        &operator_email,
-        &operator_password,
+        origin,
+        operator_email,
+        operator_password,
         operator_id,
         &mut authorization_client,
-        &migration_pool,
+        migration_pool,
     )
     .await;
     let operator_session_cookie = operator_cookies.session_cookie;
     let operator_csrf_cookie = operator_cookies.csrf_cookie;
 
     let tenant_registration = tenant_registration_acceptance::verify(
-        &client,
-        &migration_pool,
+        client,
+        migration_pool,
         http_addr,
-        &origin,
-        &session_cookie,
-        &csrf_cookie,
+        origin,
+        session_cookie,
+        csrf_cookie,
     )
     .await;
     let legal_identification_number = tenant_registration.legal_identification_number;
@@ -75,25 +75,25 @@ pub async fn setup(environment: &IdentityEnvironment) -> TenantOnboardingFixture
     let tenant_slug = tenant_registration.tenant_slug;
 
     tenant_platform_access::verify(
-        &client,
+        client,
         http_addr,
-        &origin,
-        &session_cookie,
-        &csrf_cookie,
-        &operator_session_cookie,
-        &operator_csrf_cookie,
+        origin,
+        session_cookie,
+        csrf_cookie,
+        operator_session_cookie,
+        operator_csrf_cookie,
         created_tenant_id,
     )
     .await;
     let tenant_admin_status_body = tenant_status_outbox_acceptance::verify(
-        &client,
-        &migration_pool,
+        client,
+        migration_pool,
         http_addr,
-        &origin,
-        &operator_session_cookie,
-        &operator_csrf_cookie,
+        origin,
+        operator_session_cookie,
+        operator_csrf_cookie,
         created_tenant_id,
-        &tenant_body,
+        tenant_body,
     )
     .await;
     TenantOnboardingFixture {
