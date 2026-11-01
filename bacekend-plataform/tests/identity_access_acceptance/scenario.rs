@@ -69,18 +69,20 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let mut isolated_stream_cleanup = event_fixture.isolated_stream_cleanup;
 
     api_key_acceptance_flow::verify(
-        &client,
-        &migration_pool,
-        &mut authorization_client,
-        http_addr,
-        servers.grpc_addr,
-        &origin,
-        &session_cookie,
-        &csrf_cookie,
-        &operator_session_cookie,
-        &operator_csrf_cookie,
-        created_tenant_id,
-        registered_user_id,
+        api_key_acceptance_flow::ApiKeyAcceptanceContext {
+            client: &client,
+            migration_pool: &migration_pool,
+            authorization_client: &mut authorization_client,
+            http_addr,
+            grpc_addr: servers.grpc_addr,
+            origin: &origin,
+            session_cookie: &session_cookie,
+            csrf_cookie: &csrf_cookie,
+            operator_session_cookie: &operator_session_cookie,
+            operator_csrf_cookie: &operator_csrf_cookie,
+            created_tenant_id,
+            registered_user_id,
+        },
     )
     .await;
 
