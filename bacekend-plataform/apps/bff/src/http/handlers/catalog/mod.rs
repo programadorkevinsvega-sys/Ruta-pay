@@ -1,6 +1,6 @@
-mod assignments;
-mod capabilities;
-mod entitlements;
+pub mod assignments;
+pub mod capabilities;
+pub mod entitlements;
 mod plans;
 mod prices;
 mod shared;
