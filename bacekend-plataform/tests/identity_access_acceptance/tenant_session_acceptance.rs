@@ -6,6 +6,8 @@ use uuid::Uuid;
 pub struct TenantSessionCookies {
     pub session_cookie: String,
     pub csrf_cookie: String,
+    pub traceparent: String,
+    pub ip_key: String,
 }
 
 pub async fn verify(
@@ -161,5 +163,5 @@ pub async fn verify(
             tenant_session_used_for_operator.status(),
             StatusCode::UNAUTHORIZED
         );
-    TenantSessionCookies { session_cookie, csrf_cookie }
+    TenantSessionCookies { session_cookie, csrf_cookie, traceparent, ip_key }
 }
