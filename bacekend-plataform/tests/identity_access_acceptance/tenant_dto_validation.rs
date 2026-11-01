@@ -79,7 +79,7 @@ pub async fn verify(context: TenantDtoValidationContext<'_>) {
                 header::COOKIE,
                 format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
             )
-            .header("x-csrf-token", &second_csrf_cookie)
+            .header("x-csrf-token", second_csrf_cookie)
             .json(&invalid_body)
             .send()
             .await
@@ -104,7 +104,7 @@ pub async fn verify(context: TenantDtoValidationContext<'_>) {
                 header::COOKIE,
                 format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
             )
-            .header("x-csrf-token", &second_csrf_cookie)
+            .header("x-csrf-token", second_csrf_cookie)
             .json(&invalid_body)
             .send()
             .await
@@ -132,7 +132,7 @@ pub async fn verify(context: TenantDtoValidationContext<'_>) {
             header::COOKIE,
             format!("payvia_tenant_session={second_session_cookie}; payvia_tenant_csrf={second_csrf_cookie}"),
         )
-        .header("x-csrf-token", &second_csrf_cookie)
+        .header("x-csrf-token", second_csrf_cookie)
         .json(&serde_json::json!({
             "display_name": "Invalid tenant DTO",
             "slug": 42,
