@@ -1,6 +1,5 @@
 use platform_entitlements_quotas::{
-    application::entitlement_service::ConsumeQuotaCommand,
-    domain::entitlement::EntitlementError,
+    application::entitlement_service::ConsumeQuotaCommand, domain::entitlement::EntitlementError,
 };
 
 use super::fixture::{TestFixture, is_domain_error};
@@ -19,7 +18,7 @@ pub async fn verify(fixture: &TestFixture) {
     assert_eq!(initial.limit_value, Some(5));
     assert_eq!(initial.consumed, 0);
     assert_eq!(initial.remaining, Some(5));
-    
+
     let (after_four, replayed) = entitlements
         .consume(ConsumeQuotaCommand {
             actor,
@@ -35,7 +34,7 @@ pub async fn verify(fixture: &TestFixture) {
         .expect("usage below the quota is accepted");
     assert!(!replayed);
     assert_eq!(after_four.consumed, 4);
-    
+
     let live_before = entitlements
         .evaluate(actor, tenant_one, "payments.monthly", "live", now)
         .await
@@ -57,7 +56,7 @@ pub async fn verify(fixture: &TestFixture) {
         .expect("live usage consumes from its independent quota");
     assert_eq!(live_usage.consumed, 2);
     assert_eq!(live_usage.remaining, Some(3));
-    
+
     let (replayed_result, replayed) = entitlements
         .consume(ConsumeQuotaCommand {
             actor,
@@ -90,7 +89,7 @@ pub async fn verify(fixture: &TestFixture) {
         conflict,
         EntitlementError::IdempotencyConflict
     ));
-    
+
     let (at_limit, replayed) = entitlements
         .consume(ConsumeQuotaCommand {
             actor,
@@ -122,7 +121,7 @@ pub async fn verify(fixture: &TestFixture) {
         .await
         .expect_err("consumption above the limit is rejected");
     assert!(is_domain_error(exceeded, EntitlementError::QuotaExceeded));
-    
+
     let (overage, _) = entitlements
         .consume(ConsumeQuotaCommand {
             actor,
@@ -139,7 +138,7 @@ pub async fn verify(fixture: &TestFixture) {
     assert!(overage.allowed);
     assert_eq!(overage.consumed, 2);
     assert_eq!(overage.remaining, Some(0));
-    
+
     let restricted = entitlements
         .evaluate(actor, tenant_one, "live.feature", "test", now)
         .await
@@ -153,5 +152,5 @@ pub async fn verify(fixture: &TestFixture) {
             .expect("live environment is accepted")
             .allowed
     );
-    
+
 }
