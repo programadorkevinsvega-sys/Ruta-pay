@@ -6,7 +6,7 @@ use sqlx::PgPool;
 use tonic::transport::Channel;
 use uuid::Uuid;
 
-use super::{identity_access_acceptance_support::cookie_value, tenant_session_acceptance::TenantSessionCookies};
+use super::identity_access_acceptance_support::cookie_value;
 
 pub struct OperatorSessionCookies {
     pub session_cookie: String,
@@ -22,7 +22,6 @@ pub async fn verify(
     operator_id: Uuid,
     authorization_client: &mut IdentityAccessClient<Channel>,
     migration_pool: &PgPool,
-    tenant_cookies: &TenantSessionCookies,
 ) -> OperatorSessionCookies {
     let invalid_origin_operator_login = client
         .post(format!("http://{http_addr}/v1/platform/identity/session"))
