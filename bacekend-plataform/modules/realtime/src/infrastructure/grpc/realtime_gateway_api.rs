@@ -18,7 +18,6 @@ use tokio_stream::{Stream, StreamExt, wrappers::ReceiverStream};
 use tonic::{Request, Response, Status};
 use tracing::Instrument;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 use uuid::Uuid;
 
 use crate::infrastructure::persistence::{self, JournalError};
