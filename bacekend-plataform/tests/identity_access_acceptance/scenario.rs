@@ -116,7 +116,6 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         created_tenant_id,
         &stream,
         &event_topology,
-        &mut realtime_acceptance_client,
         &operator_session_cookie,
         &operator_csrf_cookie,
     )
@@ -164,7 +163,6 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         &operator_csrf_cookie,
         operator_id,
         created_tenant_id,
-        registered_user_id,
         &session_cookie,
         &csrf_cookie,
         &second_session_cookie,
