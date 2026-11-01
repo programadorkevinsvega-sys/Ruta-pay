@@ -37,19 +37,31 @@ use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
 
+pub struct RuntimeModuleDependencies {
+    pub pool: sqlx::PgPool,
+    pub redis: ConnectionManager,
+    pub redis_client: redis::Client,
+    pub identity_client: IdentityAccessGrpcClient<tonic::transport::Channel>,
+    pub catalog_client: CatalogPricingClient<tonic::transport::Channel>,
+    pub tenant_client: TenantRegistryClient<tonic::transport::Channel>,
+}
+
 pub async fn serve<F>(
     listener: TcpListener,
-    pool: sqlx::PgPool,
-    redis: ConnectionManager,
-    redis_client: redis::Client,
-    identity_client: IdentityAccessGrpcClient<tonic::transport::Channel>,
-    catalog_client: CatalogPricingClient<tonic::transport::Channel>,
-    tenant_client: TenantRegistryClient<tonic::transport::Channel>,
+    dependencies: RuntimeModuleDependencies,
     shutdown: F,
 ) -> Result<(), tonic::transport::Error>
 where
     F: Future<Output = ()> + Send + 'static,
 {
+    let RuntimeModuleDependencies {
+        pool,
+        redis,
+        redis_client,
+        identity_client,
+        catalog_client,
+        tenant_client,
+    } = dependencies;
     let identity_port = Arc::new(IdentityAccessGrpcAdapter::new(identity_client.clone()));
     let tenant_service = TenantService::new(pool.clone(), identity_port);
     let catalog_api =
