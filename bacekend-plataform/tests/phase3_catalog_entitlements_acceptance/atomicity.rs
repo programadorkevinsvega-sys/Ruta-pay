@@ -10,14 +10,21 @@ pub async fn verify(fixture: &TestFixture) {
 
 async fn verify_catalog_rollback(fixture: &TestFixture) {
     let pool = &fixture.database.migration_pool;
+    let plan = fixture.catalog.create_plan(
+        fixture.actor,
+        &format!("rollback-{}", uuid::Uuid::new_v4().simple()),
+        "Rollback acceptance",
+        "plan used to prove transaction rollback",
+        fixture.correlation,
+    ).await.expect("isolated rollback plan is created before failure injection");
     sqlx::raw_sql("CREATE FUNCTION catalog_pricing.reject_test_outbox() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'acceptance outbox failure' USING ERRCODE='23514'; END $$; CREATE TRIGGER phase3_reject_catalog_outbox BEFORE INSERT ON catalog_pricing.outbox_events FOR EACH ROW EXECUTE FUNCTION catalog_pricing.reject_test_outbox()")
         .execute(pool).await.expect("catalog failure injector is installed");
     let before: (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM catalog_pricing.price_versions),(SELECT count(*) FROM catalog_pricing.audit_events)")
         .fetch_one(pool).await.expect("catalog state before failure is measurable");
     let result = fixture.catalog.publish_price_version(PublishPriceVersionCommand {
-        actor_id: fixture.actor, plan_id: fixture.plan.id, currency: "USD",
+        actor_id: fixture.actor, plan_id: plan.id, currency: "USD",
         amount_minor: 9900, period_unit: "month", interval_count: 1,
-        effective_from: fixture.future_start + Duration::days(90),
+        effective_from: fixture.now + Duration::days(365),
         effective_until: None, correlation_id: fixture.correlation,
     }).await;
     sqlx::raw_sql("DROP TRIGGER phase3_reject_catalog_outbox ON catalog_pricing.outbox_events; DROP FUNCTION catalog_pricing.reject_test_outbox()")
