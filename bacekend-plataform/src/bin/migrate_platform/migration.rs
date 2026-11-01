@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{env, time::Duration};
 use sqlx::postgres::PgPoolOptions;
 use super::{privileges::grant_runtime_privileges, validation::validate_database_targets};
 

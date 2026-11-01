@@ -23,7 +23,7 @@ pub(super) fn validate_database_targets(
     Ok(())
 }
 
-fn valid_role_identifier(role: &str) -> bool {
+pub(super) fn valid_role_identifier(role: &str) -> bool {
     let mut characters = role.chars();
     let Some(first) = characters.next() else {
         return false;
