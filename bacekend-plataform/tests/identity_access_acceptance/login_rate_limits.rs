@@ -19,7 +19,7 @@ pub async fn verify(
                 "x-correlation-id",
                 format!("corr_identity_rate_limit_{attempt}"),
             )
-            .header("traceparent", &traceparent)
+            .header("traceparent", traceparent)
             .json(&serde_json::json!({"email": email, "password": "incorrect-password"}))
             .send()
             .await
