@@ -47,7 +47,10 @@ pub fn valid_correlation_id(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{current_span_id, current_trace_id, new_correlation_id, valid_correlation_id};
+    use super::{
+        current_span_id, current_trace_id, current_traceparent, new_correlation_id,
+        valid_correlation_id,
+    };
 
     #[test]
     fn creates_valid_correlation_ids() {
