@@ -1,11 +1,10 @@
-use super::*;
 use platform_contracts::realtime::{
     SubscribeEventsRequest, realtime_gateway_client::RealtimeGatewayClient,
 };
 use reqwest::{Client, StatusCode, header};
 use sqlx::PgPool;
 use std::net::SocketAddr;
-use tokio::time::{Duration, timeout};
+use tokio::time::Duration;
 use tonic::transport::Channel;
 use uuid::Uuid;
 
