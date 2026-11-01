@@ -10,6 +10,7 @@ use super::{
 };
 use crate::application::catalog_service::PublishPriceVersionCommand;
 
+#[tonic::async_trait]
 impl CatalogPricing for CatalogPricingApi {
     async fn create_plan(
         &self,
