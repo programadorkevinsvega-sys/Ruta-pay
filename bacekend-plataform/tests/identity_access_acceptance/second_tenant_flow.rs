@@ -1,3 +1,4 @@
+use super::*;
 use async_nats::jetstream;
 use platform_runtime::event_topology::EventTopology;
 use reqwest::Client;
@@ -26,10 +27,10 @@ pub async fn verify(
     created_tenant_id: Uuid,
 ) -> SecondTenantFixture {
     let second_tenant_credentials = second_tenant_registration::register(
-        &client,
-        &migration_pool,
+        client,
+        migration_pool,
         http_addr,
-        &origin,
+        origin,
         &tenant_slug,
         created_tenant_id,
     )
@@ -40,15 +41,15 @@ pub async fn verify(
         .legal_identification_number
         .clone();
     let second_tenant_id = second_tenant_isolation::create_and_verify(
-        &client,
-        &migration_pool,
+        client,
+        migration_pool,
         &runtime_pool,
         &jetstream,
         &event_topology,
         &stream,
         &registration_subject,
         http_addr,
-        &origin,
+        origin,
         &tenant_slug,
         created_tenant_id,
         &second_tenant_credentials,
