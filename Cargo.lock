@@ -252,9 +252,9 @@ dependencies = [
 name = "bacekend-plataform"
 version = "0.1.0"
 dependencies = [
- "bacekend-pasarela",
  "async-nats",
  "axum",
+ "bacekend-pasarela",
  "base64 0.22.1",
  "metrics-exporter-prometheus",
  "opentelemetry",
