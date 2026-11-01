@@ -1,0 +1,119 @@
+use chrono::{DateTime, Utc};
+use uuid::Uuid;
+
+use crate::domain::catalog::{PriceVersion, PriceVersionStatus};
+use super::{CatalogService, CatalogServiceError, PublishPriceVersionCommand, support::set_operator_context};
+
+impl CatalogService {
+        pub async fn publish_price_version(
+            &self,
+            command: PublishPriceVersionCommand<'_>,
+        ) -> Result<PriceVersion, CatalogServiceError> {
+            let PublishPriceVersionCommand {
+                actor_id,
+                plan_id,
+                currency,
+                amount_minor,
+                period_unit,
+                interval_count,
+                effective_from,
+                effective_until,
+                correlation_id,
+            } = command;
+            PriceVersion::validate(
+                currency,
+                amount_minor,
+                period_unit,
+                interval_count,
+                effective_from,
+                effective_until,
+            )?;
+            let mut transaction = self.pool.begin().await?;
+            set_operator_context(&mut transaction, actor_id).await?;
+            sqlx::query("SELECT id FROM catalog_pricing.plans WHERE id=$1 FOR UPDATE")
+                .bind(plan_id)
+                .fetch_optional(&mut *transaction)
+                .await?
+                .ok_or(CatalogError::PlanNotFound)?;
+            let overlap: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM catalog_pricing.price_versions              WHERE plan_id=$1 AND tstzrange(effective_from,effective_until,'[)')              && tstzrange($2,$3,'[)'))",
+            )
+            .bind(plan_id)
+            .bind(effective_from)
+            .bind(effective_until)
+            .fetch_one(&mut *transaction)
+            .await?;
+            if overlap {
+                return Err(CatalogError::EffectivePeriodConflict.into());
+            }
+            let version: i32 = sqlx::query_scalar(
+                "SELECT COALESCE(MAX(version),0)+1 FROM catalog_pricing.price_versions WHERE plan_id=$1",
+            )
+            .bind(plan_id)
+            .fetch_one(&mut *transaction)
+            .await?;
+            let row = sqlx::query_as::<_, (Uuid, DateTime<Utc>)>(
+                "INSERT INTO catalog_pricing.price_versions              (id,plan_id,version,currency,amount_minor,period_unit,interval_count,effective_from,effective_until)              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,published_at",
+            )
+            .bind(Uuid::new_v4())
+            .bind(plan_id)
+            .bind(version)
+            .bind(currency)
+            .bind(amount_minor)
+            .bind(period_unit)
+            .bind(interval_count)
+            .bind(effective_from)
+            .bind(effective_until)
+            .fetch_one(&mut *transaction)
+            .await?;
+            sqlx::query(
+                "UPDATE catalog_pricing.plans SET status='active' WHERE id=$1 AND status='draft'",
+            )
+            .bind(plan_id)
+            .execute(&mut *transaction)
+            .await?;
+            sqlx::query("INSERT INTO catalog_pricing.audit_events (event_id,actor_id,action,resource_id,outcome,correlation_id,trace_id,safe_details) VALUES ($1,$2,'catalog.price_version.published',$3,'completed',$4,$5,$6)")
+                .bind(Uuid::new_v4()).bind(actor_id).bind(row.0).bind(correlation_id)
+                .bind(payvia_observability::current_trace_id())
+                .bind(serde_json::json!({"plan_id": plan_id, "version": version, "currency": currency, "amount_minor": amount_minor}))
+                .execute(&mut *transaction).await?;
+            sqlx::query("INSERT INTO catalog_pricing.outbox_events (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,traceparent,correlation_id) VALUES ($1,$2,1,'catalog.price_version.published',1,'platform',$3,NULL,$4)")
+                .bind(Uuid::new_v4()).bind(row.0)
+                .bind(serde_json::json!({"price_version_id": row.0, "plan_id": plan_id, "version": version}))
+                .bind(correlation_id).execute(&mut *transaction).await?;
+            transaction.commit().await?;
+            Ok(PriceVersion {
+                id: row.0,
+                plan_id,
+                version,
+                currency: currency.to_owned(),
+                amount_minor,
+                period_unit: period_unit.to_owned(),
+                interval_count,
+                effective_from,
+                effective_until,
+                published_at: row.1,
+            })
+        }
+        pub async fn get_price_version(&self, id: Uuid) -> Result<PriceVersion, CatalogServiceError> {
+            let row = sqlx::query_as::<_, (Uuid, Uuid, i32, String, i64, String, i32, DateTime<Utc>, Option<DateTime<Utc>>, DateTime<Utc>)>(
+                "SELECT id,plan_id,version,currency,amount_minor,period_unit,interval_count,effective_from,effective_until,published_at              FROM catalog_pricing.price_versions WHERE id=$1",
+            )
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?
+            .ok_or(CatalogError::PriceVersionNotFound)?;
+            Ok(PriceVersion {
+                id: row.0,
+                plan_id: row.1,
+                version: row.2,
+                currency: row.3,
+                amount_minor: row.4,
+                period_unit: row.5,
+                interval_count: row.6,
+                effective_from: row.7,
+                effective_until: row.8,
+                published_at: row.9,
+            })
+        }
+}
