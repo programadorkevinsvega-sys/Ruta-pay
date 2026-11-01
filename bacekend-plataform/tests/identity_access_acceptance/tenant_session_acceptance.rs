@@ -1,3 +1,4 @@
+use super::*;
 use redis::aio::ConnectionManager;
 use reqwest::{Client, StatusCode, header};
 use std::{
@@ -29,7 +30,7 @@ pub async fn verify(
     let traceparent = format!("00-{trace_id}-00f067aa0ba902b7-01");
     let wrong_login = client
         .post(format!("http://{http_addr}/v1/identity/session"))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header("x-correlation-id", "corr_identity_wrong_password")
         .header("traceparent", &traceparent)
         .json(&serde_json::json!({"email": email, "password": "incorrect-password"}))
@@ -107,7 +108,7 @@ pub async fn verify(
 
     let login = client
         .post(format!("http://{http_addr}/v1/identity/session"))
-        .header(header::ORIGIN, &origin)
+        .header(header::ORIGIN, origin)
         .header("x-correlation-id", "corr_identity_login")
         .json(&serde_json::json!({"email": email, "password": password}))
         .send()
