@@ -1,4 +1,3 @@
-use super::*;
 use reqwest::{Client, StatusCode, header};
 use std::{
     collections::HashMap,
