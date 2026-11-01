@@ -1,5 +1,4 @@
 use async_nats::jetstream;
-use redis::aio::ConnectionManager;
 use sqlx::PgPool;
 use std::time::Duration;
 use tokio::{sync::watch, time};
