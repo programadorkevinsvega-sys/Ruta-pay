@@ -16,8 +16,14 @@ pub struct SecondaryTenantLifecycleContext<'a> {
 
 pub async fn verify(context: SecondaryTenantLifecycleContext<'_>) {
     let SecondaryTenantLifecycleContext {
-        client, migration_pool, http_addr, origin, matrix_operator_session_cookie,
-        matrix_operator_csrf_cookie, operator_id, second_tenant_id,
+        client,
+        migration_pool,
+        http_addr,
+        origin,
+        matrix_operator_session_cookie,
+        matrix_operator_csrf_cookie,
+        operator_id,
+        second_tenant_id,
     } = context;
     // Exercise activation and both close transitions on a separate tenant.
     // platform_support must be denied; platform_security may activate and close.
@@ -55,7 +61,7 @@ pub async fn verify(context: SecondaryTenantLifecycleContext<'_>) {
         .await
         .expect("support activation receives an HTTP response");
     assert_eq!(support_activation.status(), StatusCode::FORBIDDEN);
-    
+
     sqlx::query("UPDATE identity_access.operator_users SET role='platform_security' WHERE id=$1")
         .bind(operator_id)
         .execute(&migration_pool)
@@ -80,7 +86,7 @@ pub async fn verify(context: SecondaryTenantLifecycleContext<'_>) {
         .await
         .expect("platform security can activate a verified tenant");
     assert_eq!(security_activation.status(), StatusCode::OK);
-    
+
     sqlx::query("UPDATE identity_access.operator_users SET role='platform_support' WHERE id=$1")
         .bind(operator_id)
         .execute(&migration_pool)
@@ -105,7 +111,7 @@ pub async fn verify(context: SecondaryTenantLifecycleContext<'_>) {
         .await
         .expect("support close receives an HTTP response");
     assert_eq!(support_close.status(), StatusCode::FORBIDDEN);
-    
+
     sqlx::query("UPDATE identity_access.operator_users SET role='platform_owner' WHERE id=$1")
         .bind(operator_id)
         .execute(&migration_pool)
