@@ -154,23 +154,25 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let matrix_operator_csrf_cookie = matrix_operator_cookies.csrf_cookie;
 
     tenant_admin_acceptance_flow::verify(
-        &client,
-        &migration_pool,
-        &mut authorization_client,
-        http_addr,
-        &origin,
-        &matrix_operator_session_cookie,
-        &matrix_operator_csrf_cookie,
-        &operator_session_cookie,
-        &operator_csrf_cookie,
-        operator_id,
-        created_tenant_id,
-        &session_cookie,
-        &csrf_cookie,
-        &second_session_cookie,
-        &second_csrf_cookie,
-        second_tenant.tenant_id,
-        tenant_admin_status_body["status_version"].clone(),
+        tenant_admin_acceptance_flow::TenantAdminAcceptanceContext {
+            client: &client,
+            migration_pool: &migration_pool,
+            authorization_client: &mut authorization_client,
+            http_addr,
+            origin: &origin,
+            matrix_operator_session_cookie: &matrix_operator_session_cookie,
+            matrix_operator_csrf_cookie: &matrix_operator_csrf_cookie,
+            operator_session_cookie: &operator_session_cookie,
+            operator_csrf_cookie: &operator_csrf_cookie,
+            operator_id,
+            created_tenant_id,
+            session_cookie: &session_cookie,
+            csrf_cookie: &csrf_cookie,
+            second_session_cookie: &second_session_cookie,
+            second_csrf_cookie: &second_csrf_cookie,
+            second_tenant_id: second_tenant.tenant_id,
+            tenant_status_version: tenant_admin_status_body["status_version"].clone(),
+        },
     )
     .await;
 
