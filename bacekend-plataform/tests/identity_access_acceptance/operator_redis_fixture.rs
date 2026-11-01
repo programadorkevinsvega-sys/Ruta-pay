@@ -74,7 +74,7 @@ pub async fn bootstrap_and_verify_redis_failure(
         .await
         .expect("isolated Redis user is created with connection-only permissions");
     let mut restricted_redis_url =
-        url::Url::parse(&redis_url).expect("Redis URL parses for isolated ACL user");
+        url::Url::parse(redis_url).expect("Redis URL parses for isolated ACL user");
     restricted_redis_url
         .set_username(&restricted_redis_user)
         .expect("restricted Redis username is valid");
