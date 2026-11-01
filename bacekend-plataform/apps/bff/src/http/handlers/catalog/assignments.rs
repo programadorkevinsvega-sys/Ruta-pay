@@ -6,9 +6,14 @@ use axum::{
 };
 use std::sync::Arc;
 
-use crate::http::{handlers::identity, middleware::correlation_id::correlation_id, routes::AppState};
+use super::{
+    shared::{operator_credentials, tonic_request},
+    types::AssignPlan,
+};
+use crate::http::{
+    handlers::identity, middleware::correlation_id::correlation_id, routes::AppState,
+};
 use platform_contracts::entitlements_quotas::AssignTenantPlanRequest;
-use super::{shared::{operator_credentials, tonic_request}, types::AssignPlan};
 
 #[utoipa::path(post, path="/v1/platform/entitlements/assignments", request_body=AssignPlan, responses((status=201)))]
 pub async fn assign_plan(
