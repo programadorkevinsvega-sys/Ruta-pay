@@ -8,7 +8,6 @@ use uuid::Uuid;
 
 use super::{
     identity_access_acceptance_support::{EventStreamCleanup, is_stream_not_found},
-    tenant_event_delivery::{TenantEventDeliveryContext, verify as verify_tenant_event_delivery},
 };
 
 pub struct EventFixture {
@@ -70,7 +69,7 @@ pub async fn create(
     let event_topology = EventTopology::from_namespace(Some(&event_namespace))
         .expect("test event namespace is valid");
     outbox_database_failures::verify(outbox_database_failures::OutboxDatabaseFailureContext {
-        migration_pool: migration_pool,
+        migration_pool,
         runtime_pool: &runtime_pool,
         runtime_role: &runtime_role,
         jetstream: &jetstream,
@@ -78,7 +77,7 @@ pub async fn create(
     })
     .await;
     tenant_outbox_recovery::verify(tenant_outbox_recovery::TenantOutboxRecoveryContext {
-        migration_pool: migration_pool,
+        migration_pool,
         runtime_pool: &runtime_pool,
         jetstream: &jetstream,
         failed_topology: &failed_topology,
@@ -89,15 +88,15 @@ pub async fn create(
     identity_outbox_recovery::verify(migration_pool, &runtime_pool, &jetstream).await;
     let event_delivery =
         tenant_event_delivery::verify(tenant_event_delivery::TenantEventDeliveryContext {
-            client: client,
-            migration_pool: migration_pool,
+            client,
+            migration_pool,
             runtime_pool: &runtime_pool,
             jetstream: &jetstream,
             event_topology: &event_topology,
             event_namespace,
             http_addr,
-            session_cookie: session_cookie,
-            csrf_cookie: csrf_cookie,
+            session_cookie,
+            csrf_cookie,
             created_tenant_id,
             registered_user_id,
             legal_identification_number: &legal_identification_number,
@@ -107,17 +106,17 @@ pub async fn create(
     let event_payload = event_delivery.event_payload;
     let registration_event_id = event_delivery.registration_event_id;
     let registration_subject = event_delivery.registration_subject;
-    let mut event_stream_cleanup = event_delivery.event_stream_cleanup;
-    let mut isolated_stream_cleanup = event_delivery.isolated_stream_cleanup;
+    let event_stream_cleanup = event_delivery.event_stream_cleanup;
+    let isolated_stream_cleanup = event_delivery.isolated_stream_cleanup;
     EventFixture {
         jetstream,
         failed_topology,
         event_topology,
-        stream: event_delivery.stream,
-        event_payload: event_delivery.event_payload,
-        registration_event_id: event_delivery.registration_event_id,
-        registration_subject: event_delivery.registration_subject,
-        event_stream_cleanup: event_delivery.event_stream_cleanup,
-        isolated_stream_cleanup: event_delivery.isolated_stream_cleanup,
+        stream,
+        event_payload,
+        registration_event_id,
+        registration_subject,
+        event_stream_cleanup,
+        isolated_stream_cleanup,
     }
 }
