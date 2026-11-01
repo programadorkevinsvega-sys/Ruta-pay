@@ -120,11 +120,11 @@ pub async fn verify(context: RateLimitAcceptanceContext<'_>) {
         .iter()
         .flat_map(|event| event.values().cloned())
         .collect();
-    assert!(!event_values.iter().any(|value| value.contains(&password)));
+    assert!(!event_values.iter().any(|value| value.contains(password)));
     assert!(
         !event_values
             .iter()
-            .any(|value| value.contains(&operator_password))
+            .any(|value| value.contains(operator_password))
     );
     assert!(
         !event_values
@@ -149,11 +149,11 @@ pub async fn verify(context: RateLimitAcceptanceContext<'_>) {
     assert!(
         !event_values
             .iter()
-            .any(|value| value.contains(&legal_identification_number))
+            .any(|value| value.contains(legal_identification_number))
     );
     assert!(
         !event_values
             .iter()
-            .any(|value| value.contains(&second_legal_identification_number))
+            .any(|value| value.contains(second_legal_identification_number))
     );
 }
