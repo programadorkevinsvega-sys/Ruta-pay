@@ -1,12 +1,14 @@
 #[path = "support/http_grpc_acceptance.rs"]
 mod http_grpc_acceptance_support;
+#[path = "support/http_grpc_runtime.rs"]
+mod http_grpc_runtime;
 
 use tokio::{net::TcpListener, sync::oneshot};
 
 #[tokio::test]
 async fn real_http_bff_and_grpc_module_cover_success_and_unavailable() {
     let (provider, capture_store) = http_grpc_acceptance_support::initialize_capture();
-    let runtime = http_grpc_acceptance_support::start_runtime().await;
+    let runtime = http_grpc_runtime::start_runtime().await;
     let runtime_shutdown = runtime.shutdown;
     let runtime_task = runtime.task;
     let grpc_client = runtime.clients.grpc;
