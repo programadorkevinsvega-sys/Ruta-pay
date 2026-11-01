@@ -393,8 +393,8 @@ async fn phase_three_real_postgres_limits_replay_concurrency_versioning_and_rls(
             correlation
         ),
     );
-    let concurrent_successes =
-        if concurrent_a.is_ok() { 1 } else { 0 } + if concurrent_b.is_ok() { 1 } else { 0 };
+    let concurrent_successes = (if concurrent_a.is_ok() { 1 } else { 0 })
+        + (if concurrent_b.is_ok() { 1 } else { 0 });
     assert_eq!(
         concurrent_successes, 1,
         "only one concurrent transaction may consume three units from a five-unit quota"
