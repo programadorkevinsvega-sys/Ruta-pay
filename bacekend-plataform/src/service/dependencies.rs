@@ -1,9 +1,7 @@
 use payvia_platform_core::config::AppConfig;
 use std::time::Duration;
 
-pub async fn connect_database(
-    config: &AppConfig,
-) -> Result<sqlx::PgPool, sqlx::Error> {
+pub async fn connect_database(config: &AppConfig) -> Result<sqlx::PgPool, sqlx::Error> {
     let database_pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(20)
         .acquire_timeout(Duration::from_secs(3))
