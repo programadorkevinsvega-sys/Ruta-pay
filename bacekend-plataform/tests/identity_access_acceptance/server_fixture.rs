@@ -6,6 +6,11 @@ use platform_contracts::{
     runtime::runtime_probe_client::RuntimeProbeClient,
     tenant_registry::tenant_registry_client::TenantRegistryClient,
 };
+use platform_contracts::{
+    catalog_pricing::catalog_pricing_client::CatalogPricingClient as CatalogPricingGrpcClient,
+    realtime::realtime_gateway_client::RealtimeGatewayClient as RealtimeGatewayGrpcClient,
+    tenant_registry::tenant_registry_client::TenantRegistryClient as TenantRegistryGrpcClient,
+};
 use redis::aio::ConnectionManager;
 use reqwest::{Client, header};
 use sqlx::PgPool;
