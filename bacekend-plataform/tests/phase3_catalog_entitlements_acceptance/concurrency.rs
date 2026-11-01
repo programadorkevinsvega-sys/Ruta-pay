@@ -49,5 +49,4 @@ pub async fn verify(fixture: &TestFixture) {
         .await
         .expect("concurrent usage remains queryable");
     assert_eq!(concurrent_usage.consumed, 3);
-
 }
