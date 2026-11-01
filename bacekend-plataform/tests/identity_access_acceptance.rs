@@ -37,6 +37,7 @@ mod second_tenant_registration;
 mod secondary_tenant_lifecycle;
 mod server_fixture;
 mod session_security;
+mod session_security_flow;
 mod tenant_dto_validation;
 mod tenant_event_delivery;
 mod tenant_outbox_recovery;
@@ -332,83 +333,33 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     )
     .await;
 
-    operator_realtime_revocation::verify(
-        &client,
-        &mut realtime_acceptance_client,
-        http_addr,
-        &origin,
-        &operator_session_cookie,
-        &operator_csrf_cookie,
-    )
-    .await;
-
-    let matrix_operator_cookies = operator_revocation_audit::verify_and_reauthenticate(
-        &client,
-        &migration_pool,
-        http_addr,
-        operator_id,
-        &operator_session_cookie,
-        &operator_csrf_cookie,
-        &operator_email,
-        &operator_password,
-    )
-    .await;
-    let matrix_operator_session_cookie = matrix_operator_cookies.session_cookie;
-    let matrix_operator_csrf_cookie = matrix_operator_cookies.csrf_cookie;
-
-    let rejected_csrf = client
-        .delete(format!("http://{http_addr}/v1/identity/session"))
-        .header(header::ORIGIN, &origin)
-        .header(
-            header::COOKIE,
-            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
-        )
-        .header("x-csrf-token", "wrong-csrf-token")
-        .send()
-        .await
-        .expect("CSRF rejection response arrives");
-    assert_eq!(rejected_csrf.status(), StatusCode::FORBIDDEN);
-
-    tenant_realtime_revocation::verify(
+    let matrix_operator_cookies = session_security_flow::verify(
         &client,
         &mut realtime_acceptance_client,
         &migration_pool,
-        http_addr,
-        &origin,
-        &session_cookie,
-        &csrf_cookie,
-        registered_user_id,
-    )
-    .await;
-
-    login_rate_limits::verify(
-        &client,
         &redis_manager,
         http_addr,
         &origin,
         &traceparent,
         &email,
         &ip_key,
+        &captured_events,
+        default_headers,
+        &password,
+        &operator_password,
+        &operator_email,
+        &session_cookie,
+        &csrf_cookie,
+        &operator_session_cookie,
+        &operator_csrf_cookie,
+        registered_user_id,
+        operator_id,
+        &legal_identification_number,
+        &second_legal_identification_number,
     )
     .await;
-
-    rate_limit_telemetry::verify(&captured_events);
-
-    rate_limit_acceptance::verify(rate_limit_acceptance::RateLimitAcceptanceContext {
-        http_addr,
-        origin: &origin,
-        default_headers,
-        captured_events: &captured_events,
-        password: &password,
-        operator_password: &operator_password,
-        session_cookie: &session_cookie,
-        csrf_cookie: &csrf_cookie,
-        operator_session_cookie: &operator_session_cookie,
-        operator_csrf_cookie: &operator_csrf_cookie,
-        legal_identification_number: &legal_identification_number,
-        second_legal_identification_number: &second_legal_identification_number,
-    })
-    .await;
+    let matrix_operator_session_cookie = matrix_operator_cookies.session_cookie;
+    let matrix_operator_csrf_cookie = matrix_operator_cookies.csrf_cookie;
 
     operator_role_matrix::verify(operator_role_matrix::OperatorRoleMatrixContext {
         client: &client,
