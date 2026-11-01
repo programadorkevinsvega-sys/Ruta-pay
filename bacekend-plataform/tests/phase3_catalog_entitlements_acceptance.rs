@@ -6,12 +6,12 @@ mod concurrency;
 mod database;
 #[path = "phase3_catalog_entitlements_acceptance/fixture.rs"]
 mod fixture;
-#[path = "phase3_catalog_entitlements_acceptance/jetstream.rs"]
-mod jetstream;
 #[path = "phase3_catalog_entitlements_acceptance/immutability.rs"]
 mod immutability;
 #[path = "phase3_catalog_entitlements_acceptance/isolation.rs"]
 mod isolation;
+#[path = "phase3_catalog_entitlements_acceptance/jetstream.rs"]
+mod jetstream;
 #[path = "phase3_catalog_entitlements_acceptance/quota.rs"]
 mod quota;
 #[path = "phase3_catalog_entitlements_acceptance/versioning.rs"]
