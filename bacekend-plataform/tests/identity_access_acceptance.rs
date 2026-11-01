@@ -39,6 +39,7 @@ mod secondary_tenant_lifecycle;
 mod server_fixture;
 mod session_security;
 mod session_security_flow;
+mod tenant_admin_acceptance_flow;
 mod tenant_dto_validation;
 mod tenant_event_delivery;
 mod tenant_onboarding_phase;
@@ -236,109 +237,24 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let matrix_operator_session_cookie = matrix_operator_cookies.session_cookie;
     let matrix_operator_csrf_cookie = matrix_operator_cookies.csrf_cookie;
 
-    operator_role_matrix::verify(operator_role_matrix::OperatorRoleMatrixContext {
-        client: &client,
-        migration_pool: &migration_pool,
-        authorization_client: &mut authorization_client,
-        operator_id,
-        matrix_operator_session_cookie: &matrix_operator_session_cookie,
-        matrix_operator_csrf_cookie: &matrix_operator_csrf_cookie,
-        created_tenant_id,
+    tenant_admin_acceptance_flow::verify(
+        &client,
+        &migration_pool,
+        &mut authorization_client,
         http_addr,
-    })
-    .await;
-
-    tenant_status_lifecycle::verify(tenant_status_lifecycle::TenantStatusLifecycleContext {
-        client: &client,
-        migration_pool: &migration_pool,
-        http_addr,
-        origin: &origin,
-        matrix_operator_session_cookie: &matrix_operator_session_cookie,
-        matrix_operator_csrf_cookie: &matrix_operator_csrf_cookie,
+        &origin,
+        &matrix_operator_session_cookie,
+        &matrix_operator_csrf_cookie,
+        &operator_session_cookie,
+        &operator_csrf_cookie,
         operator_id,
         created_tenant_id,
-    })
-    .await;
-
-    let (tenant_before_invalid_transitions, current_status_version) =
-        tenant_status_input_validation::verify(
-            tenant_status_input_validation::TenantStatusInputContext {
-                client: &client,
-                migration_pool: &migration_pool,
-                http_addr,
-                origin: &origin,
-                matrix_operator_session_cookie: &matrix_operator_session_cookie,
-                matrix_operator_csrf_cookie: &matrix_operator_csrf_cookie,
-                created_tenant_id,
-            },
-        )
-        .await;
-    tenant_status_version_validation::verify(
-        tenant_status_version_validation::TenantStatusVersionContext {
-            client: &client,
-            http_addr,
-            origin: &origin,
-            matrix_operator_session_cookie: &matrix_operator_session_cookie,
-            matrix_operator_csrf_cookie: &matrix_operator_csrf_cookie,
-            created_tenant_id,
-            current_status_version,
-        },
-    )
-    .await;
-    tenant_dto_validation::verify(tenant_dto_validation::TenantDtoValidationContext {
-        client: &client,
-        migration_pool: &migration_pool,
-        http_addr,
-        origin: &origin,
-        second_session_cookie: &second_session_cookie,
-        second_csrf_cookie: &second_csrf_cookie,
-        created_tenant_id,
-        tenant_before_invalid_transitions,
-    })
-    .await;
-
-    secondary_tenant_lifecycle::verify(
-        secondary_tenant_lifecycle::SecondaryTenantLifecycleContext {
-            client: &client,
-            migration_pool: &migration_pool,
-            http_addr,
-            origin: &origin,
-            matrix_operator_session_cookie: &matrix_operator_session_cookie,
-            matrix_operator_csrf_cookie: &matrix_operator_csrf_cookie,
-            operator_id,
-            second_tenant_id,
-        },
-    )
-    .await;
-
-    session_security::verify(session_security::SessionSecurityContext {
-        client: &client,
-        migration_pool: &migration_pool,
-        http_addr,
-        origin: &origin,
-        session_cookie: &session_cookie,
-        csrf_cookie: &csrf_cookie,
-        operator_session_cookie: &operator_session_cookie,
-        operator_csrf_cookie: &operator_csrf_cookie,
-        second_session_cookie: &second_session_cookie,
-        second_csrf_cookie: &second_csrf_cookie,
+        registered_user_id,
+        &second_session_cookie,
+        &second_csrf_cookie,
         second_tenant_id,
-        created_tenant_id,
-        tenant_status_version: tenant_admin_status_body["status_version"].clone(),
-    })
-    .await;
-
-    tenant_status_race::verify(tenant_status_race::TenantStatusRaceContext {
-        client: &client,
-        migration_pool: &migration_pool,
-        http_addr,
-        origin: &origin,
-        matrix_operator_session_cookie: &matrix_operator_session_cookie,
-        matrix_operator_csrf_cookie: &matrix_operator_csrf_cookie,
-        operator_id,
-        created_tenant_id,
-        current_status_version,
-    })
+        tenant_admin_status_body["status_version"].clone(),
+    )
     .await;
 
     platform_replay_and_logout::verify(
