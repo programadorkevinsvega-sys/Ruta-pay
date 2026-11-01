@@ -1,3 +1,4 @@
+use super::*;
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::time::Duration;
 use uuid::Uuid;
@@ -46,7 +47,7 @@ pub async fn create() -> IdentityDatabaseFixture {
         .connect(parsed_url.as_str())
         .await
         .expect("isolated acceptance database accepts migration connection");
-    database_migrations::migrate_and_verify_permission_seeds(&migration_pool).await;
+    database_migrations::migrate_and_verify_permission_seeds(migration_pool).await;
 
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
         "CREATE ROLE \"{runtime_role}\" LOGIN PASSWORD '{runtime_password}'"
@@ -63,15 +64,15 @@ pub async fn create() -> IdentityDatabaseFixture {
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
             "GRANT USAGE ON SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas TO \"{runtime_role}\""
         )))
-        .execute(&migration_pool)
+        .execute(migration_pool)
         .await
         .expect("runtime role receives schema usage");
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas TO \"{runtime_role}\"")))
-            .execute(&migration_pool)
+            .execute(migration_pool)
             .await
             .expect("runtime role receives owned-module table privileges");
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA identity_access, tenant_registry, realtime, catalog_pricing, entitlements_quotas TO \"{runtime_role}\"")))
-            .execute(&migration_pool)
+            .execute(migration_pool)
             .await
             .expect("runtime role receives sequence privileges for every migrated module");
     parsed_url
