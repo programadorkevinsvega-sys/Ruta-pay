@@ -95,7 +95,7 @@ pub async fn verify(context: TenantOutboxRecoveryContext<'_>) {
         .expect("JetStream stream is restored for retry");
     let mut failed_stream_cleanup = EventStreamCleanup {
         jetstream: jetstream.clone(),
-        namespace: failed_namespace,
+        namespace: failed_namespace.to_owned(),
         armed: true,
     };
     let retry_lease_token = Uuid::new_v4();
