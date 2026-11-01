@@ -12,7 +12,11 @@ pub struct OutboxDatabaseFailureContext<'a> {
 
 pub async fn verify(context: OutboxDatabaseFailureContext<'_>) {
     let OutboxDatabaseFailureContext {
-        migration_pool, runtime_pool, runtime_role, jetstream, event_topology,
+        migration_pool,
+        runtime_pool,
+        runtime_role,
+        jetstream,
+        event_topology,
     } = context;
     // Simulate a transient PostgreSQL write failure in the Outbox relay.
     // The failed claim must not consume or mutate events; restoring privileges
@@ -56,7 +60,7 @@ pub async fn verify(context: OutboxDatabaseFailureContext<'_>) {
     .execute(&migration_pool)
     .await
     .expect("isolated runtime role regains Outbox update privilege");
-    
+
     let pending_identity_before_database_failure: (i64, i64) = sqlx::query_as(
         "SELECT count(*),coalesce(sum(attempts),0) FROM identity_access.outbox_events WHERE published_at IS NULL",
     )
