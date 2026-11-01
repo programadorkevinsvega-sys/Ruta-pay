@@ -47,6 +47,7 @@ impl EntitlementResultSnapshot {
             || snapshot.limit_value.is_some_and(|limit| limit < 0)
             || snapshot.period_end <= snapshot.period_start
             || snapshot.remaining != expected_remaining
+            || !matches!(snapshot.reason.as_str(), "allowed" | "capability_disabled" | "environment_restricted" | "quota_exhausted")
             || snapshot.allowed != (snapshot.reason == "allowed")
         {
             return Err(EntitlementServiceError::IdempotencyResultUnavailable);
@@ -68,8 +69,8 @@ impl From<&Entitlement> for EntitlementResultSnapshot {
             allowed: result.allowed,
             reason: result.reason.clone(),
             environment: result.environment.clone(),
-            period_start: result.period_start,
-            period_end: result.period_end,
+            period_start: result.period_start.clone(),
+            period_end: result.period_end.clone(),
         }
     }
 }
