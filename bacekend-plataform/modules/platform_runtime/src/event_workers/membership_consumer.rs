@@ -5,6 +5,7 @@ use platform_identity_access::infrastructure::tenant_membership_consumer::{
 use sqlx::PgPool;
 use std::time::Duration;
 use tokio::{sync::watch, time};
+use tokio_stream::StreamExt;
 
 pub(super) async fn run_membership_consumer(
     pool: PgPool,
