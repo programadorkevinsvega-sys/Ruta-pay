@@ -1,5 +1,4 @@
 use reqwest::{Client, StatusCode, header};
-use sqlx::PgPool;
 use std::net::SocketAddr;
 use uuid::Uuid;
 
