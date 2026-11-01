@@ -56,7 +56,6 @@ impl Drop for AcceptanceDatabaseCleanup {
     }
 }
 
-
 pub struct TestDatabase {
     pub migration_pool: sqlx::PgPool,
     pub runtime_pool: sqlx::PgPool,
@@ -76,7 +75,7 @@ impl TestDatabase {
         let database_name = format!("phase3_{suffix}");
         let runtime_role = format!("phase3_{suffix}");
         let runtime_password = Uuid::new_v4().simple().to_string();
-    
+
         sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
             "CREATE DATABASE \"{database_name}\""
         )))
@@ -89,7 +88,7 @@ impl TestDatabase {
             runtime_role: runtime_role.clone(),
             armed: true,
         };
-    
+
         let mut database_url = url::Url::from_str(&admin_url).expect("administrator URL parses");
         database_url.set_path(&format!("/{database_name}"));
         let migration_pool = PgPoolOptions::new()
@@ -97,7 +96,7 @@ impl TestDatabase {
             .connect(database_url.as_str())
             .await
             .expect("isolated database accepts migration connection");
-    
+
         platform_identity_access::infrastructure::persistence::MIGRATOR
             .run(&migration_pool)
             .await
@@ -118,7 +117,7 @@ impl TestDatabase {
             .run(&migration_pool)
             .await
             .expect("entitlement migrations apply");
-    
+
         sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
             "CREATE ROLE \"{runtime_role}\" LOGIN PASSWORD '{runtime_password}'"
         )))
@@ -149,7 +148,7 @@ impl TestDatabase {
         .execute(&migration_pool)
         .await
         .expect("runtime role receives sequence privileges");
-    
+
         database_url
             .set_username(&runtime_role)
             .expect("runtime role username is valid");
@@ -168,7 +167,7 @@ impl TestDatabase {
                 .await
                 .expect("runtime role RLS attribute is readable");
         assert!(!bypass_rls, "application role must not bypass RLS");
-    
+
         Self { migration_pool, runtime_pool, cleanup }
     }
 

@@ -1,12 +1,14 @@
 use platform_contracts::catalog_pricing::{
-    CreatePlanRequest, GetPriceVersionRequest, ListPlansRequest, ListPlansResponse,
-    PlanResponse, PriceVersionResponse, PublishPriceVersionRequest,
-    catalog_pricing_server::CatalogPricing,
+    CreatePlanRequest, GetPriceVersionRequest, ListPlansRequest, ListPlansResponse, PlanResponse,
+    PriceVersionResponse, PublishPriceVersionRequest, catalog_pricing_server::CatalogPricing,
 };
 use tonic::{Request, Response, Status};
 
+use super::{
+    CatalogPricingApi,
+    mapping::{map_error, parse_time, parse_uuid, price_response},
+};
 use crate::application::catalog_service::PublishPriceVersionCommand;
-use super::{CatalogPricingApi, mapping::{map_error, parse_time, parse_uuid, price_response}};
 
 impl CatalogPricing for CatalogPricingApi {
     async fn create_plan(

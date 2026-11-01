@@ -1,8 +1,10 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
+use super::{
+    CatalogService, CatalogServiceError, PublishPriceVersionCommand, support::set_operator_context,
+};
 use crate::domain::catalog::{CatalogError, PriceVersion};
-use super::{CatalogService, CatalogServiceError, PublishPriceVersionCommand, support::set_operator_context};
 
 impl CatalogService {
     pub async fn publish_price_version(

@@ -1,6 +1,6 @@
 use async_nats::jetstream;
-use chrono::Utc;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use chrono::Utc;
 use opentelemetry::{global, trace::TracerProvider as _};
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerProvider};
 use platform_contracts::{
@@ -2094,10 +2094,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("API key explicitly grants the quota consumption scope")
         .into_inner();
-    assert_eq!(
-        consume_scope_authorization.key_id,
-        api_key_id.to_string()
-    );
+    assert_eq!(consume_scope_authorization.key_id, api_key_id.to_string());
 
     let phase3_slug = format!("phase3-{}", Uuid::new_v4().simple());
     let phase3_plan = client
@@ -2238,9 +2235,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         .await
         .expect("tenant entitlement list is valid JSON");
     assert_eq!(
-        phase3_entitlements
-            .as_array()
-            .map(std::vec::Vec::len),
+        phase3_entitlements.as_array().map(std::vec::Vec::len),
         Some(1),
         "tenant receives exactly the capabilities assigned to its plan"
     );
