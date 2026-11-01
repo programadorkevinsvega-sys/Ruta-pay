@@ -11,18 +11,32 @@ use reqwest::{StatusCode, header};
 use tonic::transport::Channel;
 use uuid::Uuid;
 
-pub async fn verify(
-    client: &reqwest::Client,
-    http_addr: SocketAddr,
-    grpc_addr: SocketAddr,
-    origin: &str,
-    session_cookie: &str,
-    csrf_cookie: &str,
-    tenant_id: Uuid,
-    api_key_id: Uuid,
-    api_key_secret: &str,
-    mut authorization_client: IdentityAccessClient<Channel>,
-) {
+pub struct EntitlementAcceptanceContext<'a> {
+    pub client: &'a reqwest::Client,
+    pub http_addr: SocketAddr,
+    pub grpc_addr: SocketAddr,
+    pub origin: &'a str,
+    pub session_cookie: &'a str,
+    pub csrf_cookie: &'a str,
+    pub tenant_id: Uuid,
+    pub api_key_id: Uuid,
+    pub api_key_secret: &'a str,
+    pub authorization_client: IdentityAccessClient<Channel>,
+}
+
+pub async fn verify(context: EntitlementAcceptanceContext<'_>) {
+    let EntitlementAcceptanceContext {
+        client,
+        http_addr,
+        grpc_addr,
+        origin,
+        session_cookie,
+        csrf_cookie,
+        tenant_id,
+        api_key_id,
+        api_key_secret,
+        mut authorization_client,
+    } = context;
     let consume_scope_authorization = authorization_client
         .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
             secret: api_key_secret.to_owned(),
