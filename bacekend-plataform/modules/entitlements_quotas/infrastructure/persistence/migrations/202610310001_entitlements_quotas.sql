@@ -42,7 +42,7 @@ CREATE TABLE entitlements_quotas.usage_ledger (
     CHECK (period_end > period_start)
 );
 CREATE INDEX usage_ledger_period_idx
-    ON entitlements_quotas.usage_ledger(tenant_id,capability_key,period_start,period_end);
+    ON entitlements_quotas.usage_ledger(tenant_id,capability_key,environment,period_start,period_end);
 
 ALTER TABLE entitlements_quotas.plan_capabilities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE entitlements_quotas.plan_capabilities FORCE ROW LEVEL SECURITY;
