@@ -24,8 +24,8 @@ pub async fn verify(
     let mut tenant_realtime_subscription_client = realtime_acceptance_client.clone();
     let mut tenant_realtime_subscription = tenant_realtime_subscription_client
         .subscribe_events(SubscribeEventsRequest {
-            session_token: session_cookie.clone(),
-            csrf_token: csrf_cookie.clone(),
+            session_token: session_cookie.to_owned(),
+            csrf_token: csrf_cookie.to_owned(),
             audience: "tenant".to_owned(),
             tenant_id: created_tenant_id.to_string(),
             after_cursor: replay_cursor,
