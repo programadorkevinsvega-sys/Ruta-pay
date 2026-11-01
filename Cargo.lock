@@ -276,6 +276,7 @@ dependencies = [
  "sha2 0.11.1",
  "sqlx",
  "tokio",
+ "tokio-stream",
  "tonic",
  "tracing",
  "tracing-opentelemetry",
