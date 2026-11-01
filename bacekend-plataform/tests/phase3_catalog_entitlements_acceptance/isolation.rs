@@ -7,6 +7,7 @@ pub async fn verify(fixture: &TestFixture) {
     let tenant_unassigned = fixture.tenant_unassigned;
     let tenant_one = fixture.tenant_one;
     let tenant_two = fixture.tenant_two;
+    let now = fixture.now;
     let runtime_pool = &fixture.database.runtime_pool;
     let migration_pool = &fixture.database.migration_pool;
     let unassigned = entitlements
@@ -53,7 +54,7 @@ pub async fn verify(fixture: &TestFixture) {
 
     let audit_count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM entitlements_quotas.audit_events")
-            .fetch_one(&migration_pool)
+            .fetch_one(migration_pool)
             .await
             .expect("audit records are queryable by the migration role");
     let outbox_count: i64 =
