@@ -41,7 +41,7 @@ pub async fn verify(context: TenantRegistrationRaceContext<'_>) {
             .post(&concurrent_slug_url)
             .header(header::ORIGIN, origin)
             .header(header::COOKIE, &concurrent_slug_cookie)
-            .header("x-csrf-token", &second_csrf_cookie)
+            .header("x-csrf-token", second_csrf_cookie)
             .header("x-correlation-id", "corr_tenant_slug_race_a")
             .json(&serde_json::json!({
                 "display_name": "Concurrent slug A",
@@ -54,7 +54,7 @@ pub async fn verify(context: TenantRegistrationRaceContext<'_>) {
             .post(&concurrent_slug_url)
             .header(header::ORIGIN, origin)
             .header(header::COOKIE, &concurrent_slug_cookie)
-            .header("x-csrf-token", &second_csrf_cookie)
+            .header("x-csrf-token", second_csrf_cookie)
             .header("x-correlation-id", "corr_tenant_slug_race_b")
             .json(&serde_json::json!({
                 "display_name": "Concurrent slug B",
@@ -118,7 +118,7 @@ pub async fn verify(context: TenantRegistrationRaceContext<'_>) {
             .post(&concurrent_slug_url)
             .header(header::ORIGIN, origin)
             .header(header::COOKIE, &concurrent_slug_cookie)
-            .header("x-csrf-token", &second_csrf_cookie)
+            .header("x-csrf-token", second_csrf_cookie)
             .header("x-correlation-id", "corr_tenant_document_race_a")
             .json(&serde_json::json!({
                 "display_name": "Concurrent document A",
@@ -131,7 +131,7 @@ pub async fn verify(context: TenantRegistrationRaceContext<'_>) {
             .post(&concurrent_slug_url)
             .header(header::ORIGIN, origin)
             .header(header::COOKIE, &concurrent_slug_cookie)
-            .header("x-csrf-token", &second_csrf_cookie)
+            .header("x-csrf-token", second_csrf_cookie)
             .header("x-correlation-id", "corr_tenant_document_race_b")
             .json(&serde_json::json!({
                 "display_name": "Concurrent document B",
