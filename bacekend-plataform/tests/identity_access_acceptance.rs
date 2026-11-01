@@ -1974,18 +1974,18 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         created_tenant_id,
     )
     .await;
-    phase3_entitlements::verify(
-        &client,
+    phase3_entitlements::verify(phase3_entitlements::EntitlementAcceptanceContext {
+        client: &client,
         http_addr,
         grpc_addr,
-        &origin,
-        &session_cookie,
-        &csrf_cookie,
-        created_tenant_id,
+        origin: &origin,
+        session_cookie: &session_cookie,
+        csrf_cookie: &csrf_cookie,
+        tenant_id: created_tenant_id,
         api_key_id,
-        api_key_secret,
-        authorization_client.clone(),
-    )
+        api_key_secret: &api_key_secret,
+        authorization_client: authorization_client.clone(),
+    })
     .await;
 
     let denied_api_key_scope = authorization_client
