@@ -15,6 +15,7 @@ use std::{
 };
 use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
 use tonic::transport::{Channel, Endpoint};
+use uuid::Uuid;
 
 pub struct ServerFixture {
     pub grpc_addr: SocketAddr,
@@ -44,8 +45,8 @@ impl ServerFixture {
                 .expect("identity module endpoint parses")
                 .connect_lazy();
         let module_identity_client = IdentityAccessClient::new(runtime_channel.clone());
-        let module_catalog_client = CatalogPricingGrpcClient::new(runtime_channel.clone());
-        let module_tenant_client = TenantRegistryGrpcClient::new(runtime_channel);
+        let module_catalog_client = CatalogPricingClient::new(runtime_channel.clone());
+        let module_tenant_client = TenantRegistryClient::new(runtime_channel);
         let (grpc_stop, grpc_signal) = oneshot::channel();
         let grpc_pool = runtime_pool.clone();
         let grpc_task = tokio::spawn(platform_runtime::module_config::serve(
@@ -80,7 +81,7 @@ impl ServerFixture {
             .await
             .expect("catalog gRPC channel connects");
         let entitlements_client =
-            EntitlementsQuotasGrpcClient::connect(format!("http://{grpc_addr}"))
+            EntitlementsQuotasClient::connect(format!("http://{grpc_addr}"))
                 .await
                 .expect("entitlements gRPC channel connects");
         let mut authorization_client = identity_client.clone();
