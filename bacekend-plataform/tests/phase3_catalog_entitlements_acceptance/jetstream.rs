@@ -4,6 +4,7 @@ use async_nats::jetstream::{
     consumer::{AckPolicy, DeliverPolicy},
 };
 use platform_runtime::event_topology::{EventTopology, delete_e2e_stream};
+use redis::aio::ConnectionManager;
 use serde_json::Value;
 use std::time::Duration;
 use tokio_stream::StreamExt;
@@ -19,6 +20,11 @@ pub async fn verify(fixture: &TestFixture) {
         .await
         .expect("authenticated NATS connection succeeds");
     let jetstream = jetstream::new(client);
+    let redis_url = std::env::var("PLATFORM_REDIS_URL").expect("CI provides authenticated Redis");
+    let redis_client = redis::Client::open(redis_url).expect("Redis URL is valid");
+    let mut redis = ConnectionManager::new(redis_client)
+        .await
+        .expect("authenticated Redis connection succeeds");
     let namespace = format!("e2e_phase3_{}", Uuid::new_v4().simple());
     let topology =
         EventTopology::from_namespace(Some(&namespace)).expect("isolated namespace is valid");
@@ -94,6 +100,13 @@ pub async fn verify(fixture: &TestFixture) {
             .expect("JetStream message is valid");
         let envelope: Value =
             serde_json::from_slice(&message.payload).expect("event envelope is JSON");
+        platform_realtime::infrastructure::grpc::realtime_gateway_api::persist_and_publish(
+            &fixture.database.runtime_pool,
+            &mut redis,
+            &message.payload,
+        )
+        .await
+        .expect("phase three event is persisted in realtime journal and signalled through Redis");
         received.push((
             envelope["event_id"].as_str().unwrap_or_default().to_owned(),
             envelope["event_type"]
@@ -120,6 +133,32 @@ pub async fn verify(fixture: &TestFixture) {
             .any(|event| event.0 == usage_event.to_string()
                 && event.1 == "quota.consumed"
                 && event.2 == "phase3_jetstream_entitlement")
+    );
+    let platform_events = platform_realtime::infrastructure::persistence::replay(
+        &fixture.database.runtime_pool,
+        "platform",
+        None,
+        0,
+        10,
+    )
+    .await
+    .expect("platform realtime cursor replays catalog events");
+    let tenant_events = platform_realtime::infrastructure::persistence::replay(
+        &fixture.database.runtime_pool,
+        "tenant",
+        Some(fixture.tenant_one),
+        0,
+        10,
+    )
+    .await
+    .expect("tenant realtime cursor replays quota events");
+    assert!(
+        platform_events.iter().any(|event| event.event_id == catalog_event),
+        "catalog event reaches the platform realtime journal"
+    );
+    assert!(
+        tenant_events.iter().any(|event| event.event_id == usage_event),
+        "quota event reaches the authorized tenant realtime journal"
     );
     delete_e2e_stream(&jetstream, &namespace)
         .await
