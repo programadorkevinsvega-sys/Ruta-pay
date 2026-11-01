@@ -65,6 +65,11 @@ pub async fn persist_event(pool: &PgPool, envelope: &EventEnvelope) -> Result<bo
                 | "identity.session.revoked"
                 | "identity.tenant_user.registered"
                 | "identity.operator.bootstrap.completed"
+                | "catalog.plan.created"
+                | "catalog.price_version.published"
+                | "entitlement.capabilities.configured"
+                | "tenant.plan.assigned"
+                | "quota.consumed"
         )
     {
         return Err(JournalError::InvalidEnvelope);
