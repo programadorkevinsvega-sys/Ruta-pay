@@ -1,9 +1,18 @@
 use async_nats::jetstream;
-use std::{collections::HashMap, sync::{Arc, Mutex}};
-use tracing::{Event, field::{Field, Visit}};
-use tracing_subscriber::{layer::{Context, Layer}, registry::LookupSpan};
-use uuid::Uuid;
 use platform_runtime::event_topology::delete_e2e_stream;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
+use tracing::{
+    Event,
+    field::{Field, Visit},
+};
+use tracing_subscriber::{
+    layer::{Context, Layer},
+    registry::LookupSpan,
+};
+use uuid::Uuid;
 
 #[derive(Clone, Default)]
 pub(super) struct EventCapture(pub(super) Arc<Mutex<Vec<HashMap<String, String>>>>);
@@ -144,4 +153,3 @@ pub(super) fn cookie_value(cookies: &[String], name: &str) -> String {
         })
         .expect("required session cookie is present")
 }
-
