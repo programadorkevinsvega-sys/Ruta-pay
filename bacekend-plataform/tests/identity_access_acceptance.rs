@@ -1,3 +1,8 @@
+#[path = "identity_access_acceptance/phase3_catalog.rs"]
+mod phase3_catalog;
+#[path = "identity_access_acceptance/phase3_entitlements.rs"]
+mod phase3_entitlements;
+
 use async_nats::jetstream;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
@@ -2097,232 +2102,27 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         scoped_api_key_authorization.tenant_id,
         created_tenant_id.to_string()
     );
-    let consume_scope_authorization = authorization_client
-        .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
-            secret: api_key_secret.to_owned(),
-            tenant_id: created_tenant_id.to_string(),
-            environment: "live".to_owned(),
-            required_scope: "usage.consume".to_owned(),
-            correlation_id: "corr_phase3_consume_scope_allowed".to_owned(),
-        })
-        .await
-        .expect("API key explicitly grants the quota consumption scope")
-        .into_inner();
-    assert_eq!(consume_scope_authorization.key_id, api_key_id.to_string());
-
-    let phase3_slug = format!("phase3-{}", Uuid::new_v4().simple());
-    let phase3_plan = client
-        .post(format!("http://{http_addr}/v1/platform/catalog/plans"))
-        .header(header::ORIGIN, &origin)
-        .header(
-            header::COOKIE,
-            format!(
-                "payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"
-            ),
-        )
-        .header("x-csrf-token", &operator_csrf_cookie)
-        .header("x-correlation-id", "corr_phase3_plan_create")
-        .json(&serde_json::json!({
-            "slug": phase3_slug,
-            "name": "Phase 3 Acceptance",
-            "description": "Real BFF to gRPC catalog acceptance"
-        }))
-        .send()
-        .await
-        .expect("catalog plan creation traverses the real BFF and gRPC module");
-    assert_eq!(phase3_plan.status(), StatusCode::CREATED);
-    let phase3_plan_body: serde_json::Value = phase3_plan
-        .json()
-        .await
-        .expect("catalog plan response is valid JSON");
-    let phase3_plan_id = phase3_plan_body["plan_id"]
-        .as_str()
-        .expect("catalog plan id is returned")
-        .to_owned();
-
-    let phase3_effective_from = (Utc::now() - chrono::Duration::seconds(30)).to_rfc3339();
-    let phase3_price = client
-        .post(format!(
-            "http://{http_addr}/v1/platform/catalog/plans/{phase3_plan_id}/prices"
-        ))
-        .header(header::ORIGIN, &origin)
-        .header(
-            header::COOKIE,
-            format!(
-                "payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"
-            ),
-        )
-        .header("x-csrf-token", &operator_csrf_cookie)
-        .header("x-correlation-id", "corr_phase3_price_publish")
-        .json(&serde_json::json!({
-            "plan_id": phase3_plan_id,
-            "currency": "USD",
-            "amount_minor": 1200,
-            "period_unit": "month",
-            "interval_count": 1,
-            "effective_from": phase3_effective_from,
-            "effective_until": null
-        }))
-        .send()
-        .await
-        .expect("price publication traverses the real BFF and gRPC module");
-    assert_eq!(phase3_price.status(), StatusCode::CREATED);
-    let phase3_price_body: serde_json::Value = phase3_price
-        .json()
-        .await
-        .expect("published price response is valid JSON");
-    let phase3_price_id = phase3_price_body["price_version_id"]
-        .as_str()
-        .expect("published price version id is returned")
-        .to_owned();
-
-    let phase3_capabilities = client
-        .post(format!("http://{http_addr}/v1/platform/entitlements/capabilities"))
-        .header(header::ORIGIN, &origin)
-        .header(
-            header::COOKIE,
-            format!(
-                "payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"
-            ),
-        )
-        .header("x-csrf-token", &operator_csrf_cookie)
-        .header("x-correlation-id", "corr_phase3_capabilities")
-        .json(&serde_json::json!({
-            "price_version_id": phase3_price_id,
-            "capabilities": [{
-                "capability_key": "payments.monthly",
-                "enabled": true,
-                "limit_value": 2,
-                "unit": "operations",
-                "overage_policy": "deny",
-                "environment": "all",
-                "quota_period": "month"
-            }]
-        }))
-        .send()
-        .await
-        .expect("capability configuration traverses the real BFF and gRPC module");
-    assert_eq!(phase3_capabilities.status(), StatusCode::OK);
-    let phase3_capabilities_body: serde_json::Value = phase3_capabilities
-        .json()
-        .await
-        .expect("capability configuration response is valid JSON");
-    assert_eq!(phase3_capabilities_body["capabilities_saved"], 1);
-
-    let phase3_assignment = client
-        .post(format!("http://{http_addr}/v1/platform/entitlements/assignments"))
-        .header(header::ORIGIN, &origin)
-        .header(
-            header::COOKIE,
-            format!(
-                "payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"
-            ),
-        )
-        .header("x-csrf-token", &operator_csrf_cookie)
-        .header("x-correlation-id", "corr_phase3_assignment")
-        .json(&serde_json::json!({
-            "tenant_id": created_tenant_id.to_string(),
-            "price_version_id": phase3_price_id,
-            "effective_from": phase3_effective_from,
-            "effective_until": null
-        }))
-        .send()
-        .await
-        .expect("tenant plan assignment traverses the real BFF and gRPC module");
-    assert_eq!(phase3_assignment.status(), StatusCode::CREATED);
-
-    let phase3_entitlement_before = client
-        .get(format!(
-            "http://{http_addr}/v1/tenants/{created_tenant_id}/entitlements?environment=live"
-        ))
-        .header(header::ORIGIN, &origin)
-        .header(
-            header::COOKIE,
-            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
-        )
-        .send()
-        .await
-        .expect("tenant entitlement list traverses the real BFF and gRPC module");
-    assert_eq!(phase3_entitlement_before.status(), StatusCode::OK);
-    let phase3_entitlements: serde_json::Value = phase3_entitlement_before
-        .json()
-        .await
-        .expect("tenant entitlement list is valid JSON");
-    assert_eq!(
-        phase3_entitlements.as_array().map(std::vec::Vec::len),
-        Some(1),
-        "tenant receives exactly the capabilities assigned to its plan"
-    );
-    assert_eq!(phase3_entitlements[0]["capability_key"], "payments.monthly");
-    assert_eq!(phase3_entitlements[0]["consumed"], 0);
-
-    let phase3_consumption = entitlements_acceptance_client
-        .clone()
-        .consume_quota(tonic::Request::new(
-            platform_contracts::entitlements_quotas::ConsumeQuotaRequest {
-                api_key_secret: api_key_secret.to_owned(),
-                tenant_id: created_tenant_id.to_string(),
-                capability_key: "payments.monthly".to_owned(),
-                environment: "live".to_owned(),
-                quantity: 1,
-                idempotency_key: "phase3-grpc-consume-001".to_owned(),
-                correlation_id: "corr_phase3_grpc_consume".to_owned(),
-            },
-        ))
-        .await
-        .expect("quota consumption requires the real API key authorization gRPC path")
-        .into_inner();
-    assert!(!phase3_consumption.replayed);
-    let phase3_consumed_entitlement = phase3_consumption
-        .entitlement
-        .expect("quota consumption returns the updated entitlement");
-    assert_eq!(phase3_consumed_entitlement.consumed, 1);
-    assert_eq!(phase3_consumed_entitlement.remaining, Some(1));
-
-    let phase3_replay = entitlements_acceptance_client
-        .clone()
-        .consume_quota(tonic::Request::new(
-            platform_contracts::entitlements_quotas::ConsumeQuotaRequest {
-                api_key_secret: api_key_secret.to_owned(),
-                tenant_id: created_tenant_id.to_string(),
-                capability_key: "payments.monthly".to_owned(),
-                environment: "live".to_owned(),
-                quantity: 1,
-                idempotency_key: "phase3-grpc-consume-001".to_owned(),
-                correlation_id: "corr_phase3_grpc_consume_replay".to_owned(),
-            },
-        ))
-        .await
-        .expect("quota consumption replay is idempotent across the gRPC boundary")
-        .into_inner();
-    assert!(phase3_replay.replayed);
-    assert_eq!(
-        phase3_replay
-            .entitlement
-            .expect("idempotent replay returns the recorded entitlement")
-            .consumed,
-        1
-    );
-
-    let phase3_entitlement_after = client
-        .get(format!(
-            "http://{http_addr}/v1/tenants/{created_tenant_id}/entitlements/payments.monthly?environment=live"
-        ))
-        .header(header::ORIGIN, &origin)
-        .header(
-            header::COOKIE,
-            format!("payvia_tenant_session={session_cookie}; payvia_tenant_csrf={csrf_cookie}"),
-        )
-        .send()
-        .await
-        .expect("tenant entitlement detail reflects gRPC quota consumption");
-    assert_eq!(phase3_entitlement_after.status(), StatusCode::OK);
-    let phase3_entitlement_after_body: serde_json::Value = phase3_entitlement_after
-        .json()
-        .await
-        .expect("updated tenant entitlement is valid JSON");
-    assert_eq!(phase3_entitlement_after_body["consumed"], 1);
-    assert_eq!(phase3_entitlement_after_body["remaining"], 1);
+    let phase3_price_id = phase3_catalog::configure(
+        &client,
+        http_addr,
+        &origin,
+        &operator_session_cookie,
+        &operator_csrf_cookie,
+        created_tenant_id,
+    )
+    .await;
+    phase3_entitlements::verify(
+        &client,
+        http_addr,
+        &origin,
+        &session_cookie,
+        &csrf_cookie,
+        created_tenant_id,
+        &api_key_secret,
+        authorization_client.clone(),
+        entitlements_acceptance_client.clone(),
+    )
+    .await;
 
     let denied_api_key_scope = authorization_client
         .authorize_api_key_operation(AuthorizeApiKeyOperationRequest {
