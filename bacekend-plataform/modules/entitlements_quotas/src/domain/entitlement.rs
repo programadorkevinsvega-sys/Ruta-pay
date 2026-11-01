@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -13,7 +12,7 @@ pub struct Capability {
     pub quota_period: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entitlement {
     pub tenant_id: Uuid,
     pub price_version_id: Uuid,
