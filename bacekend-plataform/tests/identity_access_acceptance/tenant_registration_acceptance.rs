@@ -8,6 +8,7 @@ pub struct TenantRegistrationResult {
     pub legal_identification_number: String,
     pub tenant_id: Uuid,
     pub tenant_body: Value,
+    pub tenant_slug: String,
 }
 
 pub async fn verify(
@@ -176,5 +177,6 @@ pub async fn verify(
         legal_identification_number,
         tenant_id: created_tenant_id,
         tenant_body,
+        tenant_slug,
     }
 }
