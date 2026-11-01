@@ -45,7 +45,6 @@ pub async fn verify(
         registration_subject,
         http_addr,
         origin,
-        &tenant_slug,
         created_tenant_id,
         &second_tenant_credentials,
     )
