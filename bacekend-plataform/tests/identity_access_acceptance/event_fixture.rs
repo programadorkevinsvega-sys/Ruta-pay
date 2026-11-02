@@ -93,7 +93,7 @@ pub async fn create(context: EventFixtureContext<'_>) -> EventFixture {
         created_tenant_id,
     })
     .await;
-    identity_outbox_recovery::verify(migration_pool, runtime_pool, &jetstream).await;
+    identity_outbox_recovery::verify(migration_pool, runtime_pool, jetstream.clone()).await;
     let event_delivery =
         tenant_event_delivery::verify(tenant_event_delivery::TenantEventDeliveryContext {
             client,
