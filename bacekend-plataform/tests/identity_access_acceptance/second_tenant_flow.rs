@@ -36,17 +36,19 @@ pub async fn verify(
     )
     .await;
     let second_tenant_id = second_tenant_isolation::create_and_verify(
-        client,
-        migration_pool,
-        runtime_pool,
-        jetstream,
-        event_topology,
-        stream,
-        registration_subject,
-        http_addr,
-        origin,
-        created_tenant_id,
-        &second_tenant_credentials,
+        second_tenant_isolation::SecondTenantIsolationContext {
+            client,
+            migration_pool,
+            runtime_pool,
+            jetstream,
+            event_topology,
+            stream,
+            registration_subject,
+            http_addr,
+            origin,
+            created_tenant_id,
+            credentials: &second_tenant_credentials,
+        },
     )
     .await;
 
