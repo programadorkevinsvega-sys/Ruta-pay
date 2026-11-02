@@ -90,14 +90,16 @@ pub async fn setup(environment: &IdentityEnvironment) -> TenantOnboardingFixture
     )
     .await;
     let tenant_admin_status_body = tenant_status_outbox_acceptance::verify(
-        client,
-        migration_pool,
-        http_addr,
-        origin,
-        &operator_session_cookie,
-        &operator_csrf_cookie,
-        created_tenant_id,
-        &tenant_body,
+        tenant_status_outbox_acceptance::TenantStatusOutboxContext {
+            client,
+            migration_pool,
+            http_addr,
+            origin,
+            operator_session_cookie: &operator_session_cookie,
+            operator_csrf_cookie: &operator_csrf_cookie,
+            created_tenant_id,
+            tenant_body: &tenant_body,
+        },
     )
     .await;
     TenantOnboardingFixture {
