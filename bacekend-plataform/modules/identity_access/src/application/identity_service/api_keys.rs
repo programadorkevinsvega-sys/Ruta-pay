@@ -1,9 +1,9 @@
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::domain::api_key::{create_api_key, ApiKeyEnvironment};
-use super::{ApiKeyMetadata, CreatedApiKey, IdentityError, IdentityService};
 use super::support::{insert_audit, set_tenant_context};
+use super::{ApiKeyMetadata, CreatedApiKey, IdentityError, IdentityService};
+use crate::domain::api_key::{ApiKeyEnvironment, create_api_key};
 
 impl IdentityService {
     pub async fn create_api_key(
