@@ -87,17 +87,19 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     .await;
 
     let second_tenant = second_tenant_flow::verify(
-        &client,
-        &migration_pool,
-        &runtime_pool,
-        &jetstream,
-        &event_topology,
-        &stream,
-        &registration_subject,
-        http_addr,
-        &origin,
-        &tenant_slug,
-        created_tenant_id,
+        second_tenant_flow::SecondTenantFlowContext {
+            client: &client,
+            migration_pool: &migration_pool,
+            runtime_pool: &runtime_pool,
+            jetstream: &jetstream,
+            event_topology: &event_topology,
+            stream: &stream,
+            registration_subject: &registration_subject,
+            http_addr,
+            origin: &origin,
+            tenant_slug: &tenant_slug,
+            created_tenant_id,
+        },
     )
     .await;
     let second_session_cookie = second_tenant.credentials.session_cookie;
