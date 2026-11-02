@@ -51,7 +51,7 @@ pub async fn bootstrap_and_verify_redis_failure(
         "operator bootstrap is durable for realtime"
     );
 
-    let redis_client = redis::Client::open(redis_url.clone()).expect("Redis URL parses");
+    let redis_client = redis::Client::open(redis_url).expect("Redis URL parses");
     let redis_manager = redis::aio::ConnectionManager::new(redis_client.clone())
         .await
         .expect("real development Redis accepts a connection");
