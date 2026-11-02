@@ -136,4 +136,3 @@ pub struct TenantMembershipRecord {
     pub role: String,
     pub membership_status: String,
 }
-}
