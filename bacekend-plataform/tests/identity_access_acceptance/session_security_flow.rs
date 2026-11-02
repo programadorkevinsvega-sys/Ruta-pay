@@ -57,15 +57,17 @@ pub async fn verify(context: SessionSecurityFlowContext<'_>) -> MatrixOperatorCo
     )
     .await;
     let matrix_operator_cookies = super::operator_revocation_audit::verify_and_reauthenticate(
-        client,
-        migration_pool,
-        http_addr,
-        origin,
-        operator_id,
-        operator_session_cookie,
-        operator_csrf_cookie,
-        operator_email,
-        operator_password,
+        super::operator_revocation_audit::OperatorRevocationAuditContext {
+            client,
+            migration_pool,
+            http_addr,
+            origin,
+            operator_id,
+            operator_session_cookie,
+            operator_csrf_cookie,
+            operator_email,
+            operator_password,
+        },
     )
     .await;
     let rejected_csrf = client
