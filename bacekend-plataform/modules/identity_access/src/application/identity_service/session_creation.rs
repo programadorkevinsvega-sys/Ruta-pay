@@ -1,11 +1,11 @@
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
 use sha2::{Digest, Sha256};
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::domain::{email_address::EmailAddress, password_hash::verify_password};
 use super::{CreatedSession, IdentityError, IdentityService, SecretToken};
+use crate::domain::{email_address::EmailAddress, password_hash::verify_password};
 
 const SESSION_LIFETIME: std::time::Duration = std::time::Duration::from_secs(12 * 60 * 60);
 
