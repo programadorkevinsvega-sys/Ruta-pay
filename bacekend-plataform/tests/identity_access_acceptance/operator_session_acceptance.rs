@@ -13,16 +13,24 @@ pub struct OperatorSessionCookies {
     pub csrf_cookie: String,
 }
 
+pub struct OperatorSessionAcceptanceContext<'a> {
+    pub client: &'a Client,
+    pub http_addr: std::net::SocketAddr,
+    pub origin: &'a str,
+    pub operator_email: &'a str,
+    pub operator_password: &'a str,
+    pub operator_id: Uuid,
+    pub authorization_client: &'a mut IdentityAccessClient<Channel>,
+    pub migration_pool: &'a PgPool,
+}
+
 pub async fn verify(
-    client: &Client,
-    http_addr: std::net::SocketAddr,
-    origin: &str,
-    operator_email: &str,
-    operator_password: &str,
-    operator_id: Uuid,
-    authorization_client: &mut IdentityAccessClient<Channel>,
-    migration_pool: &PgPool,
+    context: OperatorSessionAcceptanceContext<'_>,
 ) -> OperatorSessionCookies {
+    let OperatorSessionAcceptanceContext {
+        client, http_addr, origin, operator_email, operator_password,
+        operator_id, authorization_client, migration_pool,
+    } = context;
     let invalid_origin_operator_login = client
         .post(format!("http://{http_addr}/v1/platform/identity/session"))
         .header(header::ORIGIN, "https://attacker.example")
@@ -33,10 +41,7 @@ pub async fn verify(
         .send()
         .await
         .expect("untrusted Origin operator login receives an HTTP response");
-    assert_eq!(
-        invalid_origin_operator_login.status(),
-        StatusCode::FORBIDDEN
-    );
+    assert_eq!(invalid_origin_operator_login.status(), StatusCode::FORBIDDEN);
 
     let operator_login = client
         .post(format!("http://{http_addr}/v1/platform/identity/session"))
@@ -89,34 +94,27 @@ pub async fn verify(
         .expect("authorization decisions are auditable");
     assert_eq!(authorization_audit_count, 2);
     let operator_session = client
-            .get(format!("http://{http_addr}/v1/platform/identity/session"))
-            .header(
-                header::COOKIE,
-                format!(
-                    "payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"
-                ),
-            )
-            .send()
-            .await
-            .expect("operator session validates through the BFF");
+        .get(format!("http://{http_addr}/v1/platform/identity/session"))
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("operator session validates through the BFF");
     assert_eq!(operator_session.status(), StatusCode::OK);
     let operator_session_used_for_tenant = client
-            .delete(format!("http://{http_addr}/v1/identity/session"))
-            .header(header::ORIGIN, origin)
-            .header(
-                header::COOKIE,
-                format!(
-                    "payvia_tenant_session={operator_session_cookie}; payvia_tenant_csrf={operator_csrf_cookie}"
-                ),
-            )
-            .header("x-csrf-token", operator_csrf_cookie.as_str())
-            .send()
-            .await
-            .expect("operator session cannot access tenant identity");
-    assert_eq!(
-        operator_session_used_for_tenant.status(),
-        StatusCode::UNAUTHORIZED
-    );
+        .delete(format!("http://{http_addr}/v1/identity/session"))
+        .header(header::ORIGIN, origin)
+        .header(
+            header::COOKIE,
+            format!("payvia_tenant_session={operator_session_cookie}; payvia_tenant_csrf={operator_csrf_cookie}"),
+        )
+        .header("x-csrf-token", operator_csrf_cookie.as_str())
+        .send()
+        .await
+        .expect("operator session cannot access tenant identity");
+    assert_eq!(operator_session_used_for_tenant.status(), StatusCode::UNAUTHORIZED);
     OperatorSessionCookies {
         session_cookie: operator_session_cookie,
         csrf_cookie: operator_csrf_cookie,
