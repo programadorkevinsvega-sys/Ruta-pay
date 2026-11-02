@@ -90,7 +90,7 @@ impl IdentityService {
         })
     }
 
-    async fn authorized_tenant_actor(
+    pub(super) async fn authorized_tenant_actor(
         &self,
         token: &str,
         tenant_id: Uuid,
