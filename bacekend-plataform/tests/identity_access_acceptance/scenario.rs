@@ -105,21 +105,23 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     let second_legal_identification_number = second_tenant.credentials.legal_identification_number;
 
     let replay_cursor = realtime_acceptance_flow::verify(
-        &redis_manager,
-        &runtime_pool,
-        &migration_pool,
-        &event_payload,
-        registration_event_id,
-        &legal_identification_number,
-        &client,
-        http_addr,
-        &session_cookie,
-        &csrf_cookie,
-        created_tenant_id,
-        &stream,
-        &event_topology,
-        &operator_session_cookie,
-        &operator_csrf_cookie,
+        realtime_acceptance_flow::RealtimeAcceptanceFlowContext {
+            redis_manager: &redis_manager,
+            runtime_pool: &runtime_pool,
+            migration_pool: &migration_pool,
+            event_payload: &event_payload,
+            registration_event_id,
+            legal_identification_number: &legal_identification_number,
+            client: &client,
+            http_addr,
+            session_cookie: &session_cookie,
+            csrf_cookie: &csrf_cookie,
+            created_tenant_id,
+            stream: &stream,
+            event_topology: &event_topology,
+            operator_session_cookie: &operator_session_cookie,
+            operator_csrf_cookie: &operator_csrf_cookie,
+        },
     )
     .await;
 
