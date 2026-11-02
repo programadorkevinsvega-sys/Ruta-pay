@@ -7,19 +7,25 @@ use uuid::Uuid;
 
 use super::second_tenant_registration::SecondTenantCredentials;
 
-pub async fn create_and_verify(
-    client: &Client,
-    migration_pool: &PgPool,
-    runtime_pool: &PgPool,
-    jetstream: &jetstream::Context,
-    event_topology: &EventTopology,
-    stream: &jetstream::stream::Stream,
-    registration_subject: &str,
-    http_addr: SocketAddr,
-    origin: &str,
-    created_tenant_id: Uuid,
-    credentials: &SecondTenantCredentials,
-) -> Uuid {
+pub struct SecondTenantIsolationContext<'a> {
+    pub client: &'a Client,
+    pub migration_pool: &'a PgPool,
+    pub runtime_pool: &'a PgPool,
+    pub jetstream: &'a jetstream::Context,
+    pub event_topology: &'a EventTopology,
+    pub stream: &'a jetstream::stream::Stream,
+    pub registration_subject: &'a str,
+    pub http_addr: SocketAddr,
+    pub origin: &'a str,
+    pub created_tenant_id: Uuid,
+    pub credentials: &'a SecondTenantCredentials,
+}
+
+pub async fn create_and_verify(context: SecondTenantIsolationContext<'_>) -> Uuid {
+    let SecondTenantIsolationContext {
+        client, migration_pool, runtime_pool, jetstream, event_topology, stream,
+        registration_subject, http_addr, origin, created_tenant_id, credentials,
+    } = context;
     let second_session_cookie = &credentials.session_cookie;
     let second_csrf_cookie = &credentials.csrf_cookie;
     let second_legal_identification_number = &credentials.legal_identification_number;
