@@ -67,7 +67,7 @@ pub async fn register(
             .header("x-correlation-id", "corr_duplicate_tenant_slug")
             .json(&serde_json::json!({
                 "display_name": "Duplicate slug tenant",
-                "slug": tenant_slug.clone(),
+                "slug": tenant_slug,
                 "legal_identification_type": "cc",
                 "legal_identification_number": duplicate_slug_identification
             }))
