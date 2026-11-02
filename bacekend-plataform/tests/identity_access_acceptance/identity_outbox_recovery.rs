@@ -33,7 +33,7 @@ pub async fn verify(
     let failed_identity_delivery =
         platform_identity_access::infrastructure::outbox_relay::relay_batch(
             runtime_pool,
-            &jetstream,
+            jetstream.clone(),
             &identity_failure_topology.subject_prefix,
         )
         .await
