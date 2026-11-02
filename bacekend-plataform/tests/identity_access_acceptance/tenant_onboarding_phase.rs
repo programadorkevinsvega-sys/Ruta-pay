@@ -31,15 +31,17 @@ pub async fn setup(environment: &IdentityEnvironment) -> TenantOnboardingFixture
     let captured_events = &environment.captured_events;
     let registered_user_id = environment.registered_user_id;
     let tenant_cookies = tenant_session_acceptance::verify(
-        client,
-        http_addr,
-        origin,
-        email,
-        password,
-        test_source_ip,
-        redis_manager,
-        captured_events,
-        registered_user_id,
+        tenant_session_acceptance::TenantSessionAcceptanceContext {
+            client,
+            http_addr,
+            origin,
+            email,
+            password,
+            test_source_ip,
+            redis_manager,
+            captured_events,
+            registered_user_id,
+        },
     )
     .await;
     let session_cookie = tenant_cookies.session_cookie.clone();
