@@ -8,18 +8,24 @@ use tokio::time::Duration;
 use tonic::transport::Channel;
 use uuid::Uuid;
 
-pub async fn verify(
-    client: &Client,
-    realtime_acceptance_client: &mut RealtimeGatewayClient<Channel>,
-    migration_pool: &PgPool,
-    http_addr: SocketAddr,
-    origin: &str,
-    session_cookie: &str,
-    csrf_cookie: &str,
-    registered_user_id: Uuid,
-    created_tenant_id: Uuid,
-    replay_cursor: u64,
-) {
+pub struct TenantRealtimeRevocationContext<'a> {
+    pub client: &'a Client,
+    pub realtime_acceptance_client: &'a mut RealtimeGatewayClient<Channel>,
+    pub migration_pool: &'a PgPool,
+    pub http_addr: SocketAddr,
+    pub origin: &'a str,
+    pub session_cookie: &'a str,
+    pub csrf_cookie: &'a str,
+    pub registered_user_id: Uuid,
+    pub created_tenant_id: Uuid,
+    pub replay_cursor: u64,
+}
+
+pub async fn verify(context: TenantRealtimeRevocationContext<'_>) {
+    let TenantRealtimeRevocationContext {
+        client, realtime_acceptance_client, migration_pool, http_addr, origin,
+        session_cookie, csrf_cookie, registered_user_id, created_tenant_id, replay_cursor,
+    } = context;
     let mut tenant_realtime_subscription_client = realtime_acceptance_client.clone();
     let mut tenant_realtime_subscription = tenant_realtime_subscription_client
         .subscribe_events(SubscribeEventsRequest {
