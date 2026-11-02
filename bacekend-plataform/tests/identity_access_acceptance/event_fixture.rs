@@ -78,15 +78,15 @@ pub async fn create(context: EventFixtureContext<'_>) -> EventFixture {
         .expect("test event namespace is valid");
     outbox_database_failures::verify(outbox_database_failures::OutboxDatabaseFailureContext {
         migration_pool,
-        runtime_pool: runtime_pool,
-        runtime_role: runtime_role,
+        runtime_pool,
+        runtime_role,
         jetstream: &jetstream,
         event_topology: &event_topology,
     })
     .await;
     tenant_outbox_recovery::verify(tenant_outbox_recovery::TenantOutboxRecoveryContext {
         migration_pool,
-        runtime_pool: runtime_pool,
+        runtime_pool,
         jetstream: &jetstream,
         failed_topology: &failed_topology,
         failed_namespace: &failed_namespace,
@@ -98,7 +98,7 @@ pub async fn create(context: EventFixtureContext<'_>) -> EventFixture {
         tenant_event_delivery::verify(tenant_event_delivery::TenantEventDeliveryContext {
             client,
             migration_pool,
-            runtime_pool: runtime_pool,
+            runtime_pool,
             jetstream: &jetstream,
             event_topology: &event_topology,
             event_namespace,
@@ -107,7 +107,7 @@ pub async fn create(context: EventFixtureContext<'_>) -> EventFixture {
             csrf_cookie,
             created_tenant_id,
             registered_user_id,
-            legal_identification_number: legal_identification_number,
+            legal_identification_number,
         })
         .await;
     let stream = event_delivery.stream;
