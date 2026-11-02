@@ -5,9 +5,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::domain::{
-    api_key::NewApiKey,
-    email_address::EmailAddressError,
-    password::PasswordError,
+    api_key::NewApiKey, email_address::EmailAddressError, password::PasswordError,
     password_hash::PasswordHashError,
 };
 
