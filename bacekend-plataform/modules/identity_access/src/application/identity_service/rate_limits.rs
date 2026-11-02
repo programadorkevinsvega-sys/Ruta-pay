@@ -8,7 +8,7 @@ const LOGIN_WINDOW_SECONDS: u64 = 60;
 const LOGIN_WINDOW_LIMIT: u64 = 10;
 
 impl IdentityService {
-    async fn enforce_login_rate_limit(
+    pub(super) async fn enforce_login_rate_limit(
         &self,
         email: &str,
         source_ip: &str,
