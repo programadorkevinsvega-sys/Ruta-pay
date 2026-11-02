@@ -10,17 +10,25 @@ pub struct MatrixOperatorCookies {
     pub csrf_cookie: String,
 }
 
+pub struct OperatorRevocationAuditContext<'a> {
+    pub client: &'a Client,
+    pub migration_pool: &'a PgPool,
+    pub http_addr: SocketAddr,
+    pub origin: &'a str,
+    pub operator_id: Uuid,
+    pub operator_session_cookie: &'a str,
+    pub operator_csrf_cookie: &'a str,
+    pub operator_email: &'a str,
+    pub operator_password: &'a str,
+}
+
 pub async fn verify_and_reauthenticate(
-    client: &Client,
-    migration_pool: &PgPool,
-    http_addr: SocketAddr,
-    origin: &str,
-    operator_id: Uuid,
-    operator_session_cookie: &str,
-    operator_csrf_cookie: &str,
-    operator_email: &str,
-    operator_password: &str,
+    context: OperatorRevocationAuditContext<'_>,
 ) -> MatrixOperatorCookies {
+    let OperatorRevocationAuditContext {
+        client, migration_pool, http_addr, origin, operator_id,
+        operator_session_cookie, operator_csrf_cookie, operator_email, operator_password,
+    } = context;
     let operator_logout_audited: bool = sqlx::query_scalar(
             "SELECT EXISTS (SELECT 1 FROM identity_access.audit_events WHERE actor_id = $1 AND action = 'identity.session.revoked' AND correlation_id = 'corr_operator_logout')",
         )
@@ -28,31 +36,23 @@ pub async fn verify_and_reauthenticate(
         .fetch_one(migration_pool)
         .await
         .expect("operator session revocation audit is queryable");
-    assert!(
-        operator_logout_audited,
-        "operator session revocation is auditable"
-    );
+    assert!(operator_logout_audited, "operator session revocation is auditable");
     let session_revocation_event: bool = sqlx::query_scalar(
             "SELECT EXISTS (SELECT 1 FROM identity_access.outbox_events WHERE event_type = 'identity.session.revoked' AND audience = 'platform_operator')",
         )
         .fetch_one(migration_pool)
         .await
         .expect("operator session revocation event is queryable");
-    assert!(
-        session_revocation_event,
-        "operator session revocation reaches durable outbox"
-    );
+    assert!(session_revocation_event, "operator session revocation reaches durable outbox");
     let operator_replay = client
-            .get(format!("http://{http_addr}/v1/platform/identity/session"))
-            .header(
-                header::COOKIE,
-                format!(
-                    "payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"
-                ),
-            )
-            .send()
-            .await
-            .expect("revoked operator session replay is rejected");
+        .get(format!("http://{http_addr}/v1/platform/identity/session"))
+        .header(
+            header::COOKIE,
+            format!("payvia_platform_session={operator_session_cookie}; payvia_platform_csrf={operator_csrf_cookie}"),
+        )
+        .send()
+        .await
+        .expect("revoked operator session replay is rejected");
     assert_eq!(operator_replay.status(), StatusCode::UNAUTHORIZED);
 
     // The preceding logout deliberately revoked the first operator session.
