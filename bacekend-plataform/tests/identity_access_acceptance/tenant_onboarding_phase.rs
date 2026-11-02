@@ -77,14 +77,16 @@ pub async fn setup(environment: &IdentityEnvironment) -> TenantOnboardingFixture
     let tenant_slug = tenant_registration.tenant_slug;
 
     tenant_platform_access::verify(
-        client,
-        http_addr,
-        origin,
-        &session_cookie,
-        &csrf_cookie,
-        &operator_session_cookie,
-        &operator_csrf_cookie,
-        created_tenant_id,
+        tenant_platform_access::TenantPlatformAccessContext {
+            client,
+            http_addr,
+            origin,
+            session_cookie: &session_cookie,
+            csrf_cookie: &csrf_cookie,
+            operator_session_cookie: &operator_session_cookie,
+            operator_csrf_cookie: &operator_csrf_cookie,
+            created_tenant_id,
+        },
     )
     .await;
     let tenant_admin_status_body = tenant_status_outbox_acceptance::verify(
