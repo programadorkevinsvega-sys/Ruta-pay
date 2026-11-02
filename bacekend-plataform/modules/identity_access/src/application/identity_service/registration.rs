@@ -1,9 +1,11 @@
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::domain::{email_address::EmailAddress, password::validate_password, password_hash::hash_password};
 use super::{IdentityError, IdentityService};
+use crate::domain::{
+    email_address::EmailAddress, password::validate_password, password_hash::hash_password,
+};
 
 const REGISTRATION_WINDOW_SECONDS: u64 = 300;
 const REGISTRATION_ACCOUNT_LIMIT: i64 = 5;
