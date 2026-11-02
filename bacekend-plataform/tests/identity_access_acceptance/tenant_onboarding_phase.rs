@@ -97,12 +97,12 @@ pub async fn setup(environment: &IdentityEnvironment) -> TenantOnboardingFixture
     )
     .await;
     TenantOnboardingFixture {
-        &session_cookie,
-        &csrf_cookie,
+        session_cookie,
+        csrf_cookie,
         traceparent,
         ip_key,
-        &operator_session_cookie,
-        &operator_csrf_cookie,
+        operator_session_cookie,
+        operator_csrf_cookie,
         legal_identification_number,
         created_tenant_id,
         tenant_body,
