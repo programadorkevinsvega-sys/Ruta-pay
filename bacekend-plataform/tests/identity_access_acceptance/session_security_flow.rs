@@ -83,16 +83,18 @@ pub async fn verify(context: SessionSecurityFlowContext<'_>) -> MatrixOperatorCo
         .expect("CSRF rejection response arrives");
     assert_eq!(rejected_csrf.status(), StatusCode::FORBIDDEN);
     super::tenant_realtime_revocation::verify(
-        client,
-        realtime_client,
-        migration_pool,
-        http_addr,
-        origin,
-        session_cookie,
-        csrf_cookie,
-        registered_user_id,
-        created_tenant_id,
-        replay_cursor,
+        super::tenant_realtime_revocation::TenantRealtimeRevocationContext {
+            client,
+            realtime_acceptance_client: realtime_client,
+            migration_pool,
+            http_addr,
+            origin,
+            session_cookie,
+            csrf_cookie,
+            registered_user_id,
+            created_tenant_id,
+            replay_cursor,
+        },
     )
     .await;
     super::login_rate_limits::verify(
