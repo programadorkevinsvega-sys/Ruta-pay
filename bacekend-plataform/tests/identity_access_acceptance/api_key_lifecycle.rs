@@ -1,3 +1,11 @@
+use platform_contracts::identity_access::{AuthorizeApiKeyOperationRequest, identity_access_client::IdentityAccessClient};
+use reqwest::{Client, StatusCode, header};
+use serde_json::Value;
+use sqlx::PgPool;
+use std::net::SocketAddr;
+use tonic::transport::Channel;
+use uuid::Uuid;
+
 pub struct ApiKeyLifecycleContext<'a> {
     pub client: &'a Client,
     pub authorization_client: &'a mut IdentityAccessClient<Channel>,
