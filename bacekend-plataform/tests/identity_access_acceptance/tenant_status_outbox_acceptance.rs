@@ -3,16 +3,22 @@ use sqlx::PgPool;
 use std::net::SocketAddr;
 use uuid::Uuid;
 
-pub async fn verify(
-    client: &Client,
-    migration_pool: &PgPool,
-    http_addr: SocketAddr,
-    origin: &str,
-    operator_session_cookie: &str,
-    operator_csrf_cookie: &str,
-    created_tenant_id: Uuid,
-    tenant_body: &serde_json::Value,
-) -> serde_json::Value {
+pub struct TenantStatusOutboxContext<'a> {
+    pub client: &'a Client,
+    pub migration_pool: &'a PgPool,
+    pub http_addr: SocketAddr,
+    pub origin: &'a str,
+    pub operator_session_cookie: &'a str,
+    pub operator_csrf_cookie: &'a str,
+    pub created_tenant_id: Uuid,
+    pub tenant_body: &'a serde_json::Value,
+}
+
+pub async fn verify(context: TenantStatusOutboxContext<'_>) -> serde_json::Value {
+    let TenantStatusOutboxContext {
+        client, migration_pool, http_addr, origin, operator_session_cookie,
+        operator_csrf_cookie, created_tenant_id, tenant_body,
+    } = context;
     sqlx::raw_sql(
             "CREATE OR REPLACE FUNCTION tenant_registry.reject_test_status_outbox_event() RETURNS trigger \
              LANGUAGE plpgsql AS $tenant_status$ BEGIN \
