@@ -47,14 +47,16 @@ pub async fn setup(environment: &IdentityEnvironment) -> TenantOnboardingFixture
     let traceparent = tenant_cookies.traceparent.clone();
     let ip_key = tenant_cookies.ip_key.clone();
     let operator_cookies = operator_session_acceptance::verify(
-        client,
-        http_addr,
-        origin,
-        operator_email,
-        operator_password,
-        operator_id,
-        &mut authorization_client,
-        migration_pool,
+        operator_session_acceptance::OperatorSessionAcceptanceContext {
+            client,
+            http_addr,
+            origin,
+            operator_email,
+            operator_password,
+            operator_id,
+            authorization_client: &mut authorization_client,
+            migration_pool,
+        },
     )
     .await;
     let operator_session_cookie = operator_cookies.session_cookie;
