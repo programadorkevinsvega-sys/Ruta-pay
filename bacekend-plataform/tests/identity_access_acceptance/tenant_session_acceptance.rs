@@ -17,17 +17,23 @@ pub struct TenantSessionCookies {
     pub ip_key: String,
 }
 
-pub async fn verify(
-    client: &Client,
-    http_addr: std::net::SocketAddr,
-    origin: &str,
-    email: &str,
-    password: &str,
-    test_source_ip: Ipv4Addr,
-    redis_manager: &ConnectionManager,
-    captured_events: &Arc<Mutex<Vec<HashMap<String, String>>>>,
-    registered_user_id: Uuid,
-) -> TenantSessionCookies {
+pub struct TenantSessionAcceptanceContext<'a> {
+    pub client: &'a Client,
+    pub http_addr: std::net::SocketAddr,
+    pub origin: &'a str,
+    pub email: &'a str,
+    pub password: &'a str,
+    pub test_source_ip: Ipv4Addr,
+    pub redis_manager: &'a ConnectionManager,
+    pub captured_events: &'a Arc<Mutex<Vec<HashMap<String, String>>>>,
+    pub registered_user_id: Uuid,
+}
+
+pub async fn verify(context: TenantSessionAcceptanceContext<'_>) -> TenantSessionCookies {
+    let TenantSessionAcceptanceContext {
+        client, http_addr, origin, email, password, test_source_ip,
+        redis_manager, captured_events, registered_user_id,
+    } = context;
     let trace_id = "4bf92f3577b34da6a3ce929d0e0e4736";
     let traceparent = format!("00-{trace_id}-00f067aa0ba902b7-01");
     let wrong_login = client
