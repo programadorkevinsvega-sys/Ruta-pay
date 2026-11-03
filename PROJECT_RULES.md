@@ -22,15 +22,20 @@ Los seis documentos listados abajo son requisitos normativos del proyecto y se i
 
 Se aplican conjuntamente con `ARCHITECTURE_RULES.md`, los `AGENTS.md` aplicables y el `PROJECT_RULES.md` de cada backend. La arquitectura de Payvia establece ownership y fronteras; los prompts concretan las obligaciones de calidad y observabilidad. Toda incompatibilidad debe documentarse y resolverse antes de implementar el alcance afectado, sin omitir ni reducir requisitos.
 
+## Política obligatoria de pruebas por fase y caso de uso
 ## Topología de los dos backends
 
+La política normativa y la asignación de responsabilidades están en [ARCHITECTURE_ROLES.md](ARCHITECTURE_ROLES.md). Aplica a ambos backends, ambos frontends, APIs, workers, persistencia, eventos e infraestructura desde la fase que introduce cada comportamiento.
 El sistema tiene dos backends desplegables independientes y cada uno es internamente un monolito modular Rust:
 
+Cada caso de uso implementado debe tener una matriz de escenarios positivos y negativos. Según corresponda, debe cubrir entradas vacías/nulas/malformadas/tipo incorrecto, límites (mínimo/máximo, debajo/encima, cero, negativos, longitud, precisión y overflow), duplicados normalizados, concurrencia/idempotencia, autenticación/autorización, roles/scopes, aislamiento tenant, estados/transiciones, fallos/timeout/reintentos/recuperación, integridad transaccional, auditoría/Outbox y redacción de datos sensibles.
 - [`bacekend-plataform`](bacekend-plataform/README.md) es autoridad de tenant registry, identidad, planes, precios, límites, cuotas, suscripciones, facturación por uso de Payvia y reglas de negocio de payment intents/transacciones. Expone BFF REST/OpenAPI y decide la autorización que se adjunta como concesión firmada a comandos gRPC de pasarelas. También usa adapters propios en ese backend para cobrar a los tenants (Wompi), emitir facturas electrónicas de Payvia (Factus) y enviar correos operativos (Resend).
 - [`bacekend-pasarela`](bacekend-pasarela/README.md) implementa únicamente integración/protocolo técnico de Wompi, Bold y proveedores futuros, un módulo/crate por proveedor. No posee política comercial, planes, cuotas ni transiciones de negocio de pagos.
 
+Las pruebas deben usar el nivel apropiado: unitarias/propiedad para reglas deterministas; integración con PostgreSQL/Redis/JetStream reales y aislados cuando el comportamiento los involucre; contratos para fronteras; E2E browser para recorridos de usuario. Los mocks no sustituyen aceptación real. Cada caso debe enlazar requisito, test, nivel y ejecución CI del commit. Los N/A requieren justificación concreta previa y propietario.
 Plataforma decide antes de operar y envía un comando gRPC autenticado con una concesión firmada, breve y ligada a tenant, entorno, cuenta, acción e importe. Pasarelas verifica concesión y claims; una concesión ausente, alterada, expirada o incompatible significa fail closed. Los eventos verificados de proveedor se entregan de forma durable a plataforma, que decide y persiste el resultado de negocio. Los detalles, fases y aceptación pertenecen a los [roadmaps separados](bacekend-plataform/ROADMAP.md) y [roadmap de pasarelas](bacekend-pasarela/ROADMAP.md).
 
+La CI debe ejecutar todas las suites aplicables, incluidos Vitest, builds y Playwright cuando cambien o se acepten frontends. Una fase no se cierra si quedan pruebas obligatorias ausentes, sin ejecutar o fallidas. Fase 8 agrega fuzzing, seguridad transversal, carga, rendimiento y resiliencia; no aplaza pruebas de casos de uso. El porcentaje de cobertura es diagnóstico, no criterio único de cierre: se exige cobertura de todos los casos de uso definidos y particiones de riesgo aplicables, no enumeración imposible de todos los inputs.
 La topología y los límites de responsabilidad están definidos en `ARCHITECTURE_RULES.md`. Antes de implementar cada backend, sus ADRs detallan contrato gRPC, concesión de autorización, ownership, migraciones coordinadas, operación y pruebas de integración; no cambian las reglas transversales de seguridad, calidad u observabilidad.
 
 ## Identidad del producto
