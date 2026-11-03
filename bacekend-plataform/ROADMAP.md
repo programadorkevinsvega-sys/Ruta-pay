@@ -77,16 +77,16 @@ La implementación se ejecuta conforme a la matriz previa de [`docs/phase-2/acce
 
 ## Fase 3 — Catálogo de planes, precios, límites y entitlement
 
-- [ ] Planes y versiones inmutables de precio/moneda/periodo; cambios con vigencias explícitas.
-- [ ] Capacidades, límites, cuotas, políticas de excedente y restricciones por entorno.
-- [ ] Evaluación determinista del entitlement por tenant, plan y fecha efectiva.
-- [ ] Ledger durable de consumo/cuotas y protección contra concurrencia y replay, incluyendo replay estable de la respuesta original después de consumos posteriores y rechazo seguro de filas históricas sin snapshot.
-- [ ] API administrativa de catálogo y consulta tenant de su plan/consumo sin filtrar datos internos.
-- [ ] Contrato gRPC versionado y cliente tipado en gateway; mTLS, grants firmados y enforcement runtime pertenecen a Fase 5.
-- [ ] Outbox de catálogo/entitlements → JetStream → realtime journal, cursor de plataforma/tenant y señal Redis; traceparent W3C propagado.
-- [ ] Matriz de integración previa, límites N/A y evidencia de aceptación registrados.
+- [x] Planes y versiones inmutables de precio/moneda/periodo; cambios con vigencias explícitas.
+- [x] Capacidades, límites, cuotas, políticas de excedente y restricciones por entorno.
+- [x] Evaluación determinista del entitlement por tenant, plan y fecha efectiva.
+- [x] Ledger durable de consumo/cuotas y protección contra concurrencia y replay, incluyendo replay estable de la respuesta original después de consumos posteriores y rechazo seguro de filas históricas sin snapshot.
+- [x] API administrativa de catálogo y consulta tenant de su plan/consumo sin filtrar datos internos.
+- [x] Contrato gRPC versionado y cliente tipado en gateway; mTLS, grants firmados y enforcement runtime pertenecen a Fase 5.
+- [x] Outbox de catálogo/entitlements → JetStream → realtime journal, cursor de plataforma/tenant y señal Redis; traceparent W3C propagado.
+- [x] Matriz de integración previa, límites N/A y evidencia de aceptación registrados.
 
-Acta: [`docs/phase-3/acceptance.md`](docs/phase-3/acceptance.md). Matriz específica: [`docs/phase-3/integration-matrix.md`](docs/phase-3/integration-matrix.md). La aceptación usa PostgreSQL, Redis y JetStream reales; prueba inmutabilidad, rollback, replay original, concurrencia, RLS y entrega de eventos de catálogo/cuota al journal realtime. No se marcan las casillas hasta que CI y aceptación estén verdes sobre el mismo SHA y se registre la verificación de despliegue requerida.
+Acta: [`docs/phase-3/acceptance.md`](docs/phase-3/acceptance.md). Matriz específica: [`docs/phase-3/integration-matrix.md`](docs/phase-3/integration-matrix.md). La aceptación usa PostgreSQL, Redis y JetStream reales; prueba inmutabilidad, rollback, replay original, concurrencia, RLS y entrega de eventos de catálogo/cuota al journal realtime. Los criterios se validan con pruebas ejecutables y CI verde sobre el mismo HEAD de GitHub. Esta fase corresponde a construcción: no exige despliegue en VPS, ejecución de migraciones productivas ni health checks productivos.
 
 **Salida:** pruebas reales cubren límites exactos, excedentes, replay original, concurrencia, cambio versionado de plan, fechas, aislamiento, BFF/gRPC, gateway contract client y entrega realtime con cursor.
 
@@ -179,4 +179,4 @@ Referencias oficiales para la implementación: [Wompi — ambientes y llaves](ht
 
 ## Estado
 
-Fases 0, 1 y 2 están cerradas dentro de sus alcances documentados. Las evidencias están en [`docs/phase-0/`](docs/phase-0/), [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md) y [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md). Fase 2 está integrada en `main` mediante PR #5. La implementación de Fase 3 se integró en `main` mediante PR #7 el 2026-11-01 (merge commit `a73b595d58a59996c39709338e39a2ca77a97a63`); PR #7 ya no está en borrador ni pendiente de merge. Fase 3 permanece sin declaración de cierre de aceptación/operación hasta que se satisfagan todos los criterios de [`docs/phase-3/acceptance.md`](docs/phase-3/acceptance.md), incluida la evidencia de despliegue/migraciones y health check del entorno objetivo. La PR #8 (`refactor/rust-files-under-200-lines`) atiende deuda técnica heredada de tamaño y cohesión de archivos Rust y alinea el límite obligatorio a 400 líneas físicas, con objetivo preferido cercano a 200 cuando la cohesión lo permita; su propio cierre requiere revisión del diff y CI verde en el SHA final. Las fases 4–9 siguen pendientes; cuentas sandbox, credenciales o decisiones legales faltantes se documentan como bloqueos concretos, sin simulaciones.
+Fases 0, 1 y 2 están cerradas dentro de sus alcances documentados. Las evidencias están en [`docs/phase-0/`](docs/phase-0/), [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md) y [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md). Fase 2 está integrada en `main` mediante PR #5. La implementación de Fase 3 se integró en `main` mediante PR #7 el 2026-11-01 (merge commit `a73b595d58a59996c39709338e39a2ca77a97a63`); PR #7 ya no está en borrador ni pendiente de merge. Fase 3 corresponde a construcción en GitHub. Su aceptación de código y pruebas se determina con [`docs/phase-3/acceptance.md`](docs/phase-3/acceptance.md) y CI verde sobre el mismo HEAD; no depende de despliegue en VPS, migraciones productivas ni health checks productivos. La operación y piloto se abordan en Fase 9. La PR #8 (`refactor/rust-files-under-200-lines`) atiende deuda técnica heredada de tamaño y cohesión de archivos Rust y alinea el límite obligatorio a 400 líneas físicas, con objetivo preferido cercano a 200 cuando la cohesión lo permita; su propio cierre requiere revisión del diff y CI verde en el SHA final. Las fases 4–9 siguen pendientes; cuentas sandbox, credenciales o decisiones legales faltantes se documentan como bloqueos concretos, sin simulaciones.
