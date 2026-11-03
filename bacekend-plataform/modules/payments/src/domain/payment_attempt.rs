@@ -109,7 +109,7 @@ mod tests {
         assert_eq!(
             attempt.apply_status_transition(
                 PaymentAttemptStatus::Submitted,
-                TransitionAuthority::ProviderEvent
+                TransitionAuthority::OperationSubmitted
             ),
             Ok(TransitionEffect::Apply)
         );
