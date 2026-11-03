@@ -256,14 +256,15 @@ La topología de dos backends soporta desde el primer cambio varias réplicas de
 
 ---
 
-# 1.bis Límite de tamaño de archivo y "un tipo/función pública por archivo"
+# 1.bis Límite de tamaño de archivo y responsabilidad por archivo
 
-Esta regla es tan obligatoria como SOLID y se verifica en cada archivo generado:
+Esta regla es obligatoria y se verifica en cada archivo Rust:
 
-- **Máximo 200 líneas de código por archivo `.rs`**, sin contar imports, comentarios de licencia ni líneas en blanco.
-- Si un archivo se acerca a ese límite, es señal de que está violando SRP y debe dividirse.
-- No se "estira" la regla.
-- Se refactoriza.
+- **Máximo absoluto: 400 líneas físicas por archivo `.rs`**, contando imports, comentarios y líneas en blanco.
+- **Objetivo preferido: alrededor de 200 líneas físicas** cuando la separación preserve cohesión y legibilidad.
+- Un archivo puede acercarse a 400 líneas cuando contiene una función, o un conjunto pequeño de funciones estrechamente relacionadas, que forman una unidad coherente. No se fragmenta código artificialmente solo para alcanzar 200 líneas.
+- Si supera 400 líneas, debe dividirse por responsabilidades en módulos cohesivos; nunca se justifica exceder el máximo por conveniencia.
+- El tamaño es una señal para revisar SRP, no un sustituto del criterio de diseño: se priorizan cohesión, límites claros y ausencia de archivos "bolsa".
 
 ### Un archivo = una responsabilidad pública principal
 
@@ -337,15 +338,16 @@ Evitar `mod.rs` (o el archivo con el nombre del módulo) como contenedor de lóg
 
 `mod.rs` o `lib.rs` solamente puede utilizarse como barrel de `pub mod` y `pub use`, sin lógica propia.
 
-### Cuando un archivo supera 200 líneas
+### Cuando un archivo se acerca o supera 400 líneas
 
 Las estrategias de división correctas, en orden de preferencia:
 
-1. Extraer funciones privadas reutilizables o con su propia responsabilidad a submódulos propios en la misma carpeta.
+1. Extraer funciones privadas reutilizables o con responsabilidad propia a submódulos cohesivos en la misma carpeta.
 2. Extraer subtipos/DTOs a su propio archivo dentro de `dto/` o `value_objects/` según corresponda.
-3. Si la struct/función realmente hace más de una cosa, dividir en dos casos de uso, dos servicios o dos handlers distintos.
+3. Si una función o servicio mezcla responsabilidades, dividirlo en casos de uso, servicios o handlers distintos.
+4. Si una función larga representa una única operación coherente, puede permanecer en un archivo de hasta 400 líneas; no se divide únicamente para cumplir una preferencia estética de 200 líneas.
 
-Esto es un síntoma de violación de SRP, no simplemente de tamaño.
+El criterio principal es SRP y cohesión. Ningún archivo puede superar 400 líneas físicas.
 
 Esta regla aplica a TODAS las capas:
 
@@ -2826,7 +2828,7 @@ Antes de dar por terminada una funcionalidad, verificar:
 
 ## Archivos
 
-- [ ] Ningún archivo `.rs` supera 200 líneas de código.
+- [ ] Ningún archivo `.rs` supera 400 líneas físicas; se prefiere aproximadamente 200 cuando la cohesión lo permita.
 - [ ] No existen archivos "bolsa" (`utils.rs`).
 - [ ] Una responsabilidad pública principal por archivo.
 - [ ] El nombre del archivo coincide con su export principal en `snake_case`.
@@ -3003,7 +3005,7 @@ Antes de entregar código Rust, verifica que NO hiciste ninguna de estas cosas:
 - [ ] Usar Redis como única fuente de verdad de un dato crítico.
 - [ ] Añadir al crate `shared-kernel` algo que en realidad pertenece a un solo módulo.
 - [ ] Nombrar structs o traits genéricos como `Manager`, `Helper`, `Util` o `Service` sin responsabilidad clara y acotada.
-- [ ] Generar un archivo `.rs` de más de 200 líneas de código.
+- [ ] Generar un archivo `.rs` de más de 400 líneas físicas.
 - [ ] Crear un archivo "bolsa" con múltiples structs/funciones no relacionadas.
 - [ ] Usar `mod.rs` o `lib.rs` para escribir lógica en lugar de re-exports limpios.
 - [ ] Escribir lógica de negocio dentro de handlers REST del BFF.

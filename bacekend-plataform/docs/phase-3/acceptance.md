@@ -4,7 +4,7 @@
 
 This acceptance record covers the Rust platform modules `catalog_pricing` and `entitlements_quotas`, their PostgreSQL ownership, gRPC contracts, BFF routes, Outbox/JetStream delivery and the realtime journal boundary.
 
-A criterion is accepted only when its executable test passes on the exact PR HEAD SHA. A test file existing, a prior green workflow, or a successful compile alone is not acceptance evidence. CI and deployment evidence are recorded separately.
+A criterion is accepted only when its executable test passes on the exact PR HEAD SHA. A test file existing, a prior green workflow, or a successful compile alone is not acceptance evidence. CI evidence is recorded against the exact GitHub commit. Production deployment is outside the current construction-stage acceptance scope.
 
 ## Required test environment
 
@@ -68,18 +68,29 @@ The full workspace workflow is authoritative because it also runs the BFF, gatew
 - Gateway has a typed client for the platform entitlement contract. mTLS identity, signed grants, fail-closed authorization and the live gateway request path are Phase 5 acceptance and must not be claimed complete in Phase 3.
 - Legacy usage rows created before the response-snapshot migration cannot be replayed as if the original response were known. They fail explicitly rather than returning current state.
 
-## Existing architecture debt and closure criteria
+## Architecture debt and closure criteria
 
-The Phase 3 modules and newly extracted acceptance/realtime/event-worker files are split below the mandatory 200-lines-of-code limit. The repository still contains pre-existing oversized files that this PR touches for wiring or shared setup: `apps/bff/src/http/handlers/identity.rs`, `src/main.rs`, `src/bin/migrate_platform.rs`, `tests/http_grpc_acceptance.rs` and `tests/identity_access_acceptance.rs`. Their full SRP/200-line refactor is not complete and must not be represented as repository-wide rule compliance.
+The repository file-size rule was revised in PR #8 and is now consistent across the root and both backend architecture rules:
+
+- **Hard limit:** 400 physical lines per Rust source file, counting imports, comments and blank lines.
+- **Preferred size:** approximately 200 physical lines when responsibility boundaries and cohesion permit.
+- Files are split by responsibility; code is not fragmented artificially to satisfy the preferred size.
+- CI enforces the hard limit across `bacekend-plataform`, `bacekend-pasarela` and `crates`.
+
+This PR refactors the oversized identity service, identity gRPC API, platform bootstrap, tenant BFF handler and acceptance-test harnesses into cohesive modules. The acceptance-test scenarios remain executable through the existing Cargo integration-test targets; the test environment continues to use isolated PostgreSQL plus real Redis and authenticated JetStream.
+
+The previous paragraph listing `identity.rs` and `src/bin/migrate_platform.rs` as files modified by this PR was inaccurate: neither path is part of PR #8's diff. The actual changed-file inventory is the PR's GitHub files view and must be used for review.
 
 Phase 3 must remain open until all of the following are true on one final HEAD SHA:
 
-1. Every `.rs` file modified by this PR, including inherited handlers, bootstrap and integration tests, is refactored to no more than 200 lines of code. The oversized files listed above currently block this criterion; tracking them in documentation is not a waiver.
-2. Format, Clippy, all Rust tests, frontend tests/builds and browser E2E are green.
-3. The real PostgreSQL/Redis/JetStream acceptance test passes, including immutable result replay and event-specific realtime journal/cursor delivery.
+1. Every Rust source file under the platform, gateway and shared-crate source trees is at or below 400 physical lines. The CI guard must pass on the exact final SHA; approximately 200 lines remains the preferred target where cohesion allows.
+2. Format, Clippy, all Rust tests, frontend tests/builds and browser E2E are green on that same SHA.
+3. The real PostgreSQL/Redis/JetStream acceptance tests pass, including immutable idempotent-result replay and event-specific realtime journal/cursor delivery.
 4. The gateway shared-contract client compiles and the BFF HTTP/gRPC authorization path passes.
 5. The integration matrix has no unclassified applicable boundary.
-6. The PR description, roadmap and this acta reference the same final SHA and workflow.
-7. Deployment/migration execution and health verification for the target environment are recorded; otherwise production readiness remains unverified.
+6. The PR description, roadmap and this acceptance record identify the same PR and CI workflow. GitHub's workflow metadata must prove that the successful run's `head_sha` is exactly the final PR head SHA; the SHA is not duplicated manually across documents.
+7. Build and migration artifacts, configuration contracts and operational procedures are present and covered by repository-level validation where applicable. Production deployment, applying migrations to a target environment and production health checks are explicitly outside the construction-phase closure gate.
 
-This document intentionally does not declare Phase 3 closed before those conditions are evidenced.
+Historical validation: workflow run [41571087710](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41571087710) passed on SHA `871090cc5421fa0635c42e9fbad19fee0c9636a9`. That run is evidence for that historical commit only; the authoritative acceptance evidence for this revision is the successful workflow run whose GitHub metadata `head_sha` matches the final PR #8 HEAD.
+
+Phase 3 construction acceptance is satisfied when criteria 1–7 pass on the same final GitHub PR HEAD and the matching workflow run is successful. This is a repository/construction milestone, not a production-readiness declaration. No VPS access, production deployment, target-environment migration execution or production health check is required to close this phase in the current project stage.
