@@ -229,22 +229,22 @@ async fn payment_intents_http_path_enforces_auth_scope_isolation_and_idempotency
 
     let intent_count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM payments.payment_intents WHERE tenant_id=$1")
-    .bind(tenant_id)
-    .fetch_one(&database.migration_pool)
+            .bind(tenant_id)
+            .fetch_one(&database.migration_pool)
     .await
-    .expect("intent count is queryable");
+            .expect("intent count is queryable");
     let idempotency_count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM payments.idempotency_records WHERE tenant_id=$1")
-    .bind(tenant_id)
-    .fetch_one(&database.migration_pool)
+            .bind(tenant_id)
+            .fetch_one(&database.migration_pool)
     .await
-    .expect("idempotency count is queryable");
+            .expect("idempotency count is queryable");
     let outbox_count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM payments.outbox_events WHERE aggregate_id=$1")
-    .bind(Uuid::parse_str(&payment_intent_id).expect("response intent id is a UUID"))
-    .fetch_one(&database.migration_pool)
+            .bind(Uuid::parse_str(&payment_intent_id).expect("response intent id is a UUID"))
+            .fetch_one(&database.migration_pool)
     .await
-    .expect("outbox count is queryable");
+            .expect("outbox count is queryable");
     let leaked_secret_count: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM payments.outbox_events WHERE payload::text LIKE '%' || $1 || '%'",
     )
