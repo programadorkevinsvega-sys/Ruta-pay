@@ -113,11 +113,10 @@ mod tests {
 
     #[test]
     fn status_changes_are_applied_only_after_guard_acceptance() {
+        let intent = test_intent();
         let mut attempt = PaymentAttempt::new(
             Uuid::new_v4(),
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            PaymentEnvironment::Test,
+            &intent,
             1,
             "wompi".to_owned(),
             "account_01".to_owned(),
