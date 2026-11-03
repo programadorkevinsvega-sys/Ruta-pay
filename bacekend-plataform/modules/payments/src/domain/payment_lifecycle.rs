@@ -135,8 +135,7 @@ fn evaluate_transition<S: LifecycleState>(
         return Err(TransitionGuardError::ReconciliationRequired);
     }
     if current.is_outcome_unknown() {
-        return if authority == TransitionAuthority::Reconciliation && !next.is_outcome_unknown()
-        {
+        return if authority == TransitionAuthority::Reconciliation && !next.is_outcome_unknown() {
             Ok(TransitionEffect::Apply)
         } else {
             Err(TransitionGuardError::ReconciliationRequired)
@@ -164,10 +163,16 @@ impl LifecycleState for PaymentIntentStatus {
         use PaymentIntentStatus::*;
         matches!(
             (self, next),
-            (Created, Processing | RequiresAction | Authorized | Succeeded | OutcomeUnknown)
-                | (Processing, RequiresAction | Authorized | Succeeded | OutcomeUnknown)
-                | (RequiresAction, Processing | Authorized | Succeeded | OutcomeUnknown)
-                | (Authorized, Succeeded | OutcomeUnknown)
+            (
+                Created,
+                Processing | RequiresAction | Authorized | Succeeded | OutcomeUnknown
+            ) | (
+                Processing,
+                RequiresAction | Authorized | Succeeded | OutcomeUnknown
+            ) | (
+                RequiresAction,
+                Processing | Authorized | Succeeded | OutcomeUnknown
+            ) | (Authorized, Succeeded | OutcomeUnknown)
         )
     }
 
@@ -196,9 +201,18 @@ impl LifecycleState for PaymentAttemptStatus {
         matches!(
             (self, next),
             (Created, Submitted | OutcomeUnknown)
-                | (Submitted, Processing | RequiresAction | Authorized | Succeeded | Failed | OutcomeUnknown)
-                | (Processing, RequiresAction | Authorized | Succeeded | Failed | OutcomeUnknown)
-                | (RequiresAction, Processing | Authorized | Succeeded | Failed | OutcomeUnknown)
+                | (
+                    Submitted,
+                    Processing | RequiresAction | Authorized | Succeeded | Failed | OutcomeUnknown
+                )
+                | (
+                    Processing,
+                    RequiresAction | Authorized | Succeeded | Failed | OutcomeUnknown
+                )
+                | (
+                    RequiresAction,
+                    Processing | Authorized | Succeeded | Failed | OutcomeUnknown
+                )
                 | (Authorized, Succeeded | OutcomeUnknown)
         )
     }
@@ -280,10 +294,7 @@ pub(super) fn validate_provider_code(value: &str) -> Result<(), LifecycleModelEr
 }
 
 pub(super) fn validate_opaque_reference(value: &str) -> Result<(), LifecycleModelError> {
-    if value.is_empty()
-        || value.len() > 255
-        || value.bytes().any(|byte| byte.is_ascii_control())
-    {
+    if value.is_empty() || value.len() > 255 || value.bytes().any(|byte| byte.is_ascii_control()) {
         return Err(LifecycleModelError::ProviderReferenceInvalid);
     }
     Ok(())
