@@ -231,23 +231,20 @@ async fn invalid_payment_intents_are_rejected_before_any_business_write() {
         )
     ));
 
-    let intents: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM payments.payment_intents WHERE tenant_id=$1",
-    )
+    let intents: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM payments.payment_intents WHERE tenant_id=$1")
     .bind(tenant_id)
     .fetch_one(&database.migration_pool)
     .await
     .expect("intent count is readable");
-    let idempotency_records: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM payments.idempotency_records WHERE tenant_id=$1",
-    )
+    let idempotency_records: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM payments.idempotency_records WHERE tenant_id=$1")
     .bind(tenant_id)
     .fetch_one(&database.migration_pool)
     .await
     .expect("idempotency count is readable");
-    let audit_events: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM payments.audit_events WHERE tenant_id=$1",
-    )
+    let audit_events: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM payments.audit_events WHERE tenant_id=$1")
     .bind(tenant_id)
     .fetch_one(&database.migration_pool)
     .await
@@ -258,7 +255,10 @@ async fn invalid_payment_intents_are_rejected_before_any_business_write() {
         idempotency_records, 0,
         "invalid requests do not reserve idempotency keys"
     );
-    assert_eq!(audit_events, 0, "invalid requests do not create success audits");
+    assert_eq!(
+        audit_events, 0,
+        "invalid requests do not create success audits"
+    );
 
     database.finish().await;
 }
