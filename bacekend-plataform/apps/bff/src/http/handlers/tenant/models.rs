@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 #[derive(Deserialize)]
-pub(super) struct RealtimeQuery {
+pub struct RealtimeQuery {
     pub(super) audience: String,
     pub(super) tenant_id: Option<String>,
     pub(super) cursor: Option<u64>,
