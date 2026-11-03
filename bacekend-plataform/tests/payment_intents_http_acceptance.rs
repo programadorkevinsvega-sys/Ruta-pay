@@ -31,7 +31,7 @@ async fn payment_intents_http_path_enforces_auth_scope_isolation_and_idempotency
         user_id,
         "phase4-create",
         "test",
-        &["payment_intents:create", "payment_intents:read"],
+        &["payment_intents.create", "payment_intents.read"],
         "active",
     )
     .await;
@@ -41,7 +41,7 @@ async fn payment_intents_http_path_enforces_auth_scope_isolation_and_idempotency
         user_id,
         "phase4-read-only",
         "test",
-        &["payment_intents:read"],
+        &["payment_intents.read"],
         "active",
     )
     .await;
@@ -51,7 +51,7 @@ async fn payment_intents_http_path_enforces_auth_scope_isolation_and_idempotency
         user_id,
         "phase4-revoked",
         "test",
-        &["payment_intents:create", "payment_intents:read"],
+        &["payment_intents.create", "payment_intents.read"],
         "revoked",
     )
     .await;
@@ -61,7 +61,7 @@ async fn payment_intents_http_path_enforces_auth_scope_isolation_and_idempotency
         user_id,
         "phase4-live",
         "live",
-        &["payment_intents:create", "payment_intents:read"],
+        &["payment_intents.create", "payment_intents.read"],
         "active",
     )
     .await;
