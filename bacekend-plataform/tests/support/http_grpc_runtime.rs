@@ -2,10 +2,12 @@ use platform_contracts::{
     catalog_pricing::catalog_pricing_client::CatalogPricingClient as CatalogPricingGrpcClient,
     entitlements_quotas::entitlements_quotas_client::EntitlementsQuotasClient as EntitlementsQuotasGrpcClient,
     identity_access::identity_access_client::IdentityAccessClient as IdentityAccessGrpcClient,
+    payments::payments_client::PaymentsClient as PaymentsGrpcClient,
     realtime::realtime_gateway_client::RealtimeGatewayClient as RealtimeGatewayGrpcClient,
     runtime::runtime_probe_client::RuntimeProbeClient,
     tenant_registry::tenant_registry_client::TenantRegistryClient as TenantRegistryGrpcClient,
 };
+use sqlx::PgPool;
 use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
 
 pub struct RuntimeClients {
@@ -15,6 +17,7 @@ pub struct RuntimeClients {
     pub realtime: RealtimeGatewayGrpcClient<tonic::transport::Channel>,
     pub catalog: CatalogPricingGrpcClient<tonic::transport::Channel>,
     pub entitlements: EntitlementsQuotasGrpcClient<tonic::transport::Channel>,
+    pub payments: PaymentsGrpcClient<tonic::transport::Channel>,
 }
 
 pub struct RuntimeFixture {
@@ -23,7 +26,7 @@ pub struct RuntimeFixture {
     pub clients: RuntimeClients,
 }
 
-pub async fn start_runtime() -> RuntimeFixture {
+pub async fn start_runtime_with_pool(database_pool: PgPool) -> RuntimeFixture {
     let runtime_listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("runtime bind");
@@ -35,12 +38,6 @@ pub async fn start_runtime() -> RuntimeFixture {
     let module_catalog_client = CatalogPricingGrpcClient::new(runtime_channel.clone());
     let module_tenant_client = TenantRegistryGrpcClient::new(runtime_channel);
     let (runtime_shutdown, runtime_signal) = oneshot::channel();
-    let database_pool = sqlx::postgres::PgPoolOptions::new()
-        .connect_lazy(
-            &std::env::var("PLATFORM_TEST_DATABASE_ADMIN_URL")
-                .expect("isolated PostgreSQL test administrator URL is configured"),
-        )
-        .expect("isolated PostgreSQL pool parses");
     let redis_url = std::env::var("PLATFORM_REDIS_URL").expect("real Redis test URL is configured");
     let redis_client = redis::Client::open(redis_url).expect("Redis test URL parses");
     let redis_manager = redis::aio::ConnectionManager::new(redis_client.clone())
@@ -84,6 +81,9 @@ pub async fn start_runtime() -> RuntimeFixture {
         EntitlementsQuotasGrpcClient::connect(format!("http://{runtime_addr}"))
             .await
             .expect("entitlements gRPC connection");
+    let payments_client = PaymentsGrpcClient::connect(format!("http://{runtime_addr}"))
+        .await
+        .expect("payments gRPC connection");
     RuntimeFixture {
         shutdown: runtime_shutdown,
         task: runtime_task,
@@ -94,6 +94,7 @@ pub async fn start_runtime() -> RuntimeFixture {
             realtime: realtime_client,
             catalog: catalog_client,
             entitlements: entitlements_client,
+            payments: payments_client,
         },
     }
 }

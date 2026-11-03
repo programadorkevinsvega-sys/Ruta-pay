@@ -16,3 +16,6 @@ pub mod catalog_pricing {
 pub mod entitlements_quotas {
     tonic::include_proto!("payvia.platform.entitlements_quotas.v1");
 }
+pub mod payments {
+    tonic::include_proto!("payvia.platform.payments.v1");
+}

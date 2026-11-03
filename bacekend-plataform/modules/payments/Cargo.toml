@@ -1,0 +1,21 @@
+[package]
+name = "platform-payments"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+async-nats.workspace = true
+chrono.workspace = true
+opentelemetry.workspace = true
+platform-contracts = { path = "../../crates/platform_contracts" }
+payvia-observability = { path = "../../../crates/observability" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tonic.workspace = true
+tracing.workspace = true
+tracing-opentelemetry.workspace = true
+tokio.workspace = true
+uuid.workspace = true

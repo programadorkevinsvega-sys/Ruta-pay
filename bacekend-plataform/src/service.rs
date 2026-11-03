@@ -1,11 +1,12 @@
 mod dependencies;
 mod support;
 
-use payvia_platform_bff::http::routes::router;
+use payvia_platform_bff::http::routes::router_with_payments;
 use payvia_platform_core::{config::AppConfig, metrics, shutdown_signal, telemetry};
 use platform_contracts::catalog_pricing::catalog_pricing_client::CatalogPricingClient as CatalogPricingGrpcClient;
 use platform_contracts::entitlements_quotas::entitlements_quotas_client::EntitlementsQuotasClient as EntitlementsQuotasGrpcClient;
 use platform_contracts::identity_access::identity_access_client::IdentityAccessClient as IdentityAccessGrpcClient;
+use platform_contracts::payments::payments_client::PaymentsClient as PaymentsGrpcClient;
 use platform_contracts::realtime::realtime_gateway_client::RealtimeGatewayClient as RealtimeGatewayGrpcClient;
 use platform_contracts::runtime::runtime_probe_client::RuntimeProbeClient as RuntimeProbeGrpcClient;
 use platform_contracts::tenant_registry::tenant_registry_client::TenantRegistryClient as TenantRegistryGrpcClient;
@@ -145,6 +146,12 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .timeout(Duration::from_secs(5)),
     )
     .await?;
+    let payments_client = PaymentsGrpcClient::connect(
+        Endpoint::from_shared(format!("http://{runtime_addr}"))?
+            .connect_timeout(Duration::from_secs(2))
+            .timeout(Duration::from_secs(5)),
+    )
+    .await?;
     let metrics_listener =
         bind_listener(config.metrics_addr, "platform_metrics", "bind_metrics").await?;
     let metrics_task = tokio::spawn(metrics::serve(
@@ -157,13 +164,14 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(event.name = "service.started", service = "payvia-platform", http_addr = %http_listener.local_addr()?, grpc_addr = %runtime_addr, metrics_addr = %config.metrics_addr);
     axum::serve(
         http_listener,
-        router(
+        router_with_payments(
             grpc_client,
             identity_client,
             tenant_client,
             realtime_client,
             catalog_client,
             entitlements_client,
+            payments_client,
         )
         .into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )

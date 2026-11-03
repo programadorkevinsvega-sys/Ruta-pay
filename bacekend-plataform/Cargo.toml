@@ -28,6 +28,7 @@ platform-tenant-registry = { path = "modules/tenant_registry" }
 platform-realtime = { path = "modules/realtime" }
 platform-catalog-pricing = { path = "modules/catalog_pricing" }
 platform-entitlements-quotas = { path = "modules/entitlements_quotas" }
+platform-payments = { path = "modules/payments" }
 redis.workspace = true
 rpassword.workspace = true
 sqlx.workspace = true

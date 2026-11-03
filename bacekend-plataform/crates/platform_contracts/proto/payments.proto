@@ -1,0 +1,48 @@
+syntax = "proto3";
+package payvia.platform.payments.v1;
+
+service Payments {
+  rpc CreatePaymentIntent (CreatePaymentIntentRequest) returns (CreatePaymentIntentResponse);
+  rpc GetPaymentIntent (GetPaymentIntentRequest) returns (GetPaymentIntentResponse);
+}
+
+message PaymentIntent {
+  string payment_intent_id = 1;
+  string tenant_id = 2;
+  string environment = 3;
+  int64 amount_minor = 4;
+  string currency = 5;
+  string payment_method_type = 6;
+  string merchant_reference = 7;
+  string status = 8;
+  string created_at = 9;
+}
+
+message CreatePaymentIntentRequest {
+  string api_key_secret = 1;
+  string tenant_id = 2;
+  string environment = 3;
+  int64 amount_minor = 4;
+  string currency = 5;
+  string payment_method_type = 6;
+  string merchant_reference = 7;
+  string idempotency_key = 8;
+  string correlation_id = 9;
+}
+
+message CreatePaymentIntentResponse {
+  PaymentIntent payment_intent = 1;
+  bool replayed = 2;
+}
+
+message GetPaymentIntentRequest {
+  string api_key_secret = 1;
+  string tenant_id = 2;
+  string environment = 3;
+  string payment_intent_id = 4;
+  string correlation_id = 5;
+}
+
+message GetPaymentIntentResponse {
+  PaymentIntent payment_intent = 1;
+}

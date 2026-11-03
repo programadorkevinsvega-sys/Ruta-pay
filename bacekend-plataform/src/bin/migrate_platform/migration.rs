@@ -96,6 +96,13 @@ pub(super) async fn migrate() -> Result<(), &'static str> {
             tracing::error!(event.name="database.module_migration.failed", component="entitlements_quotas", operation="apply_migrations", dependency="postgresql", error_class=%error, error_category="persistence", retryable=false);
             "entitlements_quotas_migration_failed"
         })?;
+    platform_payments::infrastructure::persistence::MIGRATOR
+        .run(&pool)
+        .await
+        .map_err(|error| {
+            tracing::error!(event.name="database.module_migration.failed", component="payments", operation="apply_migrations", dependency="postgresql", error_class=%error, error_category="persistence", retryable=false);
+            "payments_migration_failed"
+        })?;
     grant_runtime_privileges(&pool, &runtime_role).await?;
     pool.close().await;
     tracing::info!(
