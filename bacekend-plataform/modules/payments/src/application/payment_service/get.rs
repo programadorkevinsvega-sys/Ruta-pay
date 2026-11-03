@@ -1,3 +1,4 @@
+use serde_json::json;
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -10,6 +11,8 @@ pub(super) async fn get(
     tenant_id: Uuid,
     environment: &str,
     payment_intent_id: Uuid,
+    actor_key_id: Uuid,
+    correlation_id: &str,
 ) -> Result<PaymentIntent, PaymentServiceError> {
     if !matches!(environment, "test" | "live") {
         return Err(PaymentIntentError::EnvironmentInvalid.into());
@@ -42,6 +45,18 @@ pub(super) async fn get(
         status: row.try_get("status")?,
         created_at: row.try_get("created_at")?,
     };
+    sqlx::query(
+        "INSERT INTO payments.audit_events (event_id,tenant_id,actor_key_id,action,resource_id,outcome,correlation_id,trace_id,safe_details) VALUES ($1,$2,$3,'payment_intent.read',$4,'completed',$5,$6,$7)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(actor_key_id)
+    .bind(payment_intent_id)
+    .bind(correlation_id)
+    .bind(payvia_observability::current_trace_id())
+    .bind(json!({"environment": environment}))
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(intent)
 }

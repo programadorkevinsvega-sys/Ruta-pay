@@ -54,7 +54,17 @@ impl PaymentService {
         tenant_id: Uuid,
         environment: &str,
         payment_intent_id: Uuid,
+        actor_key_id: Uuid,
+        correlation_id: &str,
     ) -> Result<PaymentIntent, PaymentServiceError> {
-        get::get(self, tenant_id, environment, payment_intent_id).await
+        get::get(
+            self,
+            tenant_id,
+            environment,
+            payment_intent_id,
+            actor_key_id,
+            correlation_id,
+        )
+        .await
     }
 }

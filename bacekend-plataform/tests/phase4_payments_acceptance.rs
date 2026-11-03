@@ -67,9 +67,21 @@ async fn payment_intent_creation_replay_conflict_concurrency_and_tenant_isolatio
     }
     assert_eq!(initial_results, 1, "one request owns the idempotency key");
 
+    let fetched = service
+        .get_payment_intent(
+            tenant_id,
+            "test",
+            created.id,
+            key_id,
+            "phase4-read-001",
+        )
+        .await
+        .expect("a tenant API key reads its own payment intent in the same environment");
+    assert_eq!(fetched, created);
+
     assert!(matches!(
         service
-            .get_payment_intent(other_tenant_id, "test", created.id)
+            .get_payment_intent(other_tenant_id, "test", created.id, key_id, "phase4-cross-tenant")
             .await,
         Err(
             platform_payments::application::payment_service::PaymentServiceError::Domain(
@@ -80,7 +92,7 @@ async fn payment_intent_creation_replay_conflict_concurrency_and_tenant_isolatio
 
     assert!(matches!(
         service
-            .get_payment_intent(tenant_id, "live", created.id)
+            .get_payment_intent(tenant_id, "live", created.id, key_id, "phase4-cross-environment")
             .await,
         Err(
             platform_payments::application::payment_service::PaymentServiceError::Domain(
@@ -108,7 +120,7 @@ async fn payment_intent_creation_replay_conflict_concurrency_and_tenant_isolatio
             .fetch_one(&database.migration_pool)
             .await
             .expect("audit rows can be inspected by the migration role");
-    assert_eq!(audit_count, 2, "creation and replay are audited");
+    assert_eq!(audit_count, 3, "creation, replay and read are audited");
 
     database.finish().await;
 }
