@@ -2,7 +2,7 @@
 
 ## Estado
 
-Fase 2 cerrada dentro del alcance y criterios de este documento en `feat/platform-phase-2-identity-tenants`. La aceptación incluye streams JetStream aislados por ejecución y limpieza de recursos propios; la integración a `main` sigue el proceso de revisión de rama y Pull Request.
+Fase 2 está integrada en `main`. La implementación inicial se fusionó mediante PR #2 (merge commit `bc94a54a6dd1ae0da217cb4c10ebeec2a24c7123`); la ampliación de pruebas de duplicidad/concurrencia y ejecución de frontend/E2E se fusionó mediante PR #5 (merge commit `4a69f5d7e62bfedc9a4400ef5b180cfd29c4d233`). CI run [41237702253](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41237702253) terminó en success sobre el HEAD exacto de PR #5.
 
 ## Alcance vertical
 
@@ -141,3 +141,8 @@ Se implementaron por separado las decisiones de UI y navegación en el [ADR fron
 - `cargo fmt --all -- --check`, `cargo clippy -p bacekend-plataform --all-targets -- -D warnings` y `bacekend-plataform/build-production.sh`: aprobados.
 - `bacekend-plataform/migrate-production.sh` aplicó `tenant_registry` migration `202610220004` a `payvia_dev`; la consulta de verificación confirmó `success=true`. La base tenía cero tenants al aplicar la migración.
 - Se reconstruyó y reinició el backend local con el binario release actualizado. `/health/ready` respondió `ready`; OpenAPI publica `display_name`, `slug`, tipo y número legal; el servidor frontend local devuelve la SPA en `/`, `/login` y `/register`.
+
+
+## Integración y CI en main — actualización 2026-11-03
+
+La implementación y las pruebas ampliadas de Fase 2 están integradas. PR #2 incorporó la implementación inicial; PR #5 incorporó la ampliación de cobertura, las suites frontend y Playwright. La evidencia CI definitiva para la ampliación es el run [41237702253](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41237702253), exitoso sobre el HEAD final de PR #5. El acta histórica del 2026-10-22 se conserva como evidencia fechada y no sustituye la prueba del SHA posterior.
