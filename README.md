@@ -14,7 +14,7 @@ Una sola API para Wompi, Bold y proveedores habilitados, con webhooks verificado
 
 </div>
 
-> **Estado del repositorio:** desarrollo por fases. El backend de plataforma tiene implementada su base operativa inicial; las funciones de producto y el backend de pasarelas siguen el estado indicado en sus respectivos roadmaps. Los contratos objetivo no se consideran disponibles hasta estar publicados y validados mediante aceptación.
+> **Estado del repositorio (verificado 2026-11-03):** el backend de plataforma tiene integradas en `main` sus Fases 0–3 locales: runtime/observabilidad, identidad/tenants, catálogo y entitlements. Las auditorías de Fases 0 y 1 conservan brechas abiertas; el producto completo, el backend de pasarelas y los flujos de pago/webhooks siguen en desarrollo. No se anuncia una capacidad como disponible solo por existir un contrato o cliente interno. Ver [PROJECT_STATUS.md](PROJECT_STATUS.md) y los roadmaps de cada componente.
 
 ## ¿Qué es Payvia?
 
@@ -115,7 +115,7 @@ Rotación, revocación y cambios producen auditoría/eventos con referencias opa
 
 El diseño requiere Rust/Cargo para los backends, Node.js y un gestor de paquetes para cada frontend, y PostgreSQL, Redis y NATS JetStream en los entornos que los necesiten. Las versiones mínimas, archivos de entorno y comandos de instalación aún no están fijados en manifests ejecutables.
 
-La implementación está en curso por fases; no hay una instalación de producto integral verificada. El backend de plataforma ya tiene un corte técnico inicial ejecutable y una imagen de despliegue propia, pero faltan dominios comerciales, persistencia y servicios de infraestructura; frontend y backend de pasarelas continúan sus propios roadmaps. Consulta cada README/roadmap para comandos que sí están disponibles y su estado real. No despliegues artefactos de un componente para operar otro.
+La implementación está en curso por fases y no hay una instalación integral del producto verificada. El backend de plataforma integra runtime, persistencia, identidad/tenants, catálogo, cuotas, entitlements, Outbox/JetStream y realtime dentro de los alcances documentados. Siguen pendientes billing, operaciones de pago, autorización cross-backend con grants firmados y otros dominios de sus roadmaps. El backend de pasarelas y ambos frontends conservan sus propios criterios de cierre. Consulta [PROJECT_STATUS.md](PROJECT_STATUS.md) y cada README/roadmap para conocer comandos y capacidades realmente disponibles. No despliegues artefactos de un componente para operar otro.
 
 ## Uso de la API
 
@@ -144,7 +144,7 @@ Content-Type: application/json
 
 El comercio se autenticará contra el WebSocket ofrecido por el BFF de plataforma y se suscribirá solo a transacciones para las que su sesión tenga permiso. La ruta, protocolo de handshake y envelope se fijarán en OpenAPI/contrato realtime; no se deben inventar ni enviar tokens en la URL.
 
-Los mensajes incluyen identificador de evento, cursor, versión y scope autorizado. El cliente deduplica y ordena, detecta huecos, reconecta con backoff y recupera el estado por REST autorizado. WebSocket es una notificación de cambio, no sustituye la API de consulta. Este flujo está planeado, no disponible en el scaffold actual.
+Los mensajes incluyen identificador de evento, cursor, versión y scope autorizado. El cliente deduplica y ordena, detecta huecos, reconecta con backoff y recupera el estado por REST autorizado. WebSocket es una notificación de cambio, no sustituye la API de consulta. La infraestructura realtime está implementada y aceptada para los eventos de identidad, tenants, catálogo y cuotas de plataforma. La actualización realtime de transacciones de pago aún no está disponible: depende de las fases de pagos y webhooks posteriores.
 
 ## Webhooks hacia tu servidor
 
@@ -245,6 +245,8 @@ La firma de llamadas/notificaciones de Binance Pay no se debe confundir con la f
 - Errores del cliente usan un envelope seguro; nunca exponen SQL ni stack traces.
 
 ## Documentación
+
+- [Estado verificado del proyecto](PROJECT_STATUS.md): fases por componente, PR fusionadas, CI y bloqueos abiertos.
 
 - [Roadmap integrado](ROADMAP.md)
 - [Backend de plataforma](bacekend-plataform/README.md) · [roadmap](bacekend-plataform/ROADMAP.md)
