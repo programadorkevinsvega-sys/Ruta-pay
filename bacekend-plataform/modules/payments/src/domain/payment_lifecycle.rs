@@ -307,6 +307,11 @@ mod tests {
             NormalizedProviderPaymentStatus::Succeeded.intent_status(),
             Some(PaymentIntentStatus::Succeeded)
         );
+        assert_eq!(
+            NormalizedProviderPaymentStatus::Failed.intent_status(),
+            None,
+            "an attempt failure does not decide the overall intent retry policy"
+        );
     }
 
     #[test]
@@ -327,7 +332,7 @@ mod tests {
         );
         assert_eq!(
             PaymentIntentStatus::Succeeded.transition_to(
-                PaymentIntentStatus::Failed,
+                PaymentIntentStatus::Processing,
                 TransitionAuthority::ProviderEvent
             ),
             Err(TransitionGuardError::ReconciliationRequired)
