@@ -19,20 +19,76 @@ pub struct PaymentTransactionIdentity {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PaymentTransaction {
-    pub id: Uuid,
-    pub tenant_id: Uuid,
-    pub payment_intent_id: Uuid,
-    pub payment_attempt_id: Uuid,
-    pub environment: PaymentEnvironment,
-    pub provider_code: String,
-    pub provider_account_reference: String,
-    pub provider_transaction_reference: String,
-    pub amount_minor: i64,
-    pub currency: String,
-    pub status: PaymentTransactionStatus,
+    id: Uuid,
+    tenant_id: Uuid,
+    payment_intent_id: Uuid,
+    payment_attempt_id: Uuid,
+    environment: PaymentEnvironment,
+    provider_code: String,
+    provider_account_reference: String,
+    provider_transaction_reference: String,
+    amount_minor: i64,
+    currency: String,
+    status: PaymentTransactionStatus,
 }
 
 impl PaymentTransaction {
+    pub fn id(&self) -> Uuid {
+        self.id
+    }
+
+    pub fn tenant_id(&self) -> Uuid {
+        self.tenant_id
+    }
+
+    pub fn payment_intent_id(&self) -> Uuid {
+        self.payment_intent_id
+    }
+
+    pub fn payment_attempt_id(&self) -> Uuid {
+        self.payment_attempt_id
+    }
+
+    pub fn environment(&self) -> PaymentEnvironment {
+        self.environment
+    }
+
+    pub fn provider_code(&self) -> &str {
+        &self.provider_code
+    }
+
+    pub fn provider_account_reference(&self) -> &str {
+        &self.provider_account_reference
+    }
+
+    pub fn provider_transaction_reference(&self) -> &str {
+        &self.provider_transaction_reference
+    }
+
+    pub fn amount_minor(&self) -> i64 {
+        self.amount_minor
+    }
+
+    pub fn currency(&self) -> &str {
+        &self.currency
+    }
+
+    pub fn status(&self) -> PaymentTransactionStatus {
+        self.status
+    }
+
+    pub fn apply_status_transition(
+        &mut self,
+        next: PaymentTransactionStatus,
+        authority: super::payment_lifecycle::TransitionAuthority,
+    ) -> Result<super::payment_lifecycle::TransitionEffect, super::payment_lifecycle::TransitionGuardError> {
+        let effect = self.status.transition_to(next, authority)?;
+        if effect == super::payment_lifecycle::TransitionEffect::Apply {
+            self.status = next;
+        }
+        Ok(effect)
+    }
+
     pub fn new(
         identity: PaymentTransactionIdentity,
         amount_minor: i64,
@@ -78,6 +134,40 @@ mod tests {
             provider_account_reference: "account_01".to_owned(),
             provider_transaction_reference: "txn_01".to_owned(),
         }
+    }
+
+    #[test]
+    fn transaction_status_is_guarded_and_terminal_state_is_immutable() {
+        let mut transaction = PaymentTransaction::new(
+            identity(),
+            100,
+            "COP".to_owned(),
+        )
+        .expect("transaction identity and money are valid");
+
+        assert_eq!(
+            transaction.apply_status_transition(
+                PaymentTransactionStatus::Authorized,
+                super::super::payment_lifecycle::TransitionAuthority::ProviderEvent
+            ),
+            Ok(super::super::payment_lifecycle::TransitionEffect::Apply)
+        );
+        assert_eq!(transaction.status(), PaymentTransactionStatus::Authorized);
+        assert_eq!(
+            transaction.apply_status_transition(
+                PaymentTransactionStatus::Succeeded,
+                super::super::payment_lifecycle::TransitionAuthority::ProviderEvent
+            ),
+            Ok(super::super::payment_lifecycle::TransitionEffect::Apply)
+        );
+        assert_eq!(
+            transaction.apply_status_transition(
+                PaymentTransactionStatus::Failed,
+                super::super::payment_lifecycle::TransitionAuthority::ProviderEvent
+            ),
+            Err(super::super::payment_lifecycle::TransitionGuardError::ReconciliationRequired)
+        );
+        assert_eq!(transaction.status(), PaymentTransactionStatus::Succeeded);
     }
 
     #[test]
