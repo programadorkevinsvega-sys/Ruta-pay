@@ -1,6 +1,6 @@
 # Fase 4 — Matriz de integración y evidencia
 
-**Estado:** implementación parcial. Esta matriz describe el alcance que existe en el HEAD del PR; no declara aceptación ni cierre de Fase 4.
+**Estado:** implementación parcial en PR #11. CI #920 verificó la base de dominio/contrato del lifecycle sobre SHA `dd23a3aabf36fd9cc24e0a90b440a679dce46463`; la matriz distingue esas pruebas unitarias de la persistencia, integración externa y operación que siguen pendientes. No declara aceptación ni cierre de Fase 4.
 
 ## 1. Regla de evidencia
 
@@ -65,16 +65,16 @@ La indisponibilidad de un stream/subject se prueba mediante rechazo real de JetS
 
 ## 3. Alcance B — Transacciones e intentos
 
-**Estado:** se añadió una primera base de dominio Rust y el contrato Protobuf neutral en esta rama. Aún no existe persistencia, caso de uso, API, consumidor ni ingestión confiable de resultados de proveedor. Los criterios de esta sección permanecen abiertos.
+**Estado:** primera base de dominio Rust y contrato Protobuf neutral implementados y verificados por CI #920 sobre SHA `dd23a3aabf36fd9cc24e0a90b440a679dce46463`. No existe todavía persistencia, caso de uso, API, consumidor ni ingestión confiable de resultados de proveedor. El ciclo operativo sigue abierto.
 
 | Área | Diseño/implementación disponible | Estado real |
 |---|---|---|
 | Payment Intent | Continúa persistido únicamente en `created` por el slice ADR-0010. El modelo de lifecycle define estados de proyección, sin ampliar todavía la migración ni mutar la tabla. | Creación/consulta implementada; transiciones persistidas pendientes. |
-| Payment Attempt | `domain/payment_attempt.rs` define identidad interna, tenant, intent, entorno, número secuencial, proveedor/cuenta opacos y estado inicial `created`; valida secuencia y referencias. | Modelo de dominio unit-tested; sin tabla, RLS ni use case. |
-| Payment Transaction | `domain/payment_transaction.rs` define identidad interna, vínculo con intent/attempt, proveedor/cuenta/referencia externa, importe entero, moneda y estado inicial `pending`. | Modelo de dominio unit-tested; sin tabla, constraints ni persistencia. |
-| Guards y estados | `domain/payment_lifecycle.rs` separa estados de intent/attempt/transaction, transiciones forward-only, terminales protegidos y `outcome_unknown` resoluble solo por reconciliación. Fallo de un intento no se proyecta automáticamente a fallo del intent. | Unit tests del dominio; aún no aplicados dentro de transacciones PostgreSQL. |
+| Payment Attempt | `domain/payment_attempt.rs` define identidad interna, tenant, intent, entorno, número secuencial, proveedor/cuenta opacos y estado inicial `created`; valida secuencia y referencias. | Modelo de dominio y test unitario verificados en CI #920; sin tabla, RLS ni use case. |
+| Payment Transaction | `domain/payment_transaction.rs` define identidad interna, vínculo con intent/attempt, proveedor/cuenta/referencia externa, importe entero, moneda y estado inicial `pending`. | Modelo y tests unitarios verificados en CI #920; sin tabla, constraints ni persistencia. |
+| Guards y estados | `domain/payment_lifecycle.rs` separa estados de intent/attempt/transaction, transiciones forward-only, terminales protegidos y `outcome_unknown` resoluble solo por reconciliación. Fallo de un intento no se proyecta automáticamente a fallo del intent. | Unit tests verificados en CI #920; aún no aplicados dentro de transacciones PostgreSQL. |
 | Orden de eventos tardíos | Exige timestamp del proveedor estrictamente mayor al último timestamp aplicado; timestamps viejos o iguales no se aplican automáticamente. Conflictos terminales requieren reconciliación. | Guard unitario; falta inbox durable, control de versión y test concurrente PostgreSQL. |
-| Estado normalizado proveedor | `NormalizedProviderPaymentEventV1` y enum neutral en `crates/platform_contracts/proto/payments.proto`. `outcome_unknown` es estado interno de plataforma, no un estado del proveedor. | Schema añadido; no hay traducción de status específico ni adapter en plataforma. Mapping de proveedor pertenece al adapter gateway. |
+| Estado normalizado proveedor | `NormalizedProviderPaymentEventV1` y enum neutral en `crates/platform_contracts/proto/payments.proto`. `outcome_unknown` es estado interno de plataforma, no un estado del proveedor. | Contrato/schema y codegen verificados en CI #920; no hay traducción de status específico ni adapter en plataforma. Mapping de proveedor pertenece al adapter gateway. |
 | Callback verificado | El mensaje de Protobuf no prueba identidad ni firma. No se añadió RPC/HTTP o consumer que acepte callbacks. | Bloqueado hasta que gateway verifique firma/anti-replay y exista identidad autenticada del productor. |
 | Deduplicación | La decisión técnica reserva proveedor + cuenta + provider event ID como clave externa, distinta de la idempotencia de create intent. | ADR documentada; no hay event inbox/constraint ni persistencia. |
 | Resultado incierto | El modelo mantiene `outcome_unknown` separado de rechazo/fallo; solo autoridad de reconciliación puede resolverlo. | Guard unitario; no hay timeout de operación de proveedor ni estado persistido. |
@@ -91,6 +91,8 @@ La indisponibilidad de un stream/subject se prueba mediante rechazo real de JetS
 | Rechazar timestamps iguales/anteriores | `provider_event_timestamps_must_be_strictly_monotonic` | Unit test; asume timestamp fiable proveniente del adapter verificado. |
 | Secuencia de intento y proveedor válido | `attempt_requires_positive_sequence_and_normalized_provider_code` | Unit test de constructor. |
 | Dinero y estado inicial de transacción | `transaction_rejects_invalid_money`, `transaction_starts_pending_with_valid_financial_identity` | Unit tests de constructor/modelo. |
+
+**Evidencia CI #920:** [ejecución](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41724333384) exitosa sobre SHA `dd23a3aabf36fd9cc24e0a90b440a679dce46463`. Pasaron límite de 400 líneas, `cargo fmt --all -- --check`, Clippy con `-D warnings`, `cargo test --locked --workspace`, ambos frontends, E2E tenant/plataforma/multi-réplica y checks documentales. Esta ejecución valida únicamente el código y contrato incluidos en ese SHA.
 
 La presencia de modelos y tests unitarios no equivale a persistencia, integración HTTP/gRPC, callback autenticado ni aceptación cross-backend. La siguiente implementación para cerrar el ciclo requiere migraciones/RLS, use cases y pruebas PostgreSQL reales, además de la frontera segura y adapters reales indicados arriba.
 
@@ -111,6 +113,7 @@ La presencia de modelos y tests unitarios no equivale a persistencia, integraci�
 
 ## 5. Restricciones cross-backend y despliegue
 
+- El cobro a compradores por cuenta de los tenants y el cobro SaaS que Payvia realiza a sus tenants son flujos distintos. El primero pertenece al ownership de Payment Intents/transacciones en `payments` y requiere ejecución protocolar autorizada del gateway; el segundo pertenece a los módulos/adapters de billing de plataforma y usa la cuenta/credenciales propias de Payvia. No se comparten credenciales, ledgers ni ownership. Ninguno se declara operativo por la mera existencia del contrato neutral.
 - Plataforma no delega el cobro SaaS al backend de pasarelas.
 - El slice actual de Payment Intents no llama al gateway. El nuevo mensaje `NormalizedProviderPaymentEventV1` es solo un contrato; no se expone endpoint ni consumer para recibirlo sin autenticación.
 - El callback del proveedor debe ser verificado en el adapter gateway y el productor debe autenticarse en la frontera cross-backend. La ausencia de esas capacidades bloquea la ingestión; no se sustituye con headers, IP allowlists, permisos locales ni mocks.
