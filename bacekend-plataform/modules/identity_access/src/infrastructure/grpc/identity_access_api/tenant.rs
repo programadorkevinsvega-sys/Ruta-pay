@@ -1,5 +1,5 @@
-use super::support::{grpc_span, log_and_map, parse_uuid};
 use super::*;
+use super::support::{grpc_span, log_and_map, parse_uuid};
 
 impl IdentityAccessApi {
     pub(super) async fn register_tenant_user(
