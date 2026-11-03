@@ -1,5 +1,5 @@
 use super::*;
-use super::support::{grpc_span, log_and_map, parse_uuid};
+use super::support::{grpc_span, log_and_map};
 
 impl IdentityAccessApi {
     pub(super) async fn create_operator_session(
