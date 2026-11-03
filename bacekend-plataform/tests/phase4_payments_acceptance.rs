@@ -68,7 +68,7 @@ async fn payment_intent_creation_replay_conflict_concurrency_and_tenant_isolatio
     assert_eq!(initial_results, 1, "one request owns the idempotency key");
 
     let fetched = service
-.get_payment_intent(tenant_id, "test", created.id, key_id, "phase4-read-001")
+        .get_payment_intent(tenant_id, "test", created.id, key_id, "phase4-read-001")
         .await
         .expect("a tenant API key reads its own payment intent in the same environment");
     assert_eq!(fetched, created);
