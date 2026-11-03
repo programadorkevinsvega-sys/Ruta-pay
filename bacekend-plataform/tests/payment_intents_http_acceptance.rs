@@ -227,23 +227,20 @@ async fn payment_intents_http_path_enforces_auth_scope_isolation_and_idempotency
         .expect("invalid amount is rejected through the HTTP path");
     assert_eq!(invalid_amount.status(), StatusCode::BAD_REQUEST);
 
-    let intent_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM payments.payment_intents WHERE tenant_id=$1",
-    )
+    let intent_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM payments.payment_intents WHERE tenant_id=$1")
     .bind(tenant_id)
     .fetch_one(&database.migration_pool)
     .await
     .expect("intent count is queryable");
-    let idempotency_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM payments.idempotency_records WHERE tenant_id=$1",
-    )
+    let idempotency_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM payments.idempotency_records WHERE tenant_id=$1")
     .bind(tenant_id)
     .fetch_one(&database.migration_pool)
     .await
     .expect("idempotency count is queryable");
-    let outbox_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM payments.outbox_events WHERE aggregate_id=$1",
-    )
+    let outbox_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM payments.outbox_events WHERE aggregate_id=$1")
     .bind(Uuid::parse_str(&payment_intent_id).expect("response intent id is a UUID"))
     .fetch_one(&database.migration_pool)
     .await
@@ -256,13 +253,19 @@ async fn payment_intents_http_path_enforces_auth_scope_isolation_and_idempotency
     .await
     .expect("outbox payloads are queryable for redaction assertion");
 
-    assert_eq!(intent_count, 1, "only the valid request creates a Payment Intent");
+    assert_eq!(
+        intent_count, 1,
+        "only the valid request creates a Payment Intent"
+    );
     assert_eq!(
         idempotency_count, 1,
         "only the valid request reserves its idempotency key"
     );
     assert_eq!(outbox_count, 1, "creation writes exactly one durable event");
-    assert_eq!(leaked_secret_count, 0, "raw API key never enters the Outbox payload");
+    assert_eq!(
+        leaked_secret_count, 0,
+        "raw API key never enters the Outbox payload"
+    );
 
     let _ = http_shutdown.send(());
     http_task
@@ -289,7 +292,10 @@ async fn insert_api_key(
     let secret = format!("{environment}_{}", Uuid::new_v4().simple());
     let digest = Sha256::digest(secret.as_bytes());
     let prefix = secret[..13].to_owned();
-    let scopes = scopes.iter().map(|scope| (*scope).to_owned()).collect::<Vec<_>>();
+    let scopes = scopes
+        .iter()
+        .map(|scope| (*scope).to_owned())
+        .collect::<Vec<_>>();
     sqlx::query(
         "INSERT INTO identity_access.api_keys (id,tenant_id,name,environment,prefix,secret_digest,scopes,status,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
     )
