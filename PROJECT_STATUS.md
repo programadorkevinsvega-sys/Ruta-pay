@@ -27,7 +27,7 @@ Una PR fusionada o CI verde demuestra integración/verificación del SHA corresp
 | 0 | Auditoría, decisiones, workspace y bounded contexts | Alcance documental integrado. PR #3 y CI 41579115662 exitosos. Quedan pendientes trazabilidad automatizada amenaza→control→test, consistencia semántica y revalidación reproducible del HEAD vigente. |
 | 1 | Runtime, BFF, gRPC y observabilidad fundacional | Implementación y pruebas ampliadas integradas. PR #4 y CI 41578015530 exitosos. Quedan pendientes matriz completa de configuración/readiness, DSN Sentry, APP_VERSION y pruebas repetibles Collector/shutdown. |
 | 2 | Identidad, sesiones, tenant registry, API Keys, aislamiento y realtime | Implementación PR #2 y ampliación PR #5 integradas. CI 41237702253 exitoso sobre HEAD de PR #5; incluye Rust, ambos frontends y Playwright E2E. |
-| 3 | Catálogo, precios, límites, cuotas y entitlements | PR #7 integrada. CI 41319415556 exitoso sobre HEAD exacto de PR #7. No incluye despliegue productivo ni enforcement mTLS/grants de pasarelas. |
+| 3 | Catálogo, precios, límites, cuotas y entitlements | Implementación integrada mediante PR #7; CI 41319415556 exitoso sobre su HEAD exacto. La aceptación formal sigue abierta hasta conciliar los criterios 1–7 en un único HEAD final, conforme al acta de aceptación. No incluye despliegue productivo ni enforcement mTLS/grants de pasarelas. |
 | 4–9 | Billing, pagos, autorización cross-backend, hardening y operación | Pendientes. No avanzar mientras existan criterios pendientes de fases anteriores. |
 
 ## PR y evidencia CI
