@@ -27,6 +27,7 @@ pub async fn persist_event(pool: &PgPool, envelope: &EventEnvelope) -> Result<bo
                 | "entitlement.capabilities.configured"
                 | "tenant.plan.assigned"
                 | "quota.consumed"
+                | "payment_intent.created"
         )
     {
         return Err(JournalError::InvalidEnvelope);
