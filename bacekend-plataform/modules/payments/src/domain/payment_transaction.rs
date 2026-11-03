@@ -223,11 +223,16 @@ mod tests {
 
     #[test]
     fn transaction_rejects_attempt_owned_by_another_intent() {
-        let intent = intent();
+        let primary_intent = intent();
         let unrelated_intent = intent();
         let attempt = submitted_attempt(&unrelated_intent);
         assert_eq!(
-            PaymentTransaction::new(Uuid::new_v4(), &intent, &attempt, "txn_01".to_owned()),
+            PaymentTransaction::new(
+                Uuid::new_v4(),
+                &primary_intent,
+                &attempt,
+                "txn_01".to_owned()
+            ),
             Err(LifecycleModelError::OwnershipMismatch)
         );
     }
