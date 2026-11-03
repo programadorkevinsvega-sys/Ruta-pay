@@ -139,7 +139,6 @@ jobs:
           ruby -e 'require "yaml"; Dir.glob(".github/workflows/*.{yml,yaml}").sort.each { |path| YAML.parse_file(path); puts "Validated #{path}" }'
 
   quality:
-    name: Platform Rust quality
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
