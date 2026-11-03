@@ -217,7 +217,7 @@ Referencias oficiales para la implementación: [Wompi — ambientes y llaves](ht
 - Fase 0 — Alcance documental integrado; PR #3 y CI 41579115662 exitosos. Siguen abiertos trazabilidad automatizada amenaza→control→prueba, consistencia semántica y revalidación reproducible, según docs/phase-0/test-audit.md.
 - Fase 1 — Runtime y pruebas ampliadas integrados; PR #4 y CI 41578015530 exitosos. Siguen abiertos matriz de configuración/readiness, DSN Sentry, APP_VERSION y pruebas repetibles de degradación/shutdown, según docs/phase-1/test-audit.md.
 - Fase 2 — Identidad, tenants, aislamiento y realtime integrados mediante PR #2 y PR #5. CI 41237702253 exitoso con Rust, frontends y Playwright E2E.
-- Fase 3 — Catálogo, precios, límites y entitlements integrados mediante PR #7; CI 41319415556 exitoso sobre el HEAD de PR.
+- Fase 3 — Catálogo, precios, límites y entitlements integrados mediante PR #7; CI 41319415556 exitoso sobre el HEAD de PR. La aceptación formal permanece abierta hasta reconciliar los criterios 1–7 en un único HEAD final, como exige docs/phase-3/acceptance.md.
 - Fases 4–9 — Pendientes. No comenzar una fase siguiente mientras queden criterios aplicables pendientes en las anteriores.
 - PR #6 establece matrices obligatorias de pruebas por caso de uso. PR #8 fija máximo absoluto 400 líneas físicas por archivo Rust; 200 es preferido cuando la cohesión lo permita.
 
