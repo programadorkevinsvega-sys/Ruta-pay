@@ -98,6 +98,7 @@ impl NormalizedProviderPaymentStatus {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TransitionAuthority {
     ProviderEvent,
+    OperationTimeout,
     Reconciliation,
 }
 
@@ -141,6 +142,13 @@ fn evaluate_transition<S: LifecycleState>(
             Err(TransitionGuardError::ReconciliationRequired)
         };
     }
+    if next.is_outcome_unknown() {
+        return if authority == TransitionAuthority::OperationTimeout {
+            Ok(TransitionEffect::Apply)
+        } else {
+            Err(TransitionGuardError::TransitionNotAllowed)
+        };
+    }
     if current.can_transition_to(next) {
         Ok(TransitionEffect::Apply)
     } else {
@@ -165,14 +173,14 @@ impl LifecycleState for PaymentIntentStatus {
             (self, next),
             (
                 Created,
-                Processing | RequiresAction | Authorized | Succeeded | OutcomeUnknown
+                Processing | RequiresAction | Authorized | Succeeded
             ) | (
                 Processing,
-                RequiresAction | Authorized | Succeeded | OutcomeUnknown
+                RequiresAction | Authorized | Succeeded
             ) | (
                 RequiresAction,
-                Processing | Authorized | Succeeded | OutcomeUnknown
-            ) | (Authorized, Succeeded | OutcomeUnknown)
+                Processing | Authorized | Succeeded
+            ) | (Authorized, Succeeded)
         )
     }
 
@@ -200,20 +208,20 @@ impl LifecycleState for PaymentAttemptStatus {
         use PaymentAttemptStatus::*;
         matches!(
             (self, next),
-            (Created, Submitted | OutcomeUnknown)
+            (Created, Submitted)
                 | (
                     Submitted,
-                    Processing | RequiresAction | Authorized | Succeeded | Failed | OutcomeUnknown
+                    Processing | RequiresAction | Authorized | Succeeded | Failed
                 )
                 | (
                     Processing,
-                    RequiresAction | Authorized | Succeeded | Failed | OutcomeUnknown
+                    RequiresAction | Authorized | Succeeded | Failed
                 )
                 | (
                     RequiresAction,
-                    Processing | Authorized | Succeeded | Failed | OutcomeUnknown
+                    Processing | Authorized | Succeeded | Failed
                 )
-                | (Authorized, Succeeded | OutcomeUnknown)
+                | (Authorized, Succeeded)
         )
     }
 
@@ -241,8 +249,8 @@ impl LifecycleState for PaymentTransactionStatus {
         use PaymentTransactionStatus::*;
         matches!(
             (self, next),
-            (Pending, Authorized | Succeeded | Failed | OutcomeUnknown)
-                | (Authorized, Succeeded | OutcomeUnknown)
+            (Pending, Authorized | Succeeded | Failed)
+                | (Authorized, Succeeded)
         )
     }
 
