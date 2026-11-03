@@ -1,5 +1,7 @@
 use uuid::Uuid;
 
+use crate::domain::payment_intent::PaymentIntent;
+
 use super::payment_lifecycle::{
     LifecycleModelError, PaymentAttemptStatus, PaymentEnvironment, TransitionAuthority,
     TransitionEffect, TransitionGuardError, validate_opaque_reference, validate_provider_code,
@@ -64,22 +66,24 @@ impl PaymentAttempt {
 
     pub fn new(
         id: Uuid,
-        tenant_id: Uuid,
-        payment_intent_id: Uuid,
-        environment: PaymentEnvironment,
+        intent: &PaymentIntent,
         attempt_number: u32,
         provider_code: String,
         provider_account_reference: String,
     ) -> Result<Self, LifecycleModelError> {
+        if id.is_nil() || intent.id.is_nil() || intent.tenant_id.is_nil() {
+            return Err(LifecycleModelError::IdentifierInvalid);
+        }
         validate_provider_code(&provider_code)?;
         validate_opaque_reference(&provider_account_reference)?;
+        let environment = PaymentEnvironment::parse(&intent.environment)?;
         if attempt_number == 0 {
             return Err(LifecycleModelError::AttemptNumberInvalid);
         }
         Ok(Self {
             id,
-            tenant_id,
-            payment_intent_id,
+            tenant_id: intent.tenant_id,
+            payment_intent_id: intent.id,
             environment,
             attempt_number,
             provider_code,
@@ -92,6 +96,20 @@ impl PaymentAttempt {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_intent() -> PaymentIntent {
+        PaymentIntent {
+            id: Uuid::new_v4(),
+            tenant_id: Uuid::new_v4(),
+            environment: "test".to_owned(),
+            amount_minor: 100,
+            currency: "COP".to_owned(),
+            payment_method_type: crate::domain::payment_intent::PaymentMethodType::Card,
+            merchant_reference: None,
+            status: "created".to_owned(),
+            created_at: chrono::Utc::now(),
+        }
+    }
 
     #[test]
     fn status_changes_are_applied_only_after_guard_acceptance() {
@@ -126,14 +144,11 @@ mod tests {
 
     #[test]
     fn attempt_requires_positive_sequence_and_normalized_provider_code() {
-        let tenant_id = Uuid::new_v4();
-        let intent_id = Uuid::new_v4();
+        let intent = test_intent();
         assert!(
             PaymentAttempt::new(
                 Uuid::new_v4(),
-                tenant_id,
-                intent_id,
-                PaymentEnvironment::Test,
+                &intent,
                 0,
                 "wompi".to_owned(),
                 "account_01".to_owned()
@@ -143,9 +158,7 @@ mod tests {
         assert!(
             PaymentAttempt::new(
                 Uuid::new_v4(),
-                tenant_id,
-                intent_id,
-                PaymentEnvironment::Test,
+                &intent,
                 1,
                 "Wompi".to_owned(),
                 "account_01".to_owned()
