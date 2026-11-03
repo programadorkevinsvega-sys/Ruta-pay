@@ -125,13 +125,14 @@ pub async fn verify() {
         "commercial idempotency keys are not published"
     );
 
-    let inserted = platform_realtime::infrastructure::grpc::realtime_gateway_api::persist_and_publish(
-        &database.runtime_pool,
-        &mut redis,
-        &event_payload,
-    )
-    .await
-    .expect("realtime consumer persists the verified payment event and signals Redis");
+    let inserted =
+        platform_realtime::infrastructure::grpc::realtime_gateway_api::persist_and_publish(
+            &database.runtime_pool,
+            &mut redis,
+            &event_payload,
+        )
+        .await
+        .expect("realtime consumer persists the verified payment event and signals Redis");
     assert!(inserted, "first delivery enters the realtime journal");
     message
         .ack()
@@ -186,14 +187,14 @@ pub async fn verify() {
     .await
     .expect("simulate relay crash after JetStream ACK but before Outbox acknowledgement");
 
-    let replayed_publish = outbox_relay::relay_batch(
-        &database.runtime_pool,
-        &jetstream,
-        &topology.subject_prefix,
-    )
-    .await
-    .expect("Outbox retry republishes with the stable Nats-Msg-Id");
-    assert_eq!(replayed_publish, 1, "retry is acknowledged and Outbox closes");
+    let replayed_publish =
+        outbox_relay::relay_batch(&database.runtime_pool, &jetstream, &topology.subject_prefix)
+            .await
+            .expect("Outbox retry republishes with the stable Nats-Msg-Id");
+    assert_eq!(
+        replayed_publish, 1,
+        "retry is acknowledged and Outbox closes"
+    );
 
     let final_state = sqlx::query(
         "SELECT attempts, published_at, lease_token, last_error_code FROM payments.outbox_events WHERE event_id=$1",
@@ -202,31 +203,35 @@ pub async fn verify() {
     .fetch_one(&database.migration_pool)
     .await
     .expect("Outbox delivery state is queryable");
-    let attempts: i32 = final_state.try_get("attempts").expect("attempt count exists");
+    let attempts: i32 = final_state
+        .try_get("attempts")
+        .expect("attempt count exists");
     let published_at: Option<chrono::DateTime<chrono::Utc>> = final_state
         .try_get("published_at")
         .expect("publish timestamp exists");
-    let lease_token: Option<Uuid> = final_state.try_get("lease_token").expect("lease is readable");
+    let lease_token: Option<Uuid> = final_state
+        .try_get("lease_token")
+        .expect("lease is readable");
     let last_error: Option<String> = final_state
         .try_get("last_error_code")
         .expect("last error is readable");
     assert_eq!(attempts, 2, "the crash-window retry is recorded");
     assert!(published_at.is_some(), "ACKed event is marked published");
     assert!(lease_token.is_none(), "published event releases its lease");
-    assert!(last_error.is_none(), "successful retry clears the prior error");
+    assert!(
+        last_error.is_none(),
+        "successful retry clears the prior error"
+    );
 
     let stream_info = stream.info().await.expect("stream state is queryable");
     assert_eq!(
         stream_info.state.messages, 1,
         "JetStream deduplicates the repeated publish by event ID"
     );
-    let pending = outbox_relay::relay_batch(
-        &database.runtime_pool,
-        &jetstream,
-        &topology.subject_prefix,
-    )
-    .await
-    .expect("empty Outbox batch is harmless");
+    let pending =
+        outbox_relay::relay_batch(&database.runtime_pool, &jetstream, &topology.subject_prefix)
+            .await
+            .expect("empty Outbox batch is harmless");
     assert_eq!(pending, 0, "published events are not claimed again");
 
     drop(message);
