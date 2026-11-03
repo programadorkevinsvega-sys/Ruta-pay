@@ -162,7 +162,7 @@ async fn concurrent_relays_publish_all_claimed_events_without_losing_rows() {
     }
     let jetstream = connect_jetstream().await;
     let (namespace, topology) = topology();
-    let stream = topology
+    let mut stream = topology
         .ensure_stream(&jetstream)
         .await
         .expect("isolated stream is created");
