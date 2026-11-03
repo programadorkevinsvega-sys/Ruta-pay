@@ -138,11 +138,21 @@ Los siguientes checks se limitan al slice inicial de creación/consulta de Payme
 
 **Evidencia:** [CI #913](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41716834260) verificó los tests reales del slice y resiliencia Outbox sobre el SHA de código `1858766a46a5b92d6b6b75207e728ddaa6933498`. [CI #914](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41717663987) verificó el HEAD documental previo del PR (`e1d2c4281e70d117719398d9bad0730e393f1169`): detección de alcance, quality, documentación y YAML, todos en success. La matriz describe qué escenarios concretos cubre cada ejecución y qué no demuestra.
 
+### Base técnica del ciclo de pagos — avance parcial
+
+El código de esta rama introduce la base de dominio y el contrato neutral documentados en [ADR-0011](docs/adr/ADR-0011-payment-lifecycle-and-normalized-provider-events.md). Estos elementos no equivalen a una integración operativa ni cierran los entregables completos:
+
+- [ ] Modelos de intentos/transacciones, guards, normalización y contrato de evento: implementación de dominio/Protobuf pendiente de verificación CI. No hay todavía persistencia, casos de uso, ingestión de eventos ni reconciliación ejecutable.
+- [ ] Persistencia PostgreSQL con RLS/constraints, inbox idempotente, casos de reconciliación, auditoría, Outbox y pruebas reales de aislamiento/concurrencia/rollback.
+- [ ] API/contratos de creación de intentos, consulta de intentos/transacciones y actualización del estado del intent, con scopes y aceptación HTTP→BFF→gRPC→módulo.
+- [ ] Ingestión de eventos normalizados solo después de verificar el callback en el adapter y autenticar al productor cross-backend. El mensaje Protobuf no autentica por sí mismo y no se añadió un RPC/consumer de ingreso.
+- [ ] Consultas reales al proveedor, resolución durable de resultado incierto y conciliación; no repetir un cobro ante timeout sin resultado autoritativo.
+
 ### Entregables de Fase 4 aún pendientes o bloqueados
 
-- [ ] Completar el ciclo de negocio de Payment Intents/transacciones: agregados de intentos y transacciones, transiciones y guards, estados normalizados por proveedor, callbacks verificados, eventos tardíos, resultado incierto y reconciliación.
-- [ ] Definir e implementar captura, cancelación, expiración y reembolsos totales/parciales únicamente después de aprobar las decisiones comerciales/financieras correspondientes.
-- [ ] Cobro a compradores de los tenants según el flujo configurado, separado del cobro que Payvia realiza a los tenants por usar la plataforma.
+- [ ] Completar el ciclo de negocio de Payment Intents/transacciones de extremo a extremo: persistencia de intentos/transacciones, estados y guards aplicados transaccionalmente, eventos normalizados consumidos desde una frontera autenticada, manejo durable de eventos tardíos, outcome unknown y reconciliación contra el proveedor.
+- [ ] Definir e implementar captura, cancelación, expiración y reembolsos totales/parciales únicamente después de aprobar B-EC-07..13 (autorización/captura, vigencia, cancelación, reintentos, cambio de proveedor y política/límites de reembolsos). No se crean comandos, endpoints ni estados para estas operaciones mientras sigan sin aprobación.
+- [ ] Cobro a compradores de los tenants mediante el flujo configurado, separado del recaudo SaaS que Payvia realiza a sus tenants. Bloqueado por decisiones funcionales aplicables y por adapters/callbacks reales del backend de pasarelas; el scaffold de gateway no se sustituye con una simulación.
 - [ ] Implementar el ciclo de suscripción, periodos, medición facturable, prorrateo si se aprueba, invoices y partidas inmutables.
 - [ ] Implementar cálculo de cobros de Payvia independiente de montos y fees de transacciones procesadas para el tenant, con snapshot económico reproducible y ledger financiero.
 - [ ] Implementar cobro de invoices de Payvia por `platform_billing_wompi`, con cuenta/credenciales de Payvia, callbacks propios verificados y reconciliación; no atraviesa `bacekend-pasarela` ni comparte credenciales tenant.
