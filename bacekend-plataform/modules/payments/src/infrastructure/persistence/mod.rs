@@ -53,7 +53,7 @@ pub async fn extend_outbox_lease(
     lease_token: Uuid,
 ) -> Result<bool, sqlx::Error> {
     let result = sqlx::query(
-        "UPDATE payments.outbox_events SET lease_until=now()+interval '30 seconds' WHERE event_id=$1 AND lease_token=$2 AND published_at IS NULL AND failed_at IS NULL",
+        "UPDATE payments.outbox_events SET lease_until=now()+interval '30 seconds' WHERE event_id=$1 AND lease_token=$2 AND published_at IS NULL AND failed_at IS NULL AND lease_until > now()",
     )
     .bind(event_id)
     .bind(lease_token)
@@ -67,7 +67,7 @@ pub async fn mark_outbox_published(
     event_id: Uuid,
     lease_token: Uuid,
 ) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query("UPDATE payments.outbox_events SET published_at=now(),lease_token=NULL,lease_until=NULL,last_error_code=NULL WHERE event_id=$1 AND lease_token=$2 AND published_at IS NULL AND failed_at IS NULL")
+    let result = sqlx::query("UPDATE payments.outbox_events SET published_at=now(),lease_token=NULL,lease_until=NULL,last_error_code=NULL WHERE event_id=$1 AND lease_token=$2 AND published_at IS NULL AND failed_at IS NULL AND lease_until > now()")
         .bind(event_id).bind(lease_token).execute(pool).await?;
     Ok(result.rows_affected() == 1)
 }
@@ -79,7 +79,7 @@ pub async fn mark_outbox_failed(
     error_code: &str,
 ) -> Result<bool, sqlx::Error> {
     let result = sqlx::query(
-        "UPDATE payments.outbox_events SET failed_at=now(),lease_token=NULL,lease_until=NULL,last_error_code=$3 WHERE event_id=$1 AND lease_token=$2 AND published_at IS NULL AND failed_at IS NULL",
+        "UPDATE payments.outbox_events SET failed_at=now(),lease_token=NULL,lease_until=NULL,last_error_code=$3 WHERE event_id=$1 AND lease_token=$2 AND published_at IS NULL AND failed_at IS NULL AND lease_until > now()",
     )
     .bind(event_id)
     .bind(lease_token)
@@ -95,7 +95,7 @@ pub async fn reschedule_outbox_event(
     lease_token: Uuid,
     error_code: &str,
 ) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query("UPDATE payments.outbox_events SET available_at=now()+make_interval(secs=>LEAST(300,GREATEST(1,ceil(power(2.0::double precision,LEAST(attempts,8)::double precision)*(0.5+random()))::integer))),lease_token=NULL,lease_until=NULL,last_error_code=$3 WHERE event_id=$1 AND lease_token=$2 AND published_at IS NULL AND failed_at IS NULL")
+    let result = sqlx::query("UPDATE payments.outbox_events SET available_at=now()+make_interval(secs=>LEAST(300,GREATEST(1,ceil(power(2.0::double precision,LEAST(attempts,8)::double precision)*(0.5+random()))::integer))),lease_token=NULL,lease_until=NULL,last_error_code=$3 WHERE event_id=$1 AND lease_token=$2 AND published_at IS NULL AND failed_at IS NULL AND lease_until > now()")
         .bind(event_id).bind(lease_token).bind(error_code).execute(pool).await?;
     Ok(result.rows_affected() == 1)
 }

@@ -1,9 +1,7 @@
 use async_nats::jetstream::{self, Context};
 use platform_payments::infrastructure::{
     outbox_relay,
-    persistence::{
-        claim_outbox_events, extend_outbox_lease, mark_outbox_published,
-    },
+    persistence::{claim_outbox_events, extend_outbox_lease, mark_outbox_published},
 };
 use platform_runtime::event_topology::{EventTopology, delete_e2e_stream};
 use serde_json::json;
@@ -65,6 +63,13 @@ async fn outbox_lease_expiry_is_reclaimed_and_stale_owner_is_rejected() {
     .await
     .expect("test expires only the isolated event lease");
 
+    assert!(
+        !extend_outbox_lease(&database.runtime_pool, event_id, stale_token)
+            .await
+            .expect("expired owner lease renewal is checked"),
+        "an expired lease cannot be renewed without a new claim"
+    );
+
     let recovered = claim_outbox_events(&database.runtime_pool, 1)
         .await
         .expect("another relay recovers the expired event");
@@ -100,13 +105,10 @@ async fn outbox_retries_after_stream_becomes_available_with_jittered_backoff() {
     let jetstream = connect_jetstream().await;
     let (namespace, topology) = topology();
 
-    let first = outbox_relay::relay_batch(
-        &database.runtime_pool,
-        &jetstream,
-        &topology.subject_prefix,
-    )
-    .await
-    .expect("temporary JetStream rejection is rescheduled");
+    let first =
+        outbox_relay::relay_batch(&database.runtime_pool, &jetstream, &topology.subject_prefix)
+            .await
+            .expect("temporary JetStream rejection is rescheduled");
     assert_eq!(first, 0, "a rejected publish is not acknowledged");
 
     let deferred = sqlx::query(
@@ -140,13 +142,10 @@ async fn outbox_retries_after_stream_becomes_available_with_jittered_backoff() {
         .execute(&database.migration_pool)
         .await
         .expect("test makes the recovered event immediately eligible");
-    let recovered = outbox_relay::relay_batch(
-        &database.runtime_pool,
-        &jetstream,
-        &topology.subject_prefix,
-    )
-    .await
-    .expect("relay recovers after JetStream becomes available");
+    let recovered =
+        outbox_relay::relay_batch(&database.runtime_pool, &jetstream, &topology.subject_prefix)
+            .await
+            .expect("relay recovers after JetStream becomes available");
     assert_eq!(recovered, 1);
 
     delete_e2e_stream(&jetstream, &namespace)
@@ -169,19 +168,14 @@ async fn concurrent_relays_publish_all_claimed_events_without_losing_rows() {
         .expect("isolated stream is created");
 
     let (first, second) = tokio::join!(
-        outbox_relay::relay_batch(
-            &database.runtime_pool,
-            &jetstream,
-            &topology.subject_prefix
-        ),
-        outbox_relay::relay_batch(
-            &database.runtime_pool,
-            &jetstream,
-            &topology.subject_prefix
-        )
+        outbox_relay::relay_batch(&database.runtime_pool, &jetstream, &topology.subject_prefix),
+        outbox_relay::relay_batch(&database.runtime_pool, &jetstream, &topology.subject_prefix)
     );
     let delivered = first.expect("first relay completes") + second.expect("second relay completes");
-    assert_eq!(delivered, 40, "both relays publish the full claimed backlog");
+    assert_eq!(
+        delivered, 40,
+        "both relays publish the full claimed backlog"
+    );
 
     let published: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM payments.outbox_events WHERE published_at IS NOT NULL",
@@ -190,8 +184,14 @@ async fn concurrent_relays_publish_all_claimed_events_without_losing_rows() {
     .await
     .expect("published event count is readable");
     assert_eq!(published, 40);
-    let info = stream.info().await.expect("JetStream stream state is readable");
-    assert_eq!(info.state.messages, 40, "each event has a stable unique message ID");
+    let info = stream
+        .info()
+        .await
+        .expect("JetStream stream state is readable");
+    assert_eq!(
+        info.state.messages, 40,
+        "each event has a stable unique message ID"
+    );
 
     delete_e2e_stream(&jetstream, &namespace)
         .await
@@ -206,13 +206,10 @@ async fn permanent_outbox_errors_are_quarantined_without_retrying_forever() {
     let jetstream = connect_jetstream().await;
     let (_, topology) = topology();
 
-    let delivered = outbox_relay::relay_batch(
-        &database.runtime_pool,
-        &jetstream,
-        &topology.subject_prefix,
-    )
-    .await
-    .expect("invalid event contract is quarantined without a publish attempt");
+    let delivered =
+        outbox_relay::relay_batch(&database.runtime_pool, &jetstream, &topology.subject_prefix)
+            .await
+            .expect("invalid event contract is quarantined without a publish attempt");
     assert_eq!(delivered, 0);
 
     let failed = sqlx::query(
@@ -234,21 +231,20 @@ async fn permanent_outbox_errors_are_quarantined_without_retrying_forever() {
     assert!(lease_token.is_none());
     assert_eq!(error_code.as_deref(), Some("event_type_invalid"));
 
-    let repeated = outbox_relay::relay_batch(
-        &database.runtime_pool,
-        &jetstream,
-        &topology.subject_prefix,
-    )
-    .await
-    .expect("quarantined rows are excluded from automatic claims");
+    let repeated =
+        outbox_relay::relay_batch(&database.runtime_pool, &jetstream, &topology.subject_prefix)
+            .await
+            .expect("quarantined rows are excluded from automatic claims");
     assert_eq!(repeated, 0);
-    let final_attempts: i32 = sqlx::query_scalar(
-        "SELECT attempts FROM payments.outbox_events WHERE event_id=$1",
-    )
-    .bind(event_id)
-    .fetch_one(&database.migration_pool)
-    .await
-    .expect("quarantined attempt count is readable");
-    assert_eq!(final_attempts, 1, "permanent errors do not retry indefinitely");
+    let final_attempts: i32 =
+        sqlx::query_scalar("SELECT attempts FROM payments.outbox_events WHERE event_id=$1")
+            .bind(event_id)
+            .fetch_one(&database.migration_pool)
+            .await
+            .expect("quarantined attempt count is readable");
+    assert_eq!(
+        final_attempts, 1,
+        "permanent errors do not retry indefinitely"
+    );
     database.finish().await;
 }
