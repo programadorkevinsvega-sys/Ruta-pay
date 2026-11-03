@@ -17,6 +17,7 @@ async fn real_http_bff_and_grpc_module_cover_success_and_unavailable() {
     let realtime_client = runtime.clients.realtime;
     let catalog_client = runtime.clients.catalog;
     let entitlements_client = runtime.clients.entitlements;
+    let _payments_client = runtime.clients.payments;
 
     let http_listener = TcpListener::bind("127.0.0.1:0").await.expect("BFF bind");
     let http_addr = http_listener.local_addr().expect("BFF address");
