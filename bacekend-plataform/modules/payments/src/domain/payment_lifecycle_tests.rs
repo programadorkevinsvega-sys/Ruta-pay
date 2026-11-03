@@ -26,7 +26,7 @@ fn transitions_are_forward_only_and_terminal_conflicts_need_reconciliation() {
     assert_eq!(
         PaymentAttemptStatus::Created.transition_to(
             PaymentAttemptStatus::Submitted,
-            TransitionAuthority::ProviderEvent
+            TransitionAuthority::OperationSubmitted
         ),
         Ok(TransitionEffect::Apply)
     );
@@ -40,7 +40,7 @@ fn transitions_are_forward_only_and_terminal_conflicts_need_reconciliation() {
     assert_eq!(
         PaymentIntentStatus::Created.transition_to(
             PaymentIntentStatus::Processing,
-            TransitionAuthority::ProviderEvent
+            TransitionAuthority::OperationSubmitted
         ),
         Ok(TransitionEffect::Apply)
     );
@@ -127,5 +127,26 @@ fn only_platform_timeout_can_enter_outcome_unknown() {
             TransitionAuthority::OperationTimeout
         ),
         Ok(TransitionEffect::Apply)
+    );
+    assert_eq!(
+        PaymentAttemptStatus::Created.transition_to(
+            PaymentAttemptStatus::OutcomeUnknown,
+            TransitionAuthority::OperationTimeout
+        ),
+        Err(TransitionGuardError::TransitionNotAllowed)
+    );
+    assert_eq!(
+        PaymentAttemptStatus::Submitted.transition_to(
+            PaymentAttemptStatus::OutcomeUnknown,
+            TransitionAuthority::OperationTimeout
+        ),
+        Ok(TransitionEffect::Apply)
+    );
+    assert_eq!(
+        PaymentIntentStatus::Created.transition_to(
+            PaymentIntentStatus::Processing,
+            TransitionAuthority::ProviderEvent
+        ),
+        Err(TransitionGuardError::TransitionNotAllowed)
     );
 }
