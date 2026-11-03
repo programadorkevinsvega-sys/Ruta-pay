@@ -22,8 +22,7 @@ use super::{
     },
 };
 
-#[utoipa::path(post, path = "/v1/tenants", request_body = NewTenant, responses((status = 201, body = TenantView), (status = 409, body = crate::http::dto::error_envelope::ErrorEnvelope)))]
-pub async fn register(
+pub(super) async fn register(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     Json(body): Json<NewTenant>,
@@ -54,8 +53,7 @@ pub async fn register(
     }
 }
 
-#[utoipa::path(get, path = "/v1/tenants/{tenant_id}", params(("tenant_id" = String, Path)), responses((status = 200, body = TenantView)))]
-pub async fn get(
+pub(super) async fn get(
     State(state): State<Arc<AppState>>,
     Path(tenant_id): Path<String>,
     headers: HeaderMap,
@@ -101,8 +99,7 @@ async fn get_with_session(
     }
 }
 
-#[utoipa::path(get, path = "/v1/platform/tenants", params(("query" = Option<String>, Query), ("limit" = Option<i32>, Query), ("offset" = Option<i32>, Query)), responses((status = 200, body = TenantList)))]
-pub async fn list_for_operator(
+pub(super) async fn list_for_operator(
     State(state): State<Arc<AppState>>,
     Query(query): Query<TenantQuery>,
     headers: HeaderMap,
@@ -141,8 +138,7 @@ pub async fn list_for_operator(
     }
 }
 
-#[utoipa::path(post, path = "/v1/platform/tenants/{tenant_id}/status", request_body = ChangeTenantStatus, responses((status = 200, body = TenantView)))]
-pub async fn change_status(
+pub(super) async fn change_status(
     State(state): State<Arc<AppState>>,
     Path(tenant_id): Path<String>,
     headers: HeaderMap,
