@@ -4,7 +4,7 @@
 
 Ruta en el repositorio: `frontends/frontend-plataform/`.
 >
-> Estado actualizado: la coordinación realtime de Fase 2 está implementada y aceptada contra el BFF real; los demás dominios administrativos siguen pendientes según sus fases.
+> Estado al 2026-11-03: el slice de coordinación realtime de esta aplicación está implementado y aceptado contra el BFF real como parte de la integración vertical de plataforma. Esto no cierra todas las fases propias del frontend: las tareas de Fases 0 y 1 de este roadmap aún conservan casillas pendientes. Los demás dominios administrativos siguen pendientes.
 
 La configuración local del cliente vive en `frontends/frontend-plataform/.env` y se documenta en su `.env.example`; no se almacena en los `.env` de los backends.
 
@@ -103,4 +103,4 @@ La administración es una app independiente de `frontend-pasarela`, con sesión,
 
 ## Estado de fases
 
-La Fase 2 de realtime recuperable está verificada junto con la integración vertical del backend de plataforma. Playwright cubre sesión de operador, búsqueda y transiciones administrativas con cambios realtime; una prueba de dos réplicas cubre reinicios de Redis y JetStream. Evidencia: [`bacekend-plataform/docs/phase-2/acceptance.md`](../../bacekend-plataform/docs/phase-2/acceptance.md). El resto de los dominios administrativos permanece en sus fases posteriores.
+El slice de realtime recuperable y operaciones administrativas está verificado junto con la integración vertical del backend de plataforma. Playwright cubre sesión de operador, búsqueda y transiciones administrativas con cambios realtime; una prueba de dos réplicas cubre reinicios de Redis y JetStream. Evidencia: [`bacekend-plataform/docs/phase-2/acceptance.md`](../../bacekend-plataform/docs/phase-2/acceptance.md). Esto no cierra automáticamente las tareas aún abiertas de Fases 0 y 1 de este roadmap. El resto de los dominios administrativos permanece en fases posteriores.
