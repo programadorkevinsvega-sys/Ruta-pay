@@ -1,5 +1,4 @@
 use axum::{http::{HeaderMap, StatusCode}, response::Response};
-use opentelemetry::propagation::Injector;
 
 use crate::http::handlers::identity;
 
