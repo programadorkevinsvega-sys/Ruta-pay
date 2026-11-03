@@ -113,6 +113,8 @@ Acta: docs/phase-3/acceptance.md. Matriz específica: docs/phase-3/integration-m
 
 ## Fase 4 — Suscripciones y facturación de uso Payvia
 
+**Registro de decisiones pendientes:** [docs/phase-4/decision-register.md](docs/phase-4/decision-register.md). Separa las decisiones económicas que requieren aprobación de las resoluciones técnicas a cargo de arquitectura. No aprueba precios, impuestos, políticas comerciales ni capacidades de proveedores; las casillas de implementación de esta fase permanecen pendientes.
+
 **Pruebas obligatorias de esta fase:** cada caso de uso y cada acción debe tener escenarios positivos/negativos, límites y tipos inválidos, duplicados/concurrencia, permisos/aislamiento, estados, fallos/reintentos, integridad y redacción aplicables. Registrar requisito→test→ejecución CI; no se aplaza a Fase 8.
 
 
