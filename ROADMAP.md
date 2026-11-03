@@ -5,11 +5,13 @@
 `main` debe mantenerse funcional y verificable. Los cambios importantes de código, arquitectura o seguridad se desarrollan en ramas descriptivas y se presentan mediante Pull Request con resumen, decisiones técnicas, verificaciones ejecutadas y riesgos conocidos. Los cambios triviales de documentación pueden hacerse en `main` cuando las protecciones lo permitan. No se permite force push ni reescribir historial compartido. No se integra si las verificaciones obligatorias fallan; los cambios sensibles requieren revisión manual. Consulta las reglas de agentes y proyecto para el procedimiento completo.
 
 > Orquestador de pagos multi-pasarela en Rust.
-> Última actualización: 2026-10-21 · Estado general: **planificación**
+> Última actualización: 2026-11-03 · Estado general: **en desarrollo por componentes; fases globales aún no certificadas**. Ver [PROJECT_STATUS.md](PROJECT_STATUS.md) para el estado contrastado con GitHub.
 
 Payvia se compone de dos backends desplegables, cada uno un monolito modular Rust: [backend de plataforma](bacekend-plataform/README.md) y [backend de pasarelas](bacekend-pasarela/README.md). Sus roadmaps detallados son [plataforma](bacekend-plataform/ROADMAP.md) y [pasarelas](bacekend-pasarela/ROADMAP.md); este documento coordina la entrega integral y sus fronteras.
 
 Plataforma también integra, en módulos propios, Wompi para cobrar a los tenants de Payvia, Factus para facturación electrónica de Payvia y Resend para correo. Estas integraciones no pertenecen a `bacekend-pasarela`, que procesa exclusivamente pagos de compradores de los comercios.
+
+> **Numeración independiente:** las fases de este roadmap son hitos globales del producto. No equivalen a las fases del backend de plataforma, backend de pasarelas ni a los dos frontends. La implementación de plataforma Fases 0–3 no cierra automáticamente las fases globales ni los roadmaps de los otros componentes. Consulta [PROJECT_STATUS.md](PROJECT_STATUS.md) para ver las diferencias y las evidencias.
 
 La topología de dos backends ya está fijada en `ARCHITECTURE_RULES.md`. La Fase 0 formaliza mediante ADR los contratos de servicio, concesiones de autorización, migraciones coordinadas y operación; no posterga ni reabre la decisión de tener dos backends.
 
