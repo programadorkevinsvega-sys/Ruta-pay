@@ -93,10 +93,10 @@ async fn payment_intent_creation_replay_conflict_concurrency_and_tenant_isolatio
 
     let audit_count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM payments.audit_events WHERE resource_id=$1")
-    .bind(created.id)
-    .fetch_one(&database.migration_pool)
-    .await
-    .expect("audit rows can be inspected by the migration role");
+            .bind(created.id)
+            .fetch_one(&database.migration_pool)
+            .await
+            .expect("audit rows can be inspected by the migration role");
     assert_eq!(audit_count, 2, "creation and replay are audited");
 
     database.finish().await;

@@ -36,7 +36,15 @@ pub fn router(
     catalog_client: CatalogPricingClient<tonic::transport::Channel>,
     entitlements_client: EntitlementsQuotasClient<tonic::transport::Channel>,
 ) -> Router {
-    router_inner(grpc_client, identity_client, tenant_client, realtime_client, catalog_client, entitlements_client, None)
+    router_inner(
+        grpc_client,
+        identity_client,
+        tenant_client,
+        realtime_client,
+        catalog_client,
+        entitlements_client,
+        None,
+    )
 }
 
 pub fn router_with_payments(
@@ -48,7 +56,15 @@ pub fn router_with_payments(
     entitlements_client: EntitlementsQuotasClient<tonic::transport::Channel>,
     payments_client: PaymentsClient<tonic::transport::Channel>,
 ) -> Router {
-    router_inner(grpc_client, identity_client, tenant_client, realtime_client, catalog_client, entitlements_client, Some(payments_client))
+    router_inner(
+        grpc_client,
+        identity_client,
+        tenant_client,
+        realtime_client,
+        catalog_client,
+        entitlements_client,
+        Some(payments_client),
+    )
 }
 
 fn router_inner(

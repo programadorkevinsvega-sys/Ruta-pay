@@ -47,13 +47,34 @@ pub async fn create_payment_intent(
 ) -> Response {
     let correlation = correlation_id(&headers);
     let Some((secret, environment)) = bearer_key(&headers) else {
-        return payment_error(StatusCode::UNAUTHORIZED, "api_key_invalid", "authentication", false, correlation);
+        return payment_error(
+            StatusCode::UNAUTHORIZED,
+            "api_key_invalid",
+            "authentication",
+            false,
+            correlation,
+        );
     };
-    let Some(idempotency_key) = headers.get("idempotency-key").and_then(|value| value.to_str().ok()) else {
-        return payment_error(StatusCode::BAD_REQUEST, "idempotency_key_required", "validation", false, correlation);
+    let Some(idempotency_key) = headers
+        .get("idempotency-key")
+        .and_then(|value| value.to_str().ok())
+    else {
+        return payment_error(
+            StatusCode::BAD_REQUEST,
+            "idempotency_key_required",
+            "validation",
+            false,
+            correlation,
+        );
     };
     let Some(mut client) = state.payments_client.clone() else {
-        return payment_error(StatusCode::SERVICE_UNAVAILABLE, "payments_unavailable", "dependency", true, correlation);
+        return payment_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "payments_unavailable",
+            "dependency",
+            true,
+            correlation,
+        );
     };
     let request = CreatePaymentIntentRequest {
         api_key_secret: secret,
@@ -67,16 +88,34 @@ pub async fn create_payment_intent(
         correlation_id: correlation.clone(),
     };
     let started = std::time::Instant::now();
-    match client.create_payment_intent(payment_request(request, &correlation)).await {
+    match client
+        .create_payment_intent(payment_request(request, &correlation))
+        .await
+    {
         Ok(response) => {
             let response = response.into_inner();
             let Some(intent) = response.payment_intent else {
-                return payment_error(StatusCode::INTERNAL_SERVER_ERROR, "payment_response_invalid", "internal", false, correlation);
+                return payment_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "payment_response_invalid",
+                    "internal",
+                    false,
+                    correlation,
+                );
             };
-            let status = if response.replayed { StatusCode::OK } else { StatusCode::CREATED };
+            let status = if response.replayed {
+                StatusCode::OK
+            } else {
+                StatusCode::CREATED
+            };
             (status, Json(payment_view(intent))).into_response()
         }
-        Err(status) => payment_grpc_error(status, "create_payment_intent", &correlation, started.elapsed().as_millis() as u64),
+        Err(status) => payment_grpc_error(
+            status,
+            "create_payment_intent",
+            &correlation,
+            started.elapsed().as_millis() as u64,
+        ),
     }
 }
 
@@ -88,10 +127,22 @@ pub async fn get_payment_intent(
 ) -> Response {
     let correlation = correlation_id(&headers);
     let Some((secret, environment)) = bearer_key(&headers) else {
-        return payment_error(StatusCode::UNAUTHORIZED, "api_key_invalid", "authentication", false, correlation);
+        return payment_error(
+            StatusCode::UNAUTHORIZED,
+            "api_key_invalid",
+            "authentication",
+            false,
+            correlation,
+        );
     };
     let Some(mut client) = state.payments_client.clone() else {
-        return payment_error(StatusCode::SERVICE_UNAVAILABLE, "payments_unavailable", "dependency", true, correlation);
+        return payment_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "payments_unavailable",
+            "dependency",
+            true,
+            correlation,
+        );
     };
     let request = GetPaymentIntentRequest {
         api_key_secret: secret,
@@ -101,12 +152,26 @@ pub async fn get_payment_intent(
         correlation_id: correlation.clone(),
     };
     let started = std::time::Instant::now();
-    match client.get_payment_intent(payment_request(request, &correlation)).await {
+    match client
+        .get_payment_intent(payment_request(request, &correlation))
+        .await
+    {
         Ok(response) => match response.into_inner().payment_intent {
             Some(intent) => Json(payment_view(intent)).into_response(),
-            None => payment_error(StatusCode::INTERNAL_SERVER_ERROR, "payment_response_invalid", "internal", false, correlation),
+            None => payment_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "payment_response_invalid",
+                "internal",
+                false,
+                correlation,
+            ),
         },
-        Err(status) => payment_grpc_error(status, "get_payment_intent", &correlation, started.elapsed().as_millis() as u64),
+        Err(status) => payment_grpc_error(
+            status,
+            "get_payment_intent",
+            &correlation,
+            started.elapsed().as_millis() as u64,
+        ),
     }
 }
 
@@ -130,7 +195,9 @@ fn bearer_key(headers: &HeaderMap) -> Option<(String, String)> {
     if !scheme.eq_ignore_ascii_case("bearer")
         || secret.is_empty()
         || secret.len() > 128
-        || !secret.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))
+        || !secret
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))
     {
         return None;
     }
@@ -152,28 +219,80 @@ fn payment_view(intent: platform_contracts::payments::PaymentIntent) -> PaymentI
         amount_minor: intent.amount_minor,
         currency: intent.currency,
         payment_method_type: intent.payment_method_type,
-        merchant_reference: (!intent.merchant_reference.is_empty()).then_some(intent.merchant_reference),
+        merchant_reference: (!intent.merchant_reference.is_empty())
+            .then_some(intent.merchant_reference),
         status: intent.status,
         created_at: intent.created_at,
     }
 }
 
-fn payment_grpc_error(status: tonic::Status, operation: &'static str, correlation: &str, duration_ms: u64) -> Response {
+fn payment_grpc_error(
+    status: tonic::Status,
+    operation: &'static str,
+    correlation: &str,
+    duration_ms: u64,
+) -> Response {
     let (http, code, category, retryable) = match status.code() {
-        tonic::Code::InvalidArgument => (StatusCode::BAD_REQUEST, "payment_input_invalid", "validation", false),
-        tonic::Code::AlreadyExists => (StatusCode::CONFLICT, "idempotency_conflict", "conflict", false),
-        tonic::Code::Unauthenticated => (StatusCode::UNAUTHORIZED, "api_key_invalid", "authentication", false),
-        tonic::Code::PermissionDenied => (StatusCode::FORBIDDEN, "authorization_denied", "authorization", false),
-        tonic::Code::NotFound => (StatusCode::NOT_FOUND, "payment_intent_not_found", "not_found", false),
-        tonic::Code::Unavailable => (StatusCode::SERVICE_UNAVAILABLE, "payments_unavailable", "dependency", true),
-        tonic::Code::DeadlineExceeded => (StatusCode::SERVICE_UNAVAILABLE, "payments_timeout", "timeout", true),
-        _ => (StatusCode::INTERNAL_SERVER_ERROR, "payment_intent_failed", "internal", false),
+        tonic::Code::InvalidArgument => (
+            StatusCode::BAD_REQUEST,
+            "payment_input_invalid",
+            "validation",
+            false,
+        ),
+        tonic::Code::AlreadyExists => (
+            StatusCode::CONFLICT,
+            "idempotency_conflict",
+            "conflict",
+            false,
+        ),
+        tonic::Code::Unauthenticated => (
+            StatusCode::UNAUTHORIZED,
+            "api_key_invalid",
+            "authentication",
+            false,
+        ),
+        tonic::Code::PermissionDenied => (
+            StatusCode::FORBIDDEN,
+            "authorization_denied",
+            "authorization",
+            false,
+        ),
+        tonic::Code::NotFound => (
+            StatusCode::NOT_FOUND,
+            "payment_intent_not_found",
+            "not_found",
+            false,
+        ),
+        tonic::Code::Unavailable => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "payments_unavailable",
+            "dependency",
+            true,
+        ),
+        tonic::Code::DeadlineExceeded => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "payments_timeout",
+            "timeout",
+            true,
+        ),
+        _ => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "payment_intent_failed",
+            "internal",
+            false,
+        ),
     };
     tracing::warn!(event.name="bff.dependency.call.failed", component="platform_bff", operation, dependency="payments", error_code=%status.code(), error_category=category, retryable, dependency_duration_ms=duration_ms, correlation_id=%correlation, trace_id=%current_trace_id(), span_id=%current_span_id());
     payment_error(http, code, category, retryable, correlation.to_owned())
 }
 
-fn payment_error(status: StatusCode, code: &'static str, category: &'static str, retryable: bool, correlation_id: String) -> Response {
+fn payment_error(
+    status: StatusCode,
+    code: &'static str,
+    category: &'static str,
+    retryable: bool,
+    correlation_id: String,
+) -> Response {
     let body = ErrorEnvelope {
         error: ErrorBody {
             code,
@@ -185,7 +304,12 @@ fn payment_error(status: StatusCode, code: &'static str, category: &'static str,
         },
     };
     let mut response = (status, Json(body)).into_response();
-    response.headers_mut().insert("x-internal-error-code", HeaderValue::from_static(code));
-    response.headers_mut().insert("x-internal-error-category", HeaderValue::from_static(category));
+    response
+        .headers_mut()
+        .insert("x-internal-error-code", HeaderValue::from_static(code));
+    response.headers_mut().insert(
+        "x-internal-error-category",
+        HeaderValue::from_static(category),
+    );
     response
 }
