@@ -119,12 +119,12 @@ async fn payment_intent_creation_replay_conflict_concurrency_and_tenant_isolatio
     let outbox_count: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM payments.outbox_events WHERE aggregate_id IN ($1,$2,$3)",
     )
-            .bind(created.id)
-            .bind(concurrent_id.expect("concurrent payment intent id exists"))
-            .bind(live_intent.id)
-            .fetch_one(&database.migration_pool)
+    .bind(created.id)
+    .bind(concurrent_id.expect("concurrent payment intent id exists"))
+    .bind(live_intent.id)
+    .fetch_one(&database.migration_pool)
     .await
-            .expect("outbox rows can be inspected by the migration role");
+    .expect("outbox rows can be inspected by the migration role");
     assert_eq!(
         outbox_count, 3,
         "each intent emits exactly one durable event"
@@ -235,19 +235,19 @@ async fn invalid_payment_intents_are_rejected_before_any_business_write() {
         sqlx::query_scalar("SELECT count(*) FROM payments.payment_intents WHERE tenant_id=$1")
             .bind(tenant_id)
             .fetch_one(&database.migration_pool)
-    .await
+            .await
             .expect("intent count is readable");
     let idempotency_records: i64 =
         sqlx::query_scalar("SELECT count(*) FROM payments.idempotency_records WHERE tenant_id=$1")
             .bind(tenant_id)
             .fetch_one(&database.migration_pool)
-    .await
+            .await
             .expect("idempotency count is readable");
     let audit_events: i64 =
         sqlx::query_scalar("SELECT count(*) FROM payments.audit_events WHERE tenant_id=$1")
             .bind(tenant_id)
             .fetch_one(&database.migration_pool)
-    .await
+            .await
             .expect("audit count is readable");
 
     assert_eq!(intents, 0, "invalid requests do not create intents");
