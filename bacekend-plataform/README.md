@@ -16,6 +16,10 @@ Backend de plataforma: tenants, planes, facturación, autorización y reglas de 
 
 ## Backend de Plataforma Payvia
 
+## Estado verificado — 2026-11-03
+
+Este backend tiene integradas en main las implementaciones de sus Fases 0–3: auditoría/arquitectura, runtime/observabilidad, identidad/tenants/realtime y catálogo/entitlements. Las auditorías de Fases 0 y 1 conservan brechas abiertas y bloquean declarar conformidad total con la Definition of Done vigente. Las Fases 4–9 siguen pendientes. Consulta [PROJECT_STATUS.md](../PROJECT_STATUS.md) para los SHAs, PRs, ejecuciones CI y bloqueos detallados.
+
 ## Propósito
 
 Este backend es el plano de control y el dueño de las reglas de la plataforma SaaS. Mantiene el registro y ciclo de vida de los tenants/comercios, los usuarios y permisos, el catálogo de planes, precios y versiones, los límites y cuotas, las suscripciones y la facturación que Payvia cobra por el uso del sistema.
