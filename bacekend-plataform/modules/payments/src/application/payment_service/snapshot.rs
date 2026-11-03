@@ -38,12 +38,12 @@ pub(super) fn decode(snapshot: Value) -> Result<PaymentIntent, PaymentServiceErr
     Ok(PaymentIntent {
         id,
         tenant_id,
-        environment,
+        environment: environment.to_owned(),
         amount_minor,
-        currency,
+        currency: currency.to_owned(),
         payment_method_type,
         merchant_reference,
-        status,
+        status: status.to_owned(),
         created_at,
     })
 }
