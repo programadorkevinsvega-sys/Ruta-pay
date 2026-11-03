@@ -115,6 +115,8 @@ Acta: docs/phase-3/acceptance.md. Matriz específica: docs/phase-3/integration-m
 
 **Registro de decisiones pendientes:** [docs/phase-4/decision-register.md](docs/phase-4/decision-register.md). Separa las decisiones económicas que requieren aprobación de las resoluciones técnicas a cargo de arquitectura. No aprueba precios, impuestos, políticas comerciales ni capacidades de proveedores; las casillas de implementación de esta fase permanecen pendientes.
 
+**Matriz de integración y evidencia:** [docs/phase-4/integration-matrix.md](docs/phase-4/integration-matrix.md). Mantiene el estado real por frontera y enlaza los requisitos con sus pruebas; diferencia el slice implementado de Payment Intents de los alcances todavía pendientes o bloqueados.
+
 **Pruebas obligatorias de esta fase:** cada caso de uso y cada acción debe tener escenarios positivos/negativos, límites y tipos inválidos, duplicados/concurrencia, permisos/aislamiento, estados, fallos/reintentos, integridad y redacción aplicables. Registrar requisito→test→ejecución CI; no se aplaza a Fase 8.
 
 
