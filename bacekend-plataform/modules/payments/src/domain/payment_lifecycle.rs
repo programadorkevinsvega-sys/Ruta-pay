@@ -305,7 +305,7 @@ mod tests {
         );
         assert_eq!(
             NormalizedProviderPaymentStatus::Succeeded.intent_status(),
-            PaymentIntentStatus::Succeeded
+            Some(PaymentIntentStatus::Succeeded)
         );
     }
 
