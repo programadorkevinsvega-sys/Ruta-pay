@@ -36,11 +36,13 @@ Las decisiones económicas pendientes del [registro de decisiones](decision-regi
 | Crear Payment Intent válido y persistir importe/moneda/método/entorno | `payment_intent_creation_replay_conflict_concurrency_and_tenant_isolation` | Cubierto |
 | Repetir la misma solicitud y devolver el snapshot original | Mismo test, replay exacto | Cubierto |
 | Reutilizar idempotency key con payload distinto | Mismo test, importe modificado | Cubierto |
+| Scope de idempotencia incluye entorno | Mismo test; la misma clave puede crear una intención `live` distinta de la intención `test` | Cubierto |
 | Concurrencia de 12 solicitudes con la misma clave | Mismo test; exactamente una creación inicial | Cubierto |
 | Impedir lectura desde otro tenant | Mismo test, segundo tenant | Cubierto |
 | Impedir lectura desde otro entorno | Mismo test, `live` frente a intent `test` | Cubierto |
-| Una fila Outbox por Payment Intent | Mismo test | Cubierto |
+| Una fila Outbox por Payment Intent | Mismo test; incluye intención test, live y concurrente | Cubierto |
 | Auditar creación, replay y lectura | Mismo test | Cubierto |
+| Rechazar importes, monedas, entornos, métodos, claves y referencias inválidas sin escrituras | `invalid_payment_intents_are_rejected_before_any_business_write`; verifica intents, idempotency records y auditoría en cero | Cubierto en servicio con PostgreSQL real |
 | Validación unitaria de importe, moneda, entorno, método, idempotency key y merchant reference | Tests unitarios de `domain/payment_intent.rs` | Cubierto a nivel de dominio |
 | Scope ausente/revocado, auth HTTP inválida y denegación por cada frontera | No existe aún test HTTP/gRPC específico de Fase 4 | Pendiente |
 | Fallo/rollback PostgreSQL, timeout, recuperación de relay, redelivery y deduplicación tras reinicio | No existe aún aceptación específica de pagos para estos fallos | Pendiente |
