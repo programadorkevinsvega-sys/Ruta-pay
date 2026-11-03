@@ -88,7 +88,7 @@ Phase 3 must remain open until all of the following are true on one final HEAD S
 3. The real PostgreSQL/Redis/JetStream acceptance tests pass, including immutable idempotent-result replay and event-specific realtime journal/cursor delivery.
 4. The gateway shared-contract client compiles and the BFF HTTP/gRPC authorization path passes.
 5. The integration matrix has no unclassified applicable boundary.
-6. The PR description, roadmap and this acceptance record identify the same final SHA and workflow run.
+6. The PR description, roadmap and this acceptance record identify the same PR and CI workflow. GitHub's workflow metadata must prove that the successful run's `head_sha` is exactly the final PR head SHA; the SHA is not duplicated manually across documents.
 7. Deployment/migration execution and health verification for the target environment are recorded; otherwise production readiness remains unverified.
 
 The last code-validation run before this acceptance-record correction passed all CI jobs on SHA `7d96c1f6fbfd9cd37fba8d0ebeda1ec929682650` (workflow run [41565888509](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41565888509)). This documentation change must itself be revalidated before the PR is considered ready.
