@@ -20,6 +20,9 @@ on:
       - 'PROJECT_RULES.md'
       - 'ROADMAP.md'
       - '.github/workflows/platform-quality.yml'
+      - '**/*.md'
+      - '**/*.mdx'
+      - '**/docs/**'
   pull_request:
     paths:
       - 'Cargo.toml'
@@ -32,9 +35,113 @@ on:
       - 'PROJECT_RULES.md'
       - 'ROADMAP.md'
       - '.github/workflows/platform-quality.yml'
+      - '**/*.md'
+      - '**/*.mdx'
+      - '**/docs/**'
+
+permissions:
+  contents: read
 
 jobs:
+  changes:
+    name: Detect change scope
+    runs-on: ubuntu-24.04
+    outputs:
+      code: ${{ steps.scope.outputs.code }}
+      docs: ${{ steps.scope.outputs.docs }}
+      workflows: ${{ steps.scope.outputs.workflows }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+      - id: scope
+        name: Classify changed files
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+
+          code=false
+          docs=false
+          workflows=false
+
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
+            echo "Initial push: running all verification scopes."
+            code=true
+            docs=true
+            workflows=true
+          else
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+            while IFS= read -r -d '' file; do
+              printf 'Changed file: %s\\n' "$file"
+              case "$file" in
+                *.md|*.mdx|*.markdown|*.MD|*.MDX|*.MARKDOWN|docs/*|*/docs/*|documentation/*|*/documentation/*)
+                  docs=true
+                  ;;
+                .github/workflows/*.yml|.github/workflows/*.yaml)
+                  workflows=true
+                  ;;
+                *)
+                  code=true
+                  ;;
+              esac
+            done < <(git diff --name-only --diff-filter=ACMRT -z "$BASE_SHA" "$HEAD_SHA")
+          fi
+
+          {
+            echo "code=$code"
+            echo "docs=$docs"
+            echo "workflows=$workflows"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Verification scope: code=$code docs=$docs workflows=$workflows"
+
+  documentation:
+    name: Documentation checks
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+      - name: Check documentation diff whitespace
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
+            git diff-tree --check --root "$HEAD_SHA"
+          else
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+            git diff --check "$BASE_SHA" "$HEAD_SHA"
+          fi
+      - name: Phase 0 documentary acceptance
+        run: python3 bacekend-plataform/scripts/audit_phase0_docs.py
+
+  workflow-validation:
+    name: Validate GitHub Actions workflow YAML
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Parse workflow YAML files
+        run: |
+          ruby -e 'require "yaml"; Dir.glob(".github/workflows/*.{yml,yaml}").sort.each { |path| YAML.parse_file(path); puts "Validated #{path}" }'
+
   quality:
+    name: Platform Rust quality
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     services:
       postgres:
