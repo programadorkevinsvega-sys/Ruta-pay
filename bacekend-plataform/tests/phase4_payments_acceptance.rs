@@ -170,53 +170,65 @@ async fn invalid_payment_intents_are_rejected_before_any_business_write() {
     invalid.amount_minor = 0;
     assert!(matches!(
         service.create_payment_intent(invalid).await,
-        Err(platform_payments::application::payment_service::PaymentServiceError::Domain(
-            PaymentIntentError::AmountInvalid
-        ))
+        Err(
+            platform_payments::application::payment_service::PaymentServiceError::Domain(
+                PaymentIntentError::AmountInvalid
+            )
+        )
     ));
 
     let mut invalid = command(tenant_id, actor_key_id, "invalid-currency");
     invalid.currency = "cop".to_owned();
     assert!(matches!(
         service.create_payment_intent(invalid).await,
-        Err(platform_payments::application::payment_service::PaymentServiceError::Domain(
-            PaymentIntentError::CurrencyInvalid
-        ))
+        Err(
+            platform_payments::application::payment_service::PaymentServiceError::Domain(
+                PaymentIntentError::CurrencyInvalid
+            )
+        )
     ));
 
     let mut invalid = command(tenant_id, actor_key_id, "invalid-environment");
     invalid.environment = "sandbox".to_owned();
     assert!(matches!(
         service.create_payment_intent(invalid).await,
-        Err(platform_payments::application::payment_service::PaymentServiceError::Domain(
-            PaymentIntentError::EnvironmentInvalid
-        ))
+        Err(
+            platform_payments::application::payment_service::PaymentServiceError::Domain(
+                PaymentIntentError::EnvironmentInvalid
+            )
+        )
     ));
 
     let mut invalid = command(tenant_id, actor_key_id, "invalid-method");
     invalid.payment_method_type = "wallet".to_owned();
     assert!(matches!(
         service.create_payment_intent(invalid).await,
-        Err(platform_payments::application::payment_service::PaymentServiceError::Domain(
-            PaymentIntentError::PaymentMethodInvalid
-        ))
+        Err(
+            platform_payments::application::payment_service::PaymentServiceError::Domain(
+                PaymentIntentError::PaymentMethodInvalid
+            )
+        )
     ));
 
-    let mut invalid = command(tenant_id, actor_key_id, "");
+    let invalid = command(tenant_id, actor_key_id, "");
     assert!(matches!(
         service.create_payment_intent(invalid).await,
-        Err(platform_payments::application::payment_service::PaymentServiceError::Domain(
-            PaymentIntentError::IdempotencyKeyInvalid
-        ))
+        Err(
+            platform_payments::application::payment_service::PaymentServiceError::Domain(
+                PaymentIntentError::IdempotencyKeyInvalid
+            )
+        )
     ));
 
     let mut invalid = command(tenant_id, actor_key_id, "invalid-reference");
     invalid.merchant_reference = Some("invalid\nreference".to_owned());
     assert!(matches!(
         service.create_payment_intent(invalid).await,
-        Err(platform_payments::application::payment_service::PaymentServiceError::Domain(
-            PaymentIntentError::MerchantReferenceInvalid
-        ))
+        Err(
+            platform_payments::application::payment_service::PaymentServiceError::Domain(
+                PaymentIntentError::MerchantReferenceInvalid
+            )
+        )
     ));
 
     let intents: i64 = sqlx::query_scalar(
