@@ -69,7 +69,18 @@ async fn payment_intent_creation_replay_conflict_concurrency_and_tenant_isolatio
 
     assert!(matches!(
         service
-            .get_payment_intent(other_tenant_id, created.id)
+            .get_payment_intent(other_tenant_id, "test", created.id)
+            .await,
+        Err(
+            platform_payments::application::payment_service::PaymentServiceError::Domain(
+                PaymentIntentError::NotFound
+            )
+        )
+    ));
+
+    assert!(matches!(
+        service
+            .get_payment_intent(tenant_id, "live", created.id)
             .await,
         Err(
             platform_payments::application::payment_service::PaymentServiceError::Domain(

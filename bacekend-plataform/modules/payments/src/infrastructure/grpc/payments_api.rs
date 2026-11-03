@@ -114,18 +114,19 @@ impl Payments for PaymentsApi {
         let body = request.into_inner();
         let tenant_id = parse_uuid(&body.tenant_id)?;
         let intent_id = parse_uuid(&body.payment_intent_id)?;
+        let environment = body.environment;
         async move {
             self.authorize_key(
                 body.api_key_secret,
                 tenant_id,
-                body.environment,
+                environment.clone(),
                 "payment_intents:read",
                 correlation,
             )
             .await?;
             let intent = self
                 .service
-                .get_payment_intent(tenant_id, intent_id)
+                .get_payment_intent(tenant_id, &environment, intent_id)
                 .await
                 .map_err(map_error)?;
             Ok(Response::new(GetPaymentIntentResponse {
