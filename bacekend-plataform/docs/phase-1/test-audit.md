@@ -65,3 +65,9 @@ Se amplía `CorrelationId` con pruebas explícitas de longitud mínima/máxima, 
 5. Registrar commit, comandos, ejecución y resultado real para cada aceptación.
 
 No se declara cobertura funcional del 100 %. La Fase 1 conserva su alcance implementado, pero los huecos enumerados siguen abiertos como trabajo de calidad de esta fase; no se posponen a Fase 8.
+
+## Estado de integración actualizado — 2026-11-03
+
+PR #4 está fusionada en `main` (merge commit `de3cdc9e3daf43f6270f6253314c88bd37e9b110`). CI run [41578015530](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41578015530) terminó en `completed/success` sobre el HEAD `db6e822e10f048ae918435aa8754322b685283df`.
+
+La ampliación de límites de Correlation ID y validaciones de configuración quedó integrada. Los huecos enumerados en esta auditoría siguen abiertos: matriz exhaustiva de readiness, límites de SocketAddr, semántica de APP_VERSION, matriz de DSN Sentry, revalidación campo por campo de variables y ejecución repetible en CI de degradación del Collector/shutdown. CI verde y código integrado no equivalen por sí solos a conformidad total con la Definition of Done vigente.

@@ -35,3 +35,7 @@ La Fase 0 es exclusivamente de auditoría, diseño, decisiones, ownership, amena
 ## Criterio de cierre
 
 La Fase 0 mantiene su cierre de alcance documental, sujeto a los controles de trazabilidad y reproducibilidad indicados. Los huecos de pruebas runtime se asignan a las fases que implementan cada operación y no se trasladan a Fase 8.
+
+## Estado de integración actualizado — 2026-11-03
+
+La auditoría se integró mediante PR #3. CI run [41579115662](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41579115662) terminó en `completed/success` sobre el HEAD de PR `7b08022da0d796b1890c7e452776847f84b7239b`. El check automatizado valida inventario documental requerido, ADR-0001 a ADR-0009 y alcance documentary-only. **No** demuestra consistencia semántica total ni trazabilidad automática amenaza→control→prueba. Esos puntos, junto con revalidar reproducibilidad sobre el HEAD vigente, permanecen abiertos.

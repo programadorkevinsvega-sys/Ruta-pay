@@ -6,7 +6,7 @@
 
 > Este roadmap cubre adapters y protocolos de Wompi, Bold y proveedores que se incorporen en módulos independientes. Tenant, plan, precios, límites, suscripción, billing de Payvia y autorización pertenecen al [backend de plataforma](../bacekend-plataform/README.md).
 >
-> Estado: planificación. El crate actual es un scaffold, no una integración funcional.
+> Estado al 2026-11-03: este backend tiene un cliente gRPC tipado de entitlements incorporado por la integración de plataforma PR #7, pero no tiene una fase propia completa certificada como cerrada. El avance de ese cliente no cierra el vault de credenciales, adapters reales, webhooks ni enforcement mTLS/grants de las fases propias.
 
 ## Autoridad y contrato con plataforma
 
@@ -169,4 +169,4 @@ Toda aceptación de error prueba diagnóstico específico y respuesta final con 
 
 ## Registro de avance
 
-Todas las fases están pendientes al crear este documento. Cada avance debe registrar commit, cambios, comandos realmente ejecutados, resultados, limitaciones y bloqueos. No iniciar una fase posterior mientras la fase actual tenga criterios pendientes.
+No hay una fase propia de este backend declarada como completa en `main` a la fecha 2026-11-03. PR #7 añadió `GatewayEntitlementsClient` como slice de contrato tipado, pero las fases de credenciales, adapters, autorización mTLS/grants, webhooks, resiliencia y lanzamiento siguen sujetas a los criterios de este roadmap. Registrar commit, cambios, comandos realmente ejecutados, resultados, limitaciones y bloqueos; no iniciar una fase posterior mientras la fase actual conserve criterios pendientes. Ver [PROJECT_STATUS.md](../PROJECT_STATUS.md) para distinguir este avance transversal de los hitos de plataforma.

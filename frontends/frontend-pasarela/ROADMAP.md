@@ -4,7 +4,7 @@
 
 Ruta en el repositorio: `frontends/frontend-pasarela/`.
 >
-> Estado actualizado: la coordinación realtime de Fase 2 está implementada y aceptada contra el BFF real; las fases de operación de pagos siguen pendientes.
+> Estado al 2026-11-03: el slice de coordinación realtime de esta aplicación está implementado y aceptado contra el BFF real como parte de la integración vertical de plataforma. Esto no cierra todas las fases propias del frontend: las tareas de Fases 0 y 1 de este roadmap aún conservan casillas pendientes. Los flujos de operación de pagos siguen pendientes.
 
 La configuración local del cliente vive en `frontends/frontend-pasarela/.env` y se documenta en su `.env.example`; no se almacena en los `.env` de los backends.
 
@@ -101,4 +101,4 @@ No se introducen accesos directos del navegador a PostgreSQL, Redis, NATS, gRPC,
 
 ## Estado de fases
 
-Fase 2 de realtime y sincronización recuperable está verificada como parte de la integración vertical del backend de plataforma: Playwright recorrió onboarding, membership propietaria, sesión y WebSocket autenticado contra el BFF real; los detalles están en [`bacekend-plataform/docs/phase-2/acceptance.md`](../../bacekend-plataform/docs/phase-2/acceptance.md). Pagos e integraciones del tenant siguen en fases posteriores.
+El slice de realtime y sincronización recuperable está verificado como parte de la integración vertical del backend de plataforma: Playwright recorrió onboarding, membership propietaria, sesión y WebSocket autenticado contra el BFF real; los detalles están en [`bacekend-plataform/docs/phase-2/acceptance.md`](../../bacekend-plataform/docs/phase-2/acceptance.md). Esto no cierra automáticamente las tareas aún abiertas de Fases 0 y 1 de este roadmap. Los flujos de pagos e integraciones del tenant siguen pendientes.
