@@ -7,7 +7,7 @@ use platform_contracts::{
     runtime::runtime_probe_client::RuntimeProbeClient,
     tenant_registry::tenant_registry_client::TenantRegistryClient as TenantRegistryGrpcClient,
 };
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
 
 pub struct RuntimeClients {
@@ -24,16 +24,6 @@ pub struct RuntimeFixture {
     pub shutdown: oneshot::Sender<()>,
     pub task: JoinHandle<Result<(), tonic::transport::Error>>,
     pub clients: RuntimeClients,
-}
-
-pub async fn start_runtime() -> RuntimeFixture {
-    let database_pool = PgPoolOptions::new()
-        .connect_lazy(
-            &std::env::var("PLATFORM_TEST_DATABASE_ADMIN_URL")
-                .expect("isolated PostgreSQL test administrator URL is configured"),
-        )
-        .expect("isolated PostgreSQL pool parses");
-    start_runtime_with_pool(database_pool).await
 }
 
 pub async fn start_runtime_with_pool(database_pool: PgPool) -> RuntimeFixture {
