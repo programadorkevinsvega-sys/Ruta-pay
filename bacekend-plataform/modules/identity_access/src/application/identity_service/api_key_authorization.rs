@@ -131,8 +131,3 @@ impl IdentityService {
     }
 }
 
-pub struct TenantMembershipRecord {
-    pub tenant_id: Uuid,
-    pub role: String,
-    pub membership_status: String,
-}
