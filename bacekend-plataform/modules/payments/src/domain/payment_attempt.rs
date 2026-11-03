@@ -1,8 +1,8 @@
 use uuid::Uuid;
 
 use super::payment_lifecycle::{
-    LifecycleModelError, PaymentAttemptStatus, PaymentEnvironment, validate_opaque_reference,
-    validate_provider_code,
+    LifecycleModelError, PaymentAttemptStatus, PaymentEnvironment, TransitionAuthority,
+    TransitionEffect, TransitionGuardError, validate_opaque_reference, validate_provider_code,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -53,10 +53,10 @@ impl PaymentAttempt {
     pub fn apply_status_transition(
         &mut self,
         next: PaymentAttemptStatus,
-        authority: super::payment_lifecycle::TransitionAuthority,
-    ) -> Result<super::payment_lifecycle::TransitionEffect, super::payment_lifecycle::TransitionGuardError> {
+        authority: TransitionAuthority,
+    ) -> Result<TransitionEffect, TransitionGuardError> {
         let effect = self.status.transition_to(next, authority)?;
-        if effect == super::payment_lifecycle::TransitionEffect::Apply {
+        if effect == TransitionEffect::Apply {
             self.status = next;
         }
         Ok(effect)
@@ -109,9 +109,9 @@ mod tests {
         assert_eq!(
             attempt.apply_status_transition(
                 PaymentAttemptStatus::Submitted,
-                super::super::payment_lifecycle::TransitionAuthority::ProviderEvent
+                TransitionAuthority::ProviderEvent
             ),
-            Ok(super::super::payment_lifecycle::TransitionEffect::Apply)
+            Ok(TransitionEffect::Apply)
         );
         assert_eq!(attempt.status(), PaymentAttemptStatus::Submitted);
         assert_eq!(
@@ -119,7 +119,7 @@ mod tests {
                 PaymentAttemptStatus::Submitted,
                 super::super::payment_lifecycle::TransitionAuthority::ProviderEvent
             ),
-            Ok(super::super::payment_lifecycle::TransitionEffect::Duplicate)
+            Ok(TransitionEffect::Duplicate)
         );
         assert_eq!(attempt.status(), PaymentAttemptStatus::Submitted);
     }
