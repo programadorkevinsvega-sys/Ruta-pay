@@ -32,6 +32,15 @@ async fn payment_intent_creation_replay_conflict_concurrency_and_tenant_isolatio
     assert!(replayed);
     assert_eq!(replay, created);
 
+    let mut other_environment = original.clone();
+    other_environment.environment = "live".to_owned();
+    let (live_intent, live_replayed) = service
+        .create_payment_intent(other_environment)
+        .await
+        .expect("the same key is independently scoped to the live environment");
+    assert!(!live_replayed);
+    assert_ne!(live_intent.id, created.id);
+
     let mut changed = original.clone();
     changed.amount_minor += 1;
     assert!(matches!(
@@ -108,10 +117,11 @@ async fn payment_intent_creation_replay_conflict_concurrency_and_tenant_isolatio
     ));
 
     let outbox_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM payments.outbox_events WHERE aggregate_id IN ($1,$2)",
+        "SELECT count(*) FROM payments.outbox_events WHERE aggregate_id IN ($1,$2,$3)",
     )
     .bind(created.id)
     .bind(concurrent_id.expect("concurrent payment intent id exists"))
+    .bind(live_intent.id)
     .fetch_one(&database.migration_pool)
     .await
     .expect("outbox rows can be inspected by the migration role");
@@ -147,4 +157,96 @@ fn command(
         idempotency_key: idempotency_key.to_owned(),
         correlation_id: "phase4_payments_acceptance".to_owned(),
     }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn invalid_payment_intents_are_rejected_before_any_business_write() {
+    let database = database::TestDatabase::new().await;
+    let service = PaymentService::new(database.runtime_pool.clone());
+    let tenant_id = Uuid::new_v4();
+    let actor_key_id = Uuid::new_v4();
+
+    let mut invalid = command(tenant_id, actor_key_id, "invalid-amount");
+    invalid.amount_minor = 0;
+    assert!(matches!(
+        service.create_payment_intent(invalid).await,
+        Err(platform_payments::application::payment_service::PaymentServiceError::Domain(
+            PaymentIntentError::AmountInvalid
+        ))
+    ));
+
+    let mut invalid = command(tenant_id, actor_key_id, "invalid-currency");
+    invalid.currency = "cop".to_owned();
+    assert!(matches!(
+        service.create_payment_intent(invalid).await,
+        Err(platform_payments::application::payment_service::PaymentServiceError::Domain(
+            PaymentIntentError::CurrencyInvalid
+        ))
+    ));
+
+    let mut invalid = command(tenant_id, actor_key_id, "invalid-environment");
+    invalid.environment = "sandbox".to_owned();
+    assert!(matches!(
+        service.create_payment_intent(invalid).await,
+        Err(platform_payments::application::payment_service::PaymentServiceError::Domain(
+            PaymentIntentError::EnvironmentInvalid
+        ))
+    ));
+
+    let mut invalid = command(tenant_id, actor_key_id, "invalid-method");
+    invalid.payment_method_type = "wallet".to_owned();
+    assert!(matches!(
+        service.create_payment_intent(invalid).await,
+        Err(platform_payments::application::payment_service::PaymentServiceError::Domain(
+            PaymentIntentError::PaymentMethodInvalid
+        ))
+    ));
+
+    let mut invalid = command(tenant_id, actor_key_id, "");
+    assert!(matches!(
+        service.create_payment_intent(invalid).await,
+        Err(platform_payments::application::payment_service::PaymentServiceError::Domain(
+            PaymentIntentError::IdempotencyKeyInvalid
+        ))
+    ));
+
+    let mut invalid = command(tenant_id, actor_key_id, "invalid-reference");
+    invalid.merchant_reference = Some("invalid\\nreference".to_owned());
+    assert!(matches!(
+        service.create_payment_intent(invalid).await,
+        Err(platform_payments::application::payment_service::PaymentServiceError::Domain(
+            PaymentIntentError::MerchantReferenceInvalid
+        ))
+    ));
+
+    let intents: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM payments.payment_intents WHERE tenant_id=$1",
+    )
+    .bind(tenant_id)
+    .fetch_one(&database.migration_pool)
+    .await
+    .expect("intent count is readable");
+    let idempotency_records: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM payments.idempotency_records WHERE tenant_id=$1",
+    )
+    .bind(tenant_id)
+    .fetch_one(&database.migration_pool)
+    .await
+    .expect("idempotency count is readable");
+    let audit_events: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM payments.audit_events WHERE tenant_id=$1",
+    )
+    .bind(tenant_id)
+    .fetch_one(&database.migration_pool)
+    .await
+    .expect("audit count is readable");
+
+    assert_eq!(intents, 0, "invalid requests do not create intents");
+    assert_eq!(
+        idempotency_records, 0,
+        "invalid requests do not reserve idempotency keys"
+    );
+    assert_eq!(audit_events, 0, "invalid requests do not create success audits");
+
+    database.finish().await;
 }
