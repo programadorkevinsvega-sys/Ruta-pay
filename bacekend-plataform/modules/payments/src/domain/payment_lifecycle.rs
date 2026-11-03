@@ -225,10 +225,7 @@ impl LifecycleState for PaymentAttemptStatus {
             (
                 Submitted,
                 Processing | RequiresAction | Authorized | Succeeded | Failed
-            ) | (
-                Processing,
-                RequiresAction | Authorized | Succeeded | Failed
-            )
+            ) | (Processing, RequiresAction | Authorized | Succeeded | Failed)
         )
     }
 
