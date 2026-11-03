@@ -205,7 +205,7 @@ impl LifecycleState for PaymentIntentStatus {
     }
 
     fn can_become_outcome_unknown(self) -> bool {
-        matches!(self, Self::Processing | Self::RequiresAction | Self::Authorized)
+        matches!(self, Self::Processing | Self::RequiresAction)
     }
 
     fn requires_operation_submission(self, next: Self) -> bool {
@@ -259,7 +259,7 @@ impl LifecycleState for PaymentAttemptStatus {
     fn can_become_outcome_unknown(self) -> bool {
         matches!(
             self,
-            Self::Submitted | Self::Processing | Self::RequiresAction | Self::Authorized
+            Self::Submitted | Self::Processing | Self::RequiresAction
         )
     }
 
@@ -297,7 +297,7 @@ impl LifecycleState for PaymentTransactionStatus {
     }
 
     fn can_become_outcome_unknown(self) -> bool {
-        matches!(self, Self::Pending | Self::Authorized)
+        self == Self::Pending
     }
 
     fn requires_operation_submission(self, _next: Self) -> bool {
