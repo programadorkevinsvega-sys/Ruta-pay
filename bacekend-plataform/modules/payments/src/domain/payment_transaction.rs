@@ -1,8 +1,8 @@
 use uuid::Uuid;
 
 use super::payment_lifecycle::{
-    LifecycleModelError, PaymentEnvironment, PaymentTransactionStatus, validate_opaque_reference,
-    validate_provider_code,
+    LifecycleModelError, PaymentEnvironment, PaymentTransactionStatus, TransitionAuthority,
+    TransitionEffect, TransitionGuardError, validate_opaque_reference, validate_provider_code,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -80,10 +80,10 @@ impl PaymentTransaction {
     pub fn apply_status_transition(
         &mut self,
         next: PaymentTransactionStatus,
-        authority: super::payment_lifecycle::TransitionAuthority,
-    ) -> Result<super::payment_lifecycle::TransitionEffect, super::payment_lifecycle::TransitionGuardError> {
+        authority: TransitionAuthority,
+    ) -> Result<TransitionEffect, TransitionGuardError> {
         let effect = self.status.transition_to(next, authority)?;
-        if effect == super::payment_lifecycle::TransitionEffect::Apply {
+        if effect == TransitionEffect::Apply {
             self.status = next;
         }
         Ok(effect)
@@ -148,9 +148,9 @@ mod tests {
         assert_eq!(
             transaction.apply_status_transition(
                 PaymentTransactionStatus::Authorized,
-                super::super::payment_lifecycle::TransitionAuthority::ProviderEvent
+                TransitionAuthority::ProviderEvent
             ),
-            Ok(super::super::payment_lifecycle::TransitionEffect::Apply)
+            Ok(TransitionEffect::Apply)
         );
         assert_eq!(transaction.status(), PaymentTransactionStatus::Authorized);
         assert_eq!(
@@ -165,7 +165,7 @@ mod tests {
                 PaymentTransactionStatus::Failed,
                 super::super::payment_lifecycle::TransitionAuthority::ProviderEvent
             ),
-            Err(super::super::payment_lifecycle::TransitionGuardError::ReconciliationRequired)
+            Err(TransitionGuardError::ReconciliationRequired)
         );
         assert_eq!(transaction.status(), PaymentTransactionStatus::Succeeded);
     }
@@ -180,8 +180,8 @@ mod tests {
     fn transaction_starts_pending_with_valid_financial_identity() {
         let transaction =
             PaymentTransaction::new(identity(), 100, "COP".to_owned()).expect("valid transaction");
-        assert_eq!(transaction.amount_minor, 100);
-        assert_eq!(transaction.currency, "COP");
+        assert_eq!(transaction.amount_minor(), 100);
+        assert_eq!(transaction.currency(), "COP");
         assert_eq!(transaction.status, PaymentTransactionStatus::Pending);
     }
 }
