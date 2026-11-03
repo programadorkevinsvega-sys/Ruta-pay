@@ -93,10 +93,7 @@ fn provider_event_timestamps_must_be_strictly_monotonic() {
         Err(TransitionGuardError::EventIsNotNewer)
     );
     assert_eq!(
-        ensure_provider_event_is_newer(
-            Some(applied_at),
-            applied_at + chrono::Duration::seconds(1)
-        ),
+        ensure_provider_event_is_newer(Some(applied_at), applied_at + chrono::Duration::seconds(1)),
         Ok(())
     );
 }
