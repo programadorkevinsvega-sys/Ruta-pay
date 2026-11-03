@@ -26,8 +26,7 @@ use platform_identity_access::{
     infrastructure::grpc::identity_access_api::IdentityAccessApi,
 };
 use platform_payments::{
-    application::payment_service::PaymentService,
-    infrastructure::grpc::payments_api::PaymentsApi,
+    application::payment_service::PaymentService, infrastructure::grpc::payments_api::PaymentsApi,
 };
 use platform_realtime::infrastructure::grpc::realtime_gateway_api::RealtimeGatewayApi;
 use platform_tenant_registry::{
@@ -77,8 +76,7 @@ where
         catalog_client,
         tenant_client,
     );
-    let payments_api =
-        PaymentsApi::new(PaymentService::new(pool.clone()), identity_client.clone());
+    let payments_api = PaymentsApi::new(PaymentService::new(pool.clone()), identity_client.clone());
     Server::builder()
         .add_service(RuntimeProbeServer::new(RuntimeProbeApi))
         .add_service(IdentityAccessServer::new(IdentityAccessApi::new(
