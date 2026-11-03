@@ -183,16 +183,7 @@ impl LifecycleState for PaymentIntentStatus {
         use PaymentIntentStatus::*;
         matches!(
             (self, next),
-            (
-                Created,
-                Processing | RequiresAction | Authorized | Succeeded
-            ) | (
-                Processing,
-                RequiresAction | Authorized | Succeeded
-            ) | (
-                RequiresAction,
-                Processing | Authorized | Succeeded
-            ) | (Authorized, Succeeded)
+            (Processing, RequiresAction | Authorized | Succeeded)
         )
     }
 
@@ -231,20 +222,13 @@ impl LifecycleState for PaymentAttemptStatus {
         use PaymentAttemptStatus::*;
         matches!(
             (self, next),
-            (Created, Submitted)
-                | (
-                    Submitted,
-                    Processing | RequiresAction | Authorized | Succeeded | Failed
-                )
-                | (
-                    Processing,
-                    RequiresAction | Authorized | Succeeded | Failed
-                )
-                | (
-                    RequiresAction,
-                    Processing | Authorized | Succeeded | Failed
-                )
-                | (Authorized, Succeeded)
+            (
+                Submitted,
+                Processing | RequiresAction | Authorized | Succeeded | Failed
+            ) | (
+                Processing,
+                RequiresAction | Authorized | Succeeded | Failed
+            )
         )
     }
 
@@ -281,11 +265,7 @@ impl PaymentTransactionStatus {
 impl LifecycleState for PaymentTransactionStatus {
     fn can_transition_to(self, next: Self) -> bool {
         use PaymentTransactionStatus::*;
-        matches!(
-            (self, next),
-            (Pending, Authorized | Succeeded | Failed)
-                | (Authorized, Succeeded)
-        )
+        matches!(self, next, (Pending, Authorized | Succeeded | Failed))
     }
 
     fn is_terminal(self) -> bool {
