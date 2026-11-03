@@ -4,3 +4,4 @@ pub mod health_ready;
 pub mod identity;
 pub mod openapi;
 pub mod tenant;
+pub mod payments;

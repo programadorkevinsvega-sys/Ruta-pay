@@ -1,5 +1,5 @@
 use crate::http::{
-    handlers::{catalog, health_live, health_ready, identity, openapi, tenant},
+    handlers::{catalog, health_live, health_ready, identity, openapi, payments, tenant},
     middleware::request_diagnostics,
 };
 use axum::{
@@ -10,6 +10,7 @@ use platform_contracts::{
     catalog_pricing::catalog_pricing_client::CatalogPricingClient,
     entitlements_quotas::entitlements_quotas_client::EntitlementsQuotasClient,
     identity_access::identity_access_client::IdentityAccessClient,
+    payments::payments_client::PaymentsClient,
     realtime::realtime_gateway_client::RealtimeGatewayClient,
     runtime::runtime_probe_client::RuntimeProbeClient,
     tenant_registry::tenant_registry_client::TenantRegistryClient,
@@ -24,6 +25,7 @@ pub struct AppState {
     pub realtime_client: RealtimeGatewayClient<tonic::transport::Channel>,
     pub catalog_client: CatalogPricingClient<tonic::transport::Channel>,
     pub entitlements_client: EntitlementsQuotasClient<tonic::transport::Channel>,
+    pub payments_client: Option<PaymentsClient<tonic::transport::Channel>>,
 }
 
 pub fn router(
@@ -33,6 +35,30 @@ pub fn router(
     realtime_client: RealtimeGatewayClient<tonic::transport::Channel>,
     catalog_client: CatalogPricingClient<tonic::transport::Channel>,
     entitlements_client: EntitlementsQuotasClient<tonic::transport::Channel>,
+) -> Router {
+    router_inner(grpc_client, identity_client, tenant_client, realtime_client, catalog_client, entitlements_client, None)
+}
+
+pub fn router_with_payments(
+    grpc_client: RuntimeProbeClient<tonic::transport::Channel>,
+    identity_client: IdentityAccessClient<tonic::transport::Channel>,
+    tenant_client: TenantRegistryClient<tonic::transport::Channel>,
+    realtime_client: RealtimeGatewayClient<tonic::transport::Channel>,
+    catalog_client: CatalogPricingClient<tonic::transport::Channel>,
+    entitlements_client: EntitlementsQuotasClient<tonic::transport::Channel>,
+    payments_client: PaymentsClient<tonic::transport::Channel>,
+) -> Router {
+    router_inner(grpc_client, identity_client, tenant_client, realtime_client, catalog_client, entitlements_client, Some(payments_client))
+}
+
+fn router_inner(
+    grpc_client: RuntimeProbeClient<tonic::transport::Channel>,
+    identity_client: IdentityAccessClient<tonic::transport::Channel>,
+    tenant_client: TenantRegistryClient<tonic::transport::Channel>,
+    realtime_client: RealtimeGatewayClient<tonic::transport::Channel>,
+    catalog_client: CatalogPricingClient<tonic::transport::Channel>,
+    entitlements_client: EntitlementsQuotasClient<tonic::transport::Channel>,
+    payments_client: Option<PaymentsClient<tonic::transport::Channel>>,
 ) -> Router {
     Router::new()
         .route("/health/live", get(health_live::handle))
@@ -62,6 +88,14 @@ pub fn router(
         .route(
             "/v1/tenants/{tenant_id}/entitlements/{capability_key}",
             get(catalog::get_entitlement),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/payment-intents",
+            post(payments::create_payment_intent),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/payment-intents/{payment_intent_id}",
+            get(payments::get_payment_intent),
         )
         .route(
             "/v1/identity/memberships",
@@ -103,6 +137,7 @@ pub fn router(
             realtime_client,
             catalog_client,
             entitlements_client,
+            payments_client,
         }))
         .layer(middleware::from_fn(request_diagnostics::handle))
 }
