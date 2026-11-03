@@ -88,10 +88,14 @@ Una fase se considera terminada solo cuando cumple **todo** lo siguiente:
 
 ---
 
+### Matriz obligatoria de pruebas de casos de uso
 ## 5. Fases detalladas
 
+Además de los criterios anteriores, cada fase/subfase debe entregar una matriz trazable para cada caso de uso y cada acción implementada. Debe cubrir caminos positivos y negativos, entradas ausentes/nulas/malformadas, tipos incorrectos, valores cero/negativos y límites, duplicados secuenciales y concurrentes, idempotencia, autenticación/autorización, permisos/aislamiento, estados/transiciones, fallos/timeout/reintentos, integridad transaccional, efectos secundarios, auditoría y redacción, según aplique.
 ### Fase 0: Arquitectura y estructura del proyecto
 **Objetivo:** base técnica reproducible. **Duración:** 2 a 3 días.
+
+La prueba se ejecuta en el nivel que demuestra la garantía: unitario/propiedad, integración con dependencias reales aisladas, contrato o E2E de navegador. Cada escenario enlaza requisito, test y ejecución CI del commit. Los N/A se justifican antes de implementar. No se cierra una fase con escenarios obligatorios ausentes, sin ejecutar o fallidos. Fase 8 añade fuzzing, seguridad transversal, carga y resiliencia; no sustituye las pruebas funcionales y negativas de cada fase. El porcentaje de cobertura de líneas no demuestra por sí solo cobertura de casos de uso.
 
 - [ ] **0.1 Workspace Cargo único:** verificar los paquetes de backend ya registrados en el workspace Cargo de la raíz, completar la estructura de sus crates/binarios y mantener una sola resolución/`Cargo.lock`. Mantener aplicaciones y despliegues independientes, ownership modular propio y sin dependencias de implementación cruzadas. Plataforma contiene tenants, identidad, planes, precios, límites, suscripciones, facturación y dominio de pagos; pasarelas contiene `gateway_wompi`, `gateway_bold` y futuros `gateway_<provider>`. Evitar crates genéricos `core`/`db` como dueños de dominio.
 - [ ] **0.2 Infraestructura compartida local:** `compose.yaml` raíz con PostgreSQL, Redis, NATS JetStream, Prometheus, OpenTelemetry Collector, Loki, Tempo y Grafana; Sentry se provisiona con el instalador de su release oficial fijada porque su distribución autohospedada mantiene un Compose con sus propias dependencias. Incluye `crates/observability`, alertas, paneles y pruebas de correlación/redacción/degradación. Evidencia y comandos: [`infra/README.md`](infra/README.md). La configuración no unifica los despliegues de los backends ni frontends.
