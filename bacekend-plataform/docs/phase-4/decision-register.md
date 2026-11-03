@@ -263,7 +263,14 @@ Una aprobación parcial debe identificar exactamente qué decisión y qué escen
 
 | ID/rango | Resolución técnica | Responsable | Documento/ADR | Evidencia de revisión |
 |---|---|---|---|---|
-| Pendiente | | | | |
+| B-AR-01 (slice inicial) | `payments` posee el agregado Payment Intent; UUID interno y estado inicial `created`. No implica una transacción ni define el ciclo de vida completo. | Arquitectura de plataforma | [ADR-0010](../adr/ADR-0010-payment-intent-idempotency-and-outbox.md) | Código de dominio y migración propia del módulo. |
+| B-AR-07 / B-AR-08 (create/read) | API Keys siguen bajo `identity_access`; creación/lectura exigen respectivamente `payment_intents:create` y `payment_intents:read`. No se amplían scopes. | Arquitectura de plataforma | [ADR-0010](../adr/ADR-0010-payment-intent-idempotency-and-outbox.md) | `PaymentsApi` consulta el servicio real de identidad; aceptación de servicio pendiente de frontera HTTP/gRPC completa. |
+| B-AR-09 (create) | Idempotencia por tenant + entorno + operación versionada + clave; huella SHA-256 de campos explícitos; replay devuelve snapshot original y payload diferente produce conflicto. | Arquitectura de plataforma | [ADR-0010](../adr/ADR-0010-payment-intent-idempotency-and-outbox.md) | Constraint PostgreSQL, transacción y test real con replay/conflicto/12 solicitudes concurrentes. |
+| B-AR-13 (importe inicial) | Importe positivo como entero en unidades menores; moneda validada sintácticamente como tres letras mayúsculas, sin declarar monedas habilitadas comercialmente. | Arquitectura de plataforma | [ADR-0010](../adr/ADR-0010-payment-intent-idempotency-and-outbox.md) | Dominio, constraint SQL y tests unitarios. |
+| B-AR-21 (producer/relay inicial) | Evento de creación en Outbox dentro de la misma transacción; relay por lease/ACK JetStream con entrega al menos una vez. No declara aceptado el consumidor realtime. | Arquitectura de plataforma | [ADR-0010](../adr/ADR-0010-payment-intent-idempotency-and-outbox.md) | Migración, relay registrado en runtime y conteo de Outbox en aceptación; publish/redelivery/realtime específico aún pendiente. |
+| B-AR-24 / B-AR-25 (create/read) | RLS forzada y filtros por tenant/entorno; auditoría por API Key, correlación y detalles acotados sin secreto. | Arquitectura de plataforma | [ADR-0010](../adr/ADR-0010-payment-intent-idempotency-and-outbox.md) | Test PostgreSQL real de separación tenant/entorno y auditoría. |
+
+Estas resoluciones aplican únicamente al slice inicial de creación/consulta de Payment Intents. No resuelven las decisiones sobre transacciones, intentos, estados, callbacks, proveedor, reembolsos ni reconciliación.
 
 Las decisiones que alteren límites de bounded contexts, ownership financiero, seguridad o contratos compartidos deben registrarse mediante ADR y revisión correspondiente.
 
@@ -304,6 +311,7 @@ Una decisión pendiente bloquea únicamente el comportamiento que depende de ell
 - [ADR-0004 — gRPC, eventos, observabilidad y realtime](../adr/ADR-0004-gRPC-eventos-observabilidad-realtime.md)
 - [ADR-0005 — Contrato normalizado de pago](../adr/ADR-0005-contrato-normalizado-de-pago.md)
 - [ADR-0006 — Integraciones propias de plataforma](../adr/ADR-0006-integraciones-propias-de-plataforma.md)
+- [ADR-0010 — Ownership e idempotencia inicial de Payment Intents](../adr/ADR-0010-payment-intent-idempotency-and-outbox.md)
 - [Aceptación de Fase 3](../phase-3/acceptance.md)
 - [Estado verificado del proyecto](../../../PROJECT_STATUS.md)
 
