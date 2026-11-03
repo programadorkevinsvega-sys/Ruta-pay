@@ -15,7 +15,7 @@ use platform_contracts::tenant_registry::{
 };
 
 use super::{
-    models::{ChangeTenantStatus, NewTenant, TenantList, TenantQuery, TenantView},
+    models::{ChangeTenantStatus, NewTenant, TenantList, TenantQuery},
     support::{
         OPERATOR_CSRF_COOKIE, OPERATOR_SESSION_COOKIE, TENANT_CSRF_COOKIE, TENANT_SESSION_COOKIE,
         auth_error, csrf_error, csrf_value, map_tenant, tenant_grpc_error,
