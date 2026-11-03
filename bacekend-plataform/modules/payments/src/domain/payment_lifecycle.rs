@@ -317,6 +317,10 @@ pub fn ensure_provider_event_is_newer(
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum LifecycleModelError {
+    #[error("payment identifier is invalid")]
+    IdentifierInvalid,
+    #[error("payment lifecycle ownership relationship is invalid")]
+    OwnershipMismatch,
     #[error("payment environment is invalid")]
     EnvironmentInvalid,
     #[error("attempt number must be positive")]
