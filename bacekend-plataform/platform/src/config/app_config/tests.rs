@@ -1,10 +1,6 @@
 use super::*;
 
-fn test_config(
-    grpc_addr: &str,
-    metrics_addr: &str,
-    metrics_token: Option<String>,
-) -> AppConfig {
+fn test_config(grpc_addr: &str, metrics_addr: &str, metrics_token: Option<String>) -> AppConfig {
     AppConfig {
         database_url: env::var("PLATFORM_TEST_DATABASE_ADMIN_URL")
             .expect("isolated PostgreSQL test administrator URL is configured"),
@@ -13,8 +9,7 @@ fn test_config(
         nats_url: env::var("PLATFORM_NATS_URL")
             .expect("real development JetStream URL is configured"),
         nats_username: env::var("NATS_USER").expect("development NATS user is configured"),
-        nats_password: env::var("NATS_PASSWORD")
-            .expect("development NATS password is configured"),
+        nats_password: env::var("NATS_PASSWORD").expect("development NATS password is configured"),
         http_addr: "0.0.0.0:8080".parse().expect("address"),
         grpc_addr: grpc_addr.parse().expect("address"),
         metrics_addr: metrics_addr.parse().expect("address"),
