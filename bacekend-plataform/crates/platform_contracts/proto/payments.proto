@@ -73,4 +73,5 @@ message NormalizedProviderPaymentEventV1 {
   int64 occurred_at_unix_millis = 11;
   string correlation_id = 12;
   bytes payload_sha256 = 13;
+  string event_id = 14;
 }
