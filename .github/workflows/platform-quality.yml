@@ -76,7 +76,7 @@ jobs:
           else
             git fetch --no-tags --depth=1 origin "$BASE_SHA"
             while IFS= read -r -d '' file; do
-              printf 'Changed file: %s\\n' "$file"
+              printf 'Changed file: %s\n' "$file"
               case "$file" in
                 *.md|*.mdx|*.markdown|*.MD|*.MDX|*.MARKDOWN|docs/*|*/docs/*|documentation/*|*/documentation/*)
                   docs=true
