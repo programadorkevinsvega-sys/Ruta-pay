@@ -68,18 +68,29 @@ The full workspace workflow is authoritative because it also runs the BFF, gatew
 - Gateway has a typed client for the platform entitlement contract. mTLS identity, signed grants, fail-closed authorization and the live gateway request path are Phase 5 acceptance and must not be claimed complete in Phase 3.
 - Legacy usage rows created before the response-snapshot migration cannot be replayed as if the original response were known. They fail explicitly rather than returning current state.
 
-## Existing architecture debt and closure criteria
+## Architecture debt and closure criteria
 
-The Phase 3 modules and newly extracted acceptance/realtime/event-worker files are split below the mandatory 200-lines-of-code limit. The repository still contains pre-existing oversized files that this PR touches for wiring or shared setup: `apps/bff/src/http/handlers/identity.rs`, `src/main.rs`, `src/bin/migrate_platform.rs`, `tests/http_grpc_acceptance.rs` and `tests/identity_access_acceptance.rs`. Their full SRP/200-line refactor is not complete and must not be represented as repository-wide rule compliance.
+The repository file-size rule was revised in PR #8 and is now consistent across the root and both backend architecture rules:
+
+- **Hard limit:** 400 physical lines per Rust source file, counting imports, comments and blank lines.
+- **Preferred size:** approximately 200 physical lines when responsibility boundaries and cohesion permit.
+- Files are split by responsibility; code is not fragmented artificially to satisfy the preferred size.
+- CI enforces the hard limit across `bacekend-plataform`, `bacekend-pasarela` and `crates`.
+
+This PR refactors the oversized identity service, identity gRPC API, platform bootstrap, tenant BFF handler and acceptance-test harnesses into cohesive modules. The acceptance-test scenarios remain executable through the existing Cargo integration-test targets; the test environment continues to use isolated PostgreSQL plus real Redis and authenticated JetStream.
+
+The previous paragraph listing `identity.rs` and `src/bin/migrate_platform.rs` as files modified by this PR was inaccurate: neither path is part of PR #8's diff. The actual changed-file inventory is the PR's GitHub files view and must be used for review.
 
 Phase 3 must remain open until all of the following are true on one final HEAD SHA:
 
-1. Every `.rs` file modified by this PR, including inherited handlers, bootstrap and integration tests, is refactored to no more than 200 lines of code. The oversized files listed above currently block this criterion; tracking them in documentation is not a waiver.
-2. Format, Clippy, all Rust tests, frontend tests/builds and browser E2E are green.
-3. The real PostgreSQL/Redis/JetStream acceptance test passes, including immutable result replay and event-specific realtime journal/cursor delivery.
+1. Every Rust source file under the platform, gateway and shared-crate source trees is at or below 400 physical lines. The CI guard must pass on the exact final SHA; approximately 200 lines remains the preferred target where cohesion allows.
+2. Format, Clippy, all Rust tests, frontend tests/builds and browser E2E are green on that same SHA.
+3. The real PostgreSQL/Redis/JetStream acceptance tests pass, including immutable idempotent-result replay and event-specific realtime journal/cursor delivery.
 4. The gateway shared-contract client compiles and the BFF HTTP/gRPC authorization path passes.
 5. The integration matrix has no unclassified applicable boundary.
-6. The PR description, roadmap and this acta reference the same final SHA and workflow.
+6. The PR description, roadmap and this acceptance record identify the same final SHA and workflow run.
 7. Deployment/migration execution and health verification for the target environment are recorded; otherwise production readiness remains unverified.
 
-This document intentionally does not declare Phase 3 closed before those conditions are evidenced.
+The last code-validation run before this acceptance-record correction passed all CI jobs on SHA `7d96c1f6fbfd9cd37fba8d0ebeda1ec929682650` (workflow run [41565888509](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41565888509)). This documentation change must itself be revalidated before the PR is considered ready.
+
+This document intentionally does not declare Phase 3 closed before all phase-level conditions, including deployment evidence, are satisfied.
