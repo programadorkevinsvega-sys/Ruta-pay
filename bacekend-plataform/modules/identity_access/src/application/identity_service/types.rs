@@ -44,7 +44,7 @@ pub struct CreatedSession {
     pub expires_at: DateTime<Utc>,
 }
 
-pub struct SecretToken(String);
+pub struct SecretToken(pub(super) String);
 
 impl SecretToken {
     pub fn expose_once(&self) -> &str {
