@@ -8,7 +8,7 @@
 >
 > Los backends comparten el workspace Cargo raíz solo para resolución/build. Cada uno tiene binario, imagen, configuración, secretos, red, artefactos operativos y despliegue independiente en su propia VM/VPS; los dos frontends también tienen despliegues separados. Los artefactos de esta aplicación pertenecen a `bacekend-plataform/deploy/`.
 >
-> Estado: las implementaciones de Fases 0, 1 y 2 están integradas en `main`; la Fase 2 se integró mediante PR #2 tras pasar Format, Clippy y Tests en CI. Ese cierre histórico acredita el alcance implementado y aceptado entonces, pero no certifica la cobertura exhaustiva exigida por la nueva política de pruebas. La auditoría de calidad por casos de uso está abierta mediante PRs #3, #4 y #5; hasta que sus pruebas y CI estén aprobadas, no se declara conformidad completa con la nueva Definition of Done. Las fases posteriores siguen pendientes.
+> Estado verificado 2026-11-03: las implementaciones de Fases 0–3 están integradas en main. PR #3, #4, #5 y #7 están fusionadas y sus CI correspondientes terminaron success. Esto no elimina los huecos que las auditorías de Fase 0 y Fase 1 todavía enumeran. PR #6 hace obligatoria la matriz de pruebas por caso de uso. No se declara conformidad total de una fase mientras quede un criterio aplicable sin evidencia. Ver PROJECT_STATUS.md para el estado consolidado.
 
 ## Autoridad de dominio
 
@@ -30,7 +30,7 @@ Pruebas unitarias y de propiedades aplican a la lógica; integración/aceptació
 
 Para cada caso de uso de esta fase, documentar y automatizar caminos positivos y negativos, entradas inválidas/tipos/límites, duplicados y concurrencia, permisos/aislamiento, estados, fallos de dependencias, integridad de persistencia/Outbox y redacción, según aplique. Cada caso debe enlazar requisito→escenario→test→ejecución CI. Fase 8 no sustituye estas pruebas.
 
-Auditoría de pruebas: [`docs/phase-0/test-audit.md`](docs/phase-0/test-audit.md). El PR #3 añade la matriz documental inicial; la automatización completa de trazabilidad amenaza→control→prueba sigue pendiente.
+Auditoría de pruebas: [`docs/phase-0/test-audit.md`](docs/phase-0/test-audit.md). PR #3 está fusionada e incorporó la auditoría documental y su check estático de CI. La trazabilidad automatizada amenaza→control→prueba y la verificación semántica siguen pendientes; el check estático no demuestra esas propiedades.
 
 
 - [x] Auditar scaffold, dependencias, configuración, CI y documentación. Evidencia: [`docs/phase-0/initial-audit.md`](docs/phase-0/initial-audit.md).
@@ -59,7 +59,7 @@ La subfase 1.1 implementa el primer corte operativo: configuración tipada y val
 Para cada caso de uso de esta fase, documentar y automatizar caminos positivos y negativos, entradas inválidas/tipos/límites, duplicados y concurrencia, permisos/aislamiento, estados, fallos de dependencias, integridad de persistencia/Outbox y redacción, según aplique. Cada caso debe enlazar requisito→escenario→test→ejecución CI. Fase 8 no sustituye estas pruebas.
 Criterios de cierre 1.1: pruebas reales HTTP→BFF→gRPC→módulo; traza y correlation ID presentes en el servidor RPC; éxito, desconexión y timeout automatizados; validación/configuración y autorización donde corresponda; evento causal y respuesta HTTP correlacionados con código/categoría y duraciones; redacción verificada; health/readiness distinta y basada en dependencias existentes; apagado ordenado probado; formato, clippy y pruebas ejecutados. El timeout se verifica en el mismo recorrido HTTP con un fallo de transporte TCP controlado, sin respuestas gRPC simuladas. No se exige PostgreSQL, Redis, JetStream, Outbox ni realtime en este corte, según las justificaciones de la matriz. Sentry y OTLP se instrumentan y configuran desde el inicio; su recepción externa solo se reporta como comprobada con envío verificable, evidenciado en el documento de aceptación.
 
-Auditoría de pruebas: [`docs/phase-1/test-audit.md`](docs/phase-1/test-audit.md). Estado: pruebas de runtime existentes y ampliación de límites en PR #4; matriz exhaustiva de configuración/readiness aún pendiente.
+Auditoría de pruebas: [`docs/phase-1/test-audit.md`](docs/phase-1/test-audit.md). PR #4 está fusionada y su CI está aprobada. La matriz exhaustiva de configuración/readiness, DSN Sentry, semántica de APP_VERSION y pruebas repetibles de degradación/shutdown continúan pendientes.
 
 
 - [x] Configuración tipada y secretos por entorno, fallando de forma segura.
@@ -79,7 +79,7 @@ La implementación se ejecuta conforme a la matriz previa de [`docs/phase-2/acce
 
 Para cada caso de uso de esta fase, documentar y automatizar caminos positivos y negativos, entradas inválidas/tipos/límites, duplicados y concurrencia, permisos/aislamiento, estados, fallos de dependencias, integridad de persistencia/Outbox y redacción, según aplique. Cada caso debe enlazar requisito→escenario→test→ejecución CI. Fase 8 no sustituye estas pruebas.
 
-Auditoría de pruebas: [`docs/phase-2/test-audit.md`](docs/phase-2/test-audit.md). Estado: pruebas Rust y frontend existentes; duplicidad/concurrencia de email y ejecución de suites frontend/Playwright se incorporan en PR #5, pendiente de CI.
+Auditoría de pruebas: [`docs/phase-2/test-audit.md`](docs/phase-2/test-audit.md). PR #5 está fusionada y su CI run 41237702253 aprobó Rust, ambos frontends y Playwright E2E; la matriz de cobertura y sus límites de alcance están en el acta de auditoría.
 
 
 - [x] Schemas/migraciones propiedad de identity/access, tenant registry y realtime, coordinadas sobre PostgreSQL.
@@ -91,7 +91,7 @@ Auditoría de pruebas: [`docs/phase-2/test-audit.md`](docs/phase-2/test-audit.md
 - [x] Outbox→JetStream, membresía idempotente, WebSocket autenticado, replay por cursor y recuperación REST.
 - [x] E2E Playwright de ambas apps y recuperación multi-réplica tras reiniciar Redis/NATS de desarrollo.
 
-**Salida funcional histórica:** cumplida dentro de los criterios implementados entonces. Aceptación HTTP→BFF→gRPC→módulo verifica identidad, permisos, tenant cruzado, API Keys, auditoría, errores y redacción con PostgreSQL/Redis/NATS reales de desarrollo; Playwright recorre ambas aplicaciones. Evidencia en [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md). La conformidad con la nueva matriz obligatoria de casos positivos/negativos, concurrencia y CI frontend/E2E queda pendiente del PR #5 y su ejecución aprobada.
+Salida: la implementación y la ampliación de pruebas de Fase 2 están integradas. La aceptación HTTP→BFF→gRPC→módulo verifica identidad, permisos, aislamiento, API Keys, auditoría, errores y redacción con PostgreSQL/Redis/NATS reales; Playwright recorre ambas aplicaciones y la recuperación multi-réplica. PR #5 quedó fusionada con CI aprobada (run 41237702253). La cobertura y los límites están en docs/phase-2/test-audit.md.
 
 ## Fase 3 — Catálogo de planes, precios, límites y entitlement
 
@@ -107,7 +107,7 @@ Auditoría de pruebas: [`docs/phase-2/test-audit.md`](docs/phase-2/test-audit.md
 - [x] Outbox de catálogo/entitlements → JetStream → realtime journal, cursor de plataforma/tenant y señal Redis; traceparent W3C propagado.
 - [x] Matriz de integración previa, límites N/A y evidencia de aceptación registrados.
 
-Acta: [`docs/phase-3/acceptance.md`](docs/phase-3/acceptance.md). Matriz específica: [`docs/phase-3/integration-matrix.md`](docs/phase-3/integration-matrix.md). La aceptación usa PostgreSQL, Redis y JetStream reales; prueba inmutabilidad, rollback, replay original, concurrencia, RLS y entrega de eventos de catálogo/cuota al journal realtime. Los criterios se validan con pruebas ejecutables y CI verde sobre el mismo HEAD de GitHub. Esta fase corresponde a construcción: no exige despliegue en VPS, ejecución de migraciones productivas ni health checks productivos.
+Acta: docs/phase-3/acceptance.md. Matriz específica: docs/phase-3/integration-matrix.md. La aceptación usa PostgreSQL, Redis y JetStream reales; prueba inmutabilidad, rollback, replay original, concurrencia, RLS y entrega de eventos de catálogo/cuota al journal realtime. PR #7 se integró tras CI run 41319415556 en success sobre su HEAD exacto. Esta fase corresponde a construcción y no exige despliegue productivo.
 
 **Salida:** pruebas reales cubren límites exactos, excedentes, replay original, concurrencia, cambio versionado de plan, fechas, aislamiento, BFF/gRPC, gateway contract client y entrega realtime con cursor.
 
@@ -212,6 +212,13 @@ Referencias oficiales para la implementación: [Wompi — ambientes y llaves](ht
 | Realtime/recuperación | audiencia, cursor, WebSocket, REST snapshot | orden, huecos, reconexión y autorización |
 | Errores/telemetría | clase, código, redacción, duración | fallo diagnóstico + cierre correlacionados |
 
-## Estado
+## Estado verificado — 2026-11-03
 
-Fases 0, 1 y 2 están cerradas dentro de sus alcances documentados. Las evidencias están en [`docs/phase-0/`](docs/phase-0/), [`docs/phase-1/acceptance.md`](docs/phase-1/acceptance.md) y [`docs/phase-2/acceptance.md`](docs/phase-2/acceptance.md). Fase 2 está integrada en `main` mediante PR #5. La implementación de Fase 3 se integró en `main` mediante PR #7 el 2026-11-01 (merge commit `a73b595d58a59996c39709338e39a2ca77a97a63`); PR #7 ya no está en borrador ni pendiente de merge. Fase 3 corresponde a construcción en GitHub. Su aceptación de código y pruebas se determina con [`docs/phase-3/acceptance.md`](docs/phase-3/acceptance.md) y CI verde sobre el mismo HEAD; no depende de despliegue en VPS, migraciones productivas ni health checks productivos. La operación y piloto se abordan en Fase 9. La PR #8 (`refactor/rust-files-under-200-lines`) atiende deuda técnica heredada de tamaño y cohesión de archivos Rust y alinea el límite obligatorio a 400 líneas físicas, con objetivo preferido cercano a 200 cuando la cohesión lo permita; su propio cierre requiere revisión del diff y CI verde en el SHA final. Las fases 4–9 siguen pendientes; cuentas sandbox, credenciales o decisiones legales faltantes se documentan como bloqueos concretos, sin simulaciones.
+- Fase 0 — Alcance documental integrado; PR #3 y CI 41579115662 exitosos. Siguen abiertos trazabilidad automatizada amenaza→control→prueba, consistencia semántica y revalidación reproducible, según docs/phase-0/test-audit.md.
+- Fase 1 — Runtime y pruebas ampliadas integrados; PR #4 y CI 41578015530 exitosos. Siguen abiertos matriz de configuración/readiness, DSN Sentry, APP_VERSION y pruebas repetibles de degradación/shutdown, según docs/phase-1/test-audit.md.
+- Fase 2 — Identidad, tenants, aislamiento y realtime integrados mediante PR #2 y PR #5. CI 41237702253 exitoso con Rust, frontends y Playwright E2E.
+- Fase 3 — Catálogo, precios, límites y entitlements integrados mediante PR #7; CI 41319415556 exitoso sobre el HEAD de PR.
+- Fases 4–9 — Pendientes. No comenzar una fase siguiente mientras queden criterios aplicables pendientes en las anteriores.
+- PR #6 establece matrices obligatorias de pruebas por caso de uso. PR #8 fija máximo absoluto 400 líneas físicas por archivo Rust; 200 es preferido cuando la cohesión lo permita.
+
+Consulta PROJECT_STATUS.md para SHAs, merge commits, runs y estado de los demás componentes. La integración de Fases 0–3 no implica que pagos, proveedores, billing ni el backend de pasarelas estén terminados.
