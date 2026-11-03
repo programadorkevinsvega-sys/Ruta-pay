@@ -130,4 +130,3 @@ impl IdentityService {
         Ok(actor_id)
     }
 }
-
