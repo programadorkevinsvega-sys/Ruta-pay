@@ -97,3 +97,35 @@ fn provider_event_timestamps_must_be_strictly_monotonic() {
         Ok(())
     );
 }
+
+#[test]
+fn only_platform_timeout_can_enter_outcome_unknown() {
+    assert_eq!(
+        PaymentIntentStatus::Processing.transition_to(
+            PaymentIntentStatus::OutcomeUnknown,
+            TransitionAuthority::ProviderEvent
+        ),
+        Err(TransitionGuardError::TransitionNotAllowed)
+    );
+    assert_eq!(
+        PaymentAttemptStatus::Processing.transition_to(
+            PaymentAttemptStatus::OutcomeUnknown,
+            TransitionAuthority::ProviderEvent
+        ),
+        Err(TransitionGuardError::TransitionNotAllowed)
+    );
+    assert_eq!(
+        PaymentTransactionStatus::Pending.transition_to(
+            PaymentTransactionStatus::OutcomeUnknown,
+            TransitionAuthority::ProviderEvent
+        ),
+        Err(TransitionGuardError::TransitionNotAllowed)
+    );
+    assert_eq!(
+        PaymentAttemptStatus::Processing.transition_to(
+            PaymentAttemptStatus::OutcomeUnknown,
+            TransitionAuthority::OperationTimeout
+        ),
+        Ok(TransitionEffect::Apply)
+    );
+}
