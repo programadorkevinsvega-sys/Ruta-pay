@@ -1,4 +1,4 @@
-use opentelemetry::{global, propagation::Extractor, trace::TraceContextExt};
+use opentelemetry::{global, propagation::Extractor};
 use platform_contracts::{
     identity_access::{
         AuthorizeApiKeyOperationRequest, identity_access_client::IdentityAccessClient,
