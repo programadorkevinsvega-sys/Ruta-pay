@@ -54,13 +54,17 @@ La operación actual tiene el nombre versionado `payment_intent.create.v1`.
 
 ### Outbox
 
-- El evento `payment_intent.created` se escribe en la misma transacción local que el agregado.
-- El relay reclama filas con leases y `FOR UPDATE SKIP LOCKED`, publica con JetStream `Nats-Msg-Id` y marca como publicado solo después del ACK.
-- Los errores liberan el lease y programan retry con backoff. La entrega es al menos una vez; los consumidores deben deduplicar por `event_id`.
+- El evento payment_intent.created se escribe en la misma transacción local que el agregado.
+- El relay reclama filas con leases y FOR UPDATE SKIP LOCKED. Antes de publicar renueva el lease usando el token propietario; un worker que perdió el token no puede renovar, reprogramar, poner en cuarentena ni marcar como publicado el evento.
+- Cada publicación y su ACK tienen timeout individual de 10 segundos, dentro del lease renovado de 30 segundos. Esto limita la duración de una operación bloqueada; una publicación cuyo resultado sea incierto puede repetirse y sigue siendo al menos una vez.
+- JetStream usa Nats-Msg-Id derivado del event_id. El ACK se confirma en PostgreSQL solo después del ACK de JetStream y únicamente para el token vigente.
+- Errores transitorios liberan el lease y programan un backoff exponencial con jitter, acotado a 300 segundos. Los errores permanentes del envelope/contrato registran failed_at y last_error_code, liberan el lease y excluyen el evento de claims automáticos. La fila y su payload permanecen durables para diagnóstico; no se descartan silenciosamente.
+- Los eventos en cuarentena requieren inspección/acción operativa explícita; no existe una API de redrive automática en este slice.
 - El envelope publica el timestamp persistido del Outbox, no la hora de reintento/publicación.
-- El consumidor realtime admite `payment_intent.created`; persiste el envelope en el journal y emite la señal Redis antes de confirmar el ACK de JetStream.
-- La aceptación integrada `payment_intent_outbox_is_published_deduplicated_and_recoverable_in_realtime` verifica el publish/ACK real, el timestamp original, la persistencia en journal, replay por cursor tenant y aislamiento, y el crash-window ACK→confirmación Outbox con republicación deduplicada por `Nats-Msg-Id`.
-- Esta evidencia no cubre WebSocket autenticado de pagos, restart del consumidor, outage/reconexión NATS ni toda la política de backoff; esos comportamientos permanecen pendientes.
+- El consumidor realtime admite payment_intent.created; persiste el envelope en el journal y emite la señal Redis antes de confirmar el ACK de JetStream.
+- La aceptación integrada payment_intent_outbox_is_published_deduplicated_and_recoverable_in_realtime verifica publish/ACK real, timestamp original, persistencia en journal, replay por cursor tenant, aislamiento y crash-window ACK→confirmación Outbox con republicación deduplicada.
+- Las pruebas outbox_lease_expiry_is_reclaimed_and_stale_owner_is_rejected, outbox_retries_after_stream_becomes_available_with_jittered_backoff, concurrent_relays_publish_all_claimed_events_without_losing_rows y permanent_outbox_errors_are_quarantined_without_retrying_forever verifican leases, token obsoleto, recuperación tras rechazo real de JetStream, backoff, concurrencia y cuarentena sobre PostgreSQL/JetStream reales.
+- Las pruebas no simulan una caída física/reinicio del proceso NATS ni certifican reconexión del socket después de ese reinicio. Esa brecha permanece explícita junto con restart del consumidor y WebSocket autenticado.
 
 ## Consecuencias y límites
 

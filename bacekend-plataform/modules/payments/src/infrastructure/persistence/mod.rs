@@ -22,7 +22,7 @@ pub async fn claim_outbox_events(
 ) -> Result<Vec<PendingOutboxEvent>, sqlx::Error> {
     let lease_token = Uuid::new_v4();
     let rows = sqlx::query(
-        "WITH candidates AS (SELECT event_id FROM payments.outbox_events WHERE published_at IS NULL AND available_at <= now() AND (lease_until IS NULL OR lease_until < now()) ORDER BY occurred_at,event_id FOR UPDATE SKIP LOCKED LIMIT $1) UPDATE payments.outbox_events event SET lease_token=$2,lease_until=now()+interval '30 seconds',attempts=attempts+1 FROM candidates WHERE event.event_id=candidates.event_id RETURNING event.event_id,event.aggregate_id,event.aggregate_version,event.event_type,event.schema_version,event.audience,event.payload,event.traceparent,event.correlation_id,event.occurred_at,event.lease_token",
+        "WITH candidates AS (SELECT event_id FROM payments.outbox_events WHERE published_at IS NULL AND failed_at IS NULL AND available_at <= now() AND (lease_until IS NULL OR lease_until < now()) ORDER BY occurred_at,event_id FOR UPDATE SKIP LOCKED LIMIT $1) UPDATE payments.outbox_events event SET lease_token=$2,lease_until=now()+interval '30 seconds',attempts=attempts+1 FROM candidates WHERE event.event_id=candidates.event_id RETURNING event.event_id,event.aggregate_id,event.aggregate_version,event.event_type,event.schema_version,event.audience,event.payload,event.traceparent,event.correlation_id,event.occurred_at,event.lease_token",
     )
     .bind(limit)
     .bind(lease_token)
@@ -47,13 +47,45 @@ pub async fn claim_outbox_events(
         .collect()
 }
 
+pub async fn extend_outbox_lease(
+    pool: &PgPool,
+    event_id: Uuid,
+    lease_token: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE payments.outbox_events SET lease_until=now()+interval '30 seconds' WHERE event_id=$1 AND lease_token=$2 AND published_at IS NULL AND failed_at IS NULL",
+    )
+    .bind(event_id)
+    .bind(lease_token)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
 pub async fn mark_outbox_published(
     pool: &PgPool,
     event_id: Uuid,
     lease_token: Uuid,
 ) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query("UPDATE payments.outbox_events SET published_at=now(),lease_token=NULL,lease_until=NULL,last_error_code=NULL WHERE event_id=$1 AND lease_token=$2 AND published_at IS NULL")
+    let result = sqlx::query("UPDATE payments.outbox_events SET published_at=now(),lease_token=NULL,lease_until=NULL,last_error_code=NULL WHERE event_id=$1 AND lease_token=$2 AND published_at IS NULL AND failed_at IS NULL")
         .bind(event_id).bind(lease_token).execute(pool).await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn mark_outbox_failed(
+    pool: &PgPool,
+    event_id: Uuid,
+    lease_token: Uuid,
+    error_code: &str,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE payments.outbox_events SET failed_at=now(),lease_token=NULL,lease_until=NULL,last_error_code=$3 WHERE event_id=$1 AND lease_token=$2 AND published_at IS NULL AND failed_at IS NULL",
+    )
+    .bind(event_id)
+    .bind(lease_token)
+    .bind(error_code)
+    .execute(pool)
+    .await?;
     Ok(result.rows_affected() == 1)
 }
 
@@ -63,7 +95,7 @@ pub async fn reschedule_outbox_event(
     lease_token: Uuid,
     error_code: &str,
 ) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query("UPDATE payments.outbox_events SET available_at=now()+make_interval(secs=>LEAST(300,power(2,LEAST(attempts,8))::integer)),lease_token=NULL,lease_until=NULL,last_error_code=$3 WHERE event_id=$1 AND lease_token=$2 AND published_at IS NULL")
+    let result = sqlx::query("UPDATE payments.outbox_events SET available_at=now()+make_interval(secs=>LEAST(300,GREATEST(1,ceil(power(2.0::double precision,LEAST(attempts,8)::double precision)*(0.5+random()))::integer))),lease_token=NULL,lease_until=NULL,last_error_code=$3 WHERE event_id=$1 AND lease_token=$2 AND published_at IS NULL AND failed_at IS NULL")
         .bind(event_id).bind(lease_token).bind(error_code).execute(pool).await?;
     Ok(result.rows_affected() == 1)
 }

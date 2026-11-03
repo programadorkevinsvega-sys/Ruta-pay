@@ -2,6 +2,8 @@
 mod database;
 #[path = "phase4_payments_acceptance/jetstream.rs"]
 mod jetstream_acceptance;
+#[path = "phase4_payments_acceptance/outbox_resilience.rs"]
+mod outbox_resilience_acceptance;
 
 use platform_payments::{
     application::payment_service::{CreatePaymentIntentCommand, PaymentService},

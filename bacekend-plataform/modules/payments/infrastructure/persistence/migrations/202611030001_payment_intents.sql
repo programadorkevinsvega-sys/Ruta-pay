@@ -83,9 +83,16 @@ CREATE TABLE payments.outbox_events (
     lease_token UUID,
     lease_until TIMESTAMPTZ,
     last_error_code TEXT,
+    failed_at TIMESTAMPTZ,
+    CHECK (published_at IS NULL OR failed_at IS NULL),
+    CHECK ((lease_token IS NULL) = (lease_until IS NULL)),
     UNIQUE (aggregate_id,aggregate_version)
 );
 
 CREATE INDEX payment_outbox_pending_idx
     ON payments.outbox_events(available_at,occurred_at)
-    WHERE published_at IS NULL;
+    WHERE published_at IS NULL AND failed_at IS NULL;
+
+CREATE INDEX payment_outbox_failed_idx
+    ON payments.outbox_events(failed_at,event_id)
+    WHERE failed_at IS NOT NULL;
