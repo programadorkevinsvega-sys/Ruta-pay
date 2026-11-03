@@ -60,7 +60,7 @@ pub async fn verify() {
     let namespace = format!("e2e_phase4_{}", Uuid::new_v4().simple());
     let topology =
         EventTopology::from_namespace(Some(&namespace)).expect("isolated event namespace is valid");
-    let stream = topology
+    let mut stream = topology
         .ensure_stream(&jetstream)
         .await
         .expect("isolated payment event stream is created");
@@ -85,7 +85,7 @@ pub async fn verify() {
         .get_or_create_consumer(
             &consumer_name,
             jetstream::consumer::pull::Config {
-                durable_name: Some(consumer_name),
+                durable_name: Some(consumer_name.clone()),
                 filter_subject: format!("{}.>", topology.subject_prefix),
                 deliver_policy: DeliverPolicy::All,
                 ack_policy: AckPolicy::Explicit,
