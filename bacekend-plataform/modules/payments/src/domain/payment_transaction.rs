@@ -1,21 +1,14 @@
 use uuid::Uuid;
 
+use crate::domain::{
+    payment_attempt::PaymentAttempt,
+    payment_intent::PaymentIntent,
+};
+
 use super::payment_lifecycle::{
     LifecycleModelError, PaymentEnvironment, PaymentTransactionStatus, TransitionAuthority,
     TransitionEffect, TransitionGuardError, validate_opaque_reference, validate_provider_code,
 };
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PaymentTransactionIdentity {
-    pub id: Uuid,
-    pub tenant_id: Uuid,
-    pub payment_intent_id: Uuid,
-    pub payment_attempt_id: Uuid,
-    pub environment: PaymentEnvironment,
-    pub provider_code: String,
-    pub provider_account_reference: String,
-    pub provider_transaction_reference: String,
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PaymentTransaction {
@@ -90,30 +83,46 @@ impl PaymentTransaction {
     }
 
     pub fn new(
-        identity: PaymentTransactionIdentity,
-        amount_minor: i64,
-        currency: String,
+        id: Uuid,
+        intent: &PaymentIntent,
+        attempt: &PaymentAttempt,
+        provider_transaction_reference: String,
     ) -> Result<Self, LifecycleModelError> {
-        validate_provider_code(&identity.provider_code)?;
-        validate_opaque_reference(&identity.provider_account_reference)?;
-        validate_opaque_reference(&identity.provider_transaction_reference)?;
-        if amount_minor <= 0 {
+        if id.is_nil() || intent.id.is_nil() || intent.tenant_id.is_nil() {
+            return Err(LifecycleModelError::IdentifierInvalid);
+        }
+        if attempt.payment_intent_id() != intent.id
+            || attempt.tenant_id() != intent.tenant_id
+            || attempt.environment().as_str() != intent.environment
+        {
+            return Err(LifecycleModelError::OwnershipMismatch);
+        }
+        if attempt.status() == super::payment_lifecycle::PaymentAttemptStatus::Created {
+            return Err(LifecycleModelError::AttemptNotSubmitted);
+        }
+        validate_provider_code(attempt.provider_code())?;
+        validate_opaque_reference(attempt.provider_account_reference())?;
+        validate_opaque_reference(&provider_transaction_reference)?;
+        if intent.amount_minor <= 0 {
             return Err(LifecycleModelError::AmountInvalid);
         }
-        if currency.len() != 3 || !currency.bytes().all(|byte| byte.is_ascii_uppercase()) {
+        if intent.currency.len() != 3
+            || !intent.currency.bytes().all(|byte| byte.is_ascii_uppercase())
+        {
             return Err(LifecycleModelError::CurrencyInvalid);
         }
+        let environment = PaymentEnvironment::parse(&intent.environment)?;
         Ok(Self {
-            id: identity.id,
-            tenant_id: identity.tenant_id,
-            payment_intent_id: identity.payment_intent_id,
-            payment_attempt_id: identity.payment_attempt_id,
-            environment: identity.environment,
-            provider_code: identity.provider_code,
-            provider_account_reference: identity.provider_account_reference,
-            provider_transaction_reference: identity.provider_transaction_reference,
-            amount_minor,
-            currency,
+            id,
+            tenant_id: intent.tenant_id,
+            payment_intent_id: intent.id,
+            payment_attempt_id: attempt.id(),
+            environment,
+            provider_code: attempt.provider_code().to_owned(),
+            provider_account_reference: attempt.provider_account_reference().to_owned(),
+            provider_transaction_reference,
+            amount_minor: intent.amount_minor,
+            currency: intent.currency.clone(),
             status: PaymentTransactionStatus::Pending,
         })
     }
@@ -122,28 +131,58 @@ impl PaymentTransaction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::{
+        payment_attempt::PaymentAttempt,
+        payment_intent::{PaymentIntent, PaymentMethodType},
+    };
 
-    fn identity() -> PaymentTransactionIdentity {
-        PaymentTransactionIdentity {
+    fn intent() -> PaymentIntent {
+        PaymentIntent {
             id: Uuid::new_v4(),
             tenant_id: Uuid::new_v4(),
-            payment_intent_id: Uuid::new_v4(),
-            payment_attempt_id: Uuid::new_v4(),
-            environment: PaymentEnvironment::Live,
-            provider_code: "wompi".to_owned(),
-            provider_account_reference: "account_01".to_owned(),
-            provider_transaction_reference: "txn_01".to_owned(),
+            environment: "live".to_owned(),
+            amount_minor: 100,
+            currency: "COP".to_owned(),
+            payment_method_type: PaymentMethodType::Card,
+            merchant_reference: None,
+            status: "created".to_owned(),
+            created_at: chrono::Utc::now(),
         }
+    }
+
+    fn submitted_attempt(intent: &PaymentIntent) -> PaymentAttempt {
+        let mut attempt = PaymentAttempt::new(
+            Uuid::new_v4(),
+            intent,
+            1,
+            "wompi".to_owned(),
+            "account_01".to_owned(),
+        )
+        .expect("attempt identity is valid");
+        attempt
+            .apply_status_transition(
+                super::super::payment_lifecycle::PaymentAttemptStatus::Submitted,
+                TransitionAuthority::OperationSubmitted,
+            )
+            .expect("operation submission transition is valid");
+        attempt
+    }
+
+    fn transaction(intent: &PaymentIntent, attempt: &PaymentAttempt) -> PaymentTransaction {
+        PaymentTransaction::new(
+            Uuid::new_v4(),
+            intent,
+            attempt,
+            "txn_01".to_owned(),
+        )
+        .expect("transaction belongs to its submitted attempt")
     }
 
     #[test]
     fn transaction_status_is_guarded_and_terminal_state_is_immutable() {
-        let mut transaction = PaymentTransaction::new(
-            identity(),
-            100,
-            "COP".to_owned(),
-        )
-        .expect("transaction identity and money are valid");
+        let intent = intent();
+        let attempt = submitted_attempt(&intent);
+        let mut transaction = transaction(&intent, &attempt);
 
         assert_eq!(
             transaction.apply_status_transition(
@@ -156,14 +195,14 @@ mod tests {
         assert_eq!(
             transaction.apply_status_transition(
                 PaymentTransactionStatus::Succeeded,
-                super::super::payment_lifecycle::TransitionAuthority::ProviderEvent
+                TransitionAuthority::ProviderEvent
             ),
-            Ok(super::super::payment_lifecycle::TransitionEffect::Apply)
+            Ok(TransitionEffect::Apply)
         );
         assert_eq!(
             transaction.apply_status_transition(
                 PaymentTransactionStatus::Failed,
-                super::super::payment_lifecycle::TransitionAuthority::ProviderEvent
+                TransitionAuthority::ProviderEvent
             ),
             Err(TransitionGuardError::ReconciliationRequired)
         );
@@ -171,17 +210,80 @@ mod tests {
     }
 
     #[test]
-    fn transaction_rejects_invalid_money() {
-        assert!(PaymentTransaction::new(identity(), 0, "COP".to_owned()).is_err());
-        assert!(PaymentTransaction::new(identity(), 100, "cop".to_owned()).is_err());
+    fn transaction_rejects_a_non_submitted_attempt() {
+        let intent = intent();
+        let attempt = PaymentAttempt::new(
+            Uuid::new_v4(),
+            &intent,
+            1,
+            "wompi".to_owned(),
+            "account_01".to_owned(),
+        )
+        .expect("attempt identity is valid");
+        assert_eq!(
+            PaymentTransaction::new(
+                Uuid::new_v4(),
+                &intent,
+                &attempt,
+                "txn_01".to_owned()
+            ),
+            Err(LifecycleModelError::AttemptNotSubmitted)
+        );
     }
 
     #[test]
-    fn transaction_starts_pending_with_valid_financial_identity() {
-        let transaction =
-            PaymentTransaction::new(identity(), 100, "COP".to_owned()).expect("valid transaction");
-        assert_eq!(transaction.amount_minor(), 100);
-        assert_eq!(transaction.currency(), "COP");
-        assert_eq!(transaction.status, PaymentTransactionStatus::Pending);
+    fn transaction_rejects_attempt_owned_by_another_intent() {
+        let intent = intent();
+        let unrelated_intent = intent();
+        let attempt = submitted_attempt(&unrelated_intent);
+        assert_eq!(
+            PaymentTransaction::new(
+                Uuid::new_v4(),
+                &intent,
+                &attempt,
+                "txn_01".to_owned()
+            ),
+            Err(LifecycleModelError::OwnershipMismatch)
+        );
+    }
+
+    #[test]
+    fn transaction_rejects_invalid_provider_reference_and_money() {
+        let intent = intent();
+        let attempt = submitted_attempt(&intent);
+        assert_eq!(
+            PaymentTransaction::new(
+                Uuid::new_v4(),
+                &intent,
+                &attempt,
+                "bad\nreference".to_owned()
+            ),
+            Err(LifecycleModelError::ProviderReferenceInvalid)
+        );
+        let mut invalid_intent = intent.clone();
+        invalid_intent.amount_minor = 0;
+        assert_eq!(
+            PaymentTransaction::new(
+                Uuid::new_v4(),
+                &invalid_intent,
+                &attempt,
+                "txn_01".to_owned()
+            ),
+            Err(LifecycleModelError::AmountInvalid)
+        );
+    }
+
+    #[test]
+    fn transaction_starts_pending_and_inherits_intent_money_and_attempt_identity() {
+        let intent = intent();
+        let attempt = submitted_attempt(&intent);
+        let transaction = transaction(&intent, &attempt);
+        assert_eq!(transaction.tenant_id(), intent.tenant_id);
+        assert_eq!(transaction.payment_intent_id(), intent.id);
+        assert_eq!(transaction.payment_attempt_id(), attempt.id());
+        assert_eq!(transaction.amount_minor(), intent.amount_minor);
+        assert_eq!(transaction.currency(), intent.currency);
+        assert_eq!(transaction.provider_code(), attempt.provider_code());
+        assert_eq!(transaction.status(), PaymentTransactionStatus::Pending);
     }
 }
