@@ -58,7 +58,7 @@ async fn publish_event(
         "audience": audience,
         "correlation_id": event.correlation_id,
         "traceparent": event.traceparent,
-        "occurred_at": chrono::Utc::now(),
+        "occurred_at": event.occurred_at.to_rfc3339(),
         "payload": event.payload
     }))
     .map_err(|_| "event_serialization_failed")?;
