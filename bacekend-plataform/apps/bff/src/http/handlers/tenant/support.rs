@@ -1,4 +1,7 @@
-use axum::{http::{HeaderMap, StatusCode}, response::Response};
+use axum::{
+    http::{HeaderMap, StatusCode},
+    response::Response,
+};
 
 use crate::http::handlers::identity;
 
@@ -43,19 +46,73 @@ pub(super) fn tenant_grpc_error(
     duration_ms: u64,
 ) -> Response {
     let (http_status, code, category, retryable) = match status.code() {
-        tonic::Code::InvalidArgument => (StatusCode::BAD_REQUEST, "tenant_input_invalid", "validation", false),
+        tonic::Code::InvalidArgument => (
+            StatusCode::BAD_REQUEST,
+            "tenant_input_invalid",
+            "validation",
+            false,
+        ),
         tonic::Code::AlreadyExists => (StatusCode::CONFLICT, "tenant_conflict", "conflict", false),
-        tonic::Code::Unauthenticated => (StatusCode::UNAUTHORIZED, "authentication_failed", "authentication", false),
-        tonic::Code::PermissionDenied => (StatusCode::FORBIDDEN, "authorization_denied", "authorization", false),
-        tonic::Code::NotFound => (StatusCode::NOT_FOUND, "tenant_not_found", "not_found", false),
-        tonic::Code::OutOfRange => (StatusCode::RANGE_NOT_SATISFIABLE, "realtime_cursor_out_of_range", "validation", false),
-        tonic::Code::FailedPrecondition if status.message().contains("realtime journal contains a cursor gap") => {
-            (StatusCode::CONFLICT, "realtime_cursor_gap", "conflict", false)
+        tonic::Code::Unauthenticated => (
+            StatusCode::UNAUTHORIZED,
+            "authentication_failed",
+            "authentication",
+            false,
+        ),
+        tonic::Code::PermissionDenied => (
+            StatusCode::FORBIDDEN,
+            "authorization_denied",
+            "authorization",
+            false,
+        ),
+        tonic::Code::NotFound => (
+            StatusCode::NOT_FOUND,
+            "tenant_not_found",
+            "not_found",
+            false,
+        ),
+        tonic::Code::OutOfRange => (
+            StatusCode::RANGE_NOT_SATISFIABLE,
+            "realtime_cursor_out_of_range",
+            "validation",
+            false,
+        ),
+        tonic::Code::FailedPrecondition
+            if status
+                .message()
+                .contains("realtime journal contains a cursor gap") =>
+        {
+            (
+                StatusCode::CONFLICT,
+                "realtime_cursor_gap",
+                "conflict",
+                false,
+            )
         }
-        tonic::Code::Aborted | tonic::Code::FailedPrecondition => (StatusCode::CONFLICT, "tenant_state_conflict", "conflict", false),
-        tonic::Code::Unavailable => (StatusCode::SERVICE_UNAVAILABLE, "tenant_dependency_unavailable", "dependency", true),
-        tonic::Code::DeadlineExceeded => (StatusCode::SERVICE_UNAVAILABLE, "tenant_module_timeout", "timeout", true),
-        _ => (StatusCode::INTERNAL_SERVER_ERROR, "tenant_operation_failed", "internal", false),
+        tonic::Code::Aborted | tonic::Code::FailedPrecondition => (
+            StatusCode::CONFLICT,
+            "tenant_state_conflict",
+            "conflict",
+            false,
+        ),
+        tonic::Code::Unavailable => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "tenant_dependency_unavailable",
+            "dependency",
+            true,
+        ),
+        tonic::Code::DeadlineExceeded => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "tenant_module_timeout",
+            "timeout",
+            true,
+        ),
+        _ => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "tenant_operation_failed",
+            "internal",
+            false,
+        ),
     };
     tracing::warn!(
         event.name = "bff.dependency.call.failed", component = "platform_bff",
@@ -65,13 +122,31 @@ pub(super) fn tenant_grpc_error(
         trace_id = %payvia_observability::current_trace_id(),
         span_id = %payvia_observability::current_span_id()
     );
-    identity::error(http_status, code, category, retryable, correlation.to_owned())
+    identity::error(
+        http_status,
+        code,
+        category,
+        retryable,
+        correlation.to_owned(),
+    )
 }
 
 pub(super) fn auth_error(correlation: String) -> Response {
-    identity::error(StatusCode::UNAUTHORIZED, "authentication_failed", "authentication", false, correlation)
+    identity::error(
+        StatusCode::UNAUTHORIZED,
+        "authentication_failed",
+        "authentication",
+        false,
+        correlation,
+    )
 }
 
 pub(super) fn csrf_error(correlation: String) -> Response {
-    identity::error(StatusCode::FORBIDDEN, "csrf_validation_failed", "authorization", false, correlation)
+    identity::error(
+        StatusCode::FORBIDDEN,
+        "csrf_validation_failed",
+        "authorization",
+        false,
+        correlation,
+    )
 }
