@@ -3,12 +3,19 @@ mod http_grpc_acceptance_support;
 #[path = "support/http_grpc_runtime.rs"]
 mod http_grpc_runtime;
 
+use sqlx::postgres::PgPoolOptions;
 use tokio::{net::TcpListener, sync::oneshot};
 
 #[tokio::test]
 async fn real_http_bff_and_grpc_module_cover_success_and_unavailable() {
     let (provider, capture_store) = http_grpc_acceptance_support::initialize_capture();
-    let runtime = http_grpc_runtime::start_runtime().await;
+    let database_pool = PgPoolOptions::new()
+        .connect_lazy(
+            &std::env::var("PLATFORM_TEST_DATABASE_ADMIN_URL")
+                .expect("isolated PostgreSQL test administrator URL is configured"),
+        )
+        .expect("isolated PostgreSQL pool parses");
+    let runtime = http_grpc_runtime::start_runtime_with_pool(database_pool).await;
     let runtime_shutdown = runtime.shutdown;
     let runtime_task = runtime.task;
     let grpc_client = runtime.clients.grpc;
