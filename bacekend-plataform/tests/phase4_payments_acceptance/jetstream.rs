@@ -103,8 +103,9 @@ pub async fn verify() {
         .expect("JetStream delivers the payment event before timeout")
         .expect("durable consumer remains open")
         .expect("JetStream message is valid");
+    let event_payload = message.payload.clone();
     let envelope: Value =
-        serde_json::from_slice(&message.payload).expect("published event envelope is JSON");
+        serde_json::from_slice(&event_payload).expect("published event envelope is JSON");
 
     assert_eq!(envelope["event_id"], event_id.to_string());
     assert_eq!(envelope["event_type"], "payment_intent.created");
@@ -127,7 +128,7 @@ pub async fn verify() {
     let inserted = platform_realtime::infrastructure::grpc::realtime_gateway_api::persist_and_publish(
         &database.runtime_pool,
         &mut redis,
-        &message.payload,
+        &event_payload,
     )
     .await
     .expect("realtime consumer persists the verified payment event and signals Redis");
@@ -228,6 +229,9 @@ pub async fn verify() {
     .expect("empty Outbox batch is harmless");
     assert_eq!(pending, 0, "published events are not claimed again");
 
+    drop(message);
+    drop(messages);
+    drop(consumer);
     delete_e2e_stream(&jetstream, &namespace)
         .await
         .expect("only the isolated phase four JetStream stream is deleted");
