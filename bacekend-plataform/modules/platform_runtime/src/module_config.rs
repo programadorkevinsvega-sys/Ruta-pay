@@ -11,6 +11,7 @@ use platform_contracts::{
 use platform_contracts::{
     catalog_pricing::catalog_pricing_server::CatalogPricingServer,
     entitlements_quotas::entitlements_quotas_server::EntitlementsQuotasServer,
+    payments::payments_server::PaymentsServer,
     identity_access::identity_access_server::IdentityAccessServer,
     realtime::realtime_gateway_server::RealtimeGatewayServer,
     runtime::runtime_probe_server::RuntimeProbeServer,
@@ -19,6 +20,10 @@ use platform_contracts::{
 use platform_entitlements_quotas::{
     application::entitlement_service::EntitlementService,
     infrastructure::grpc::entitlements_api::EntitlementsQuotasApi,
+};
+use platform_payments::{
+    application::payment_service::PaymentService,
+    infrastructure::grpc::payments_api::PaymentsApi,
 };
 use platform_identity_access::{
     application::identity_service::IdentityService,
@@ -72,6 +77,7 @@ where
         catalog_client,
         tenant_client,
     );
+    let payments_api = PaymentsApi::new(PaymentService::new(pool.clone()), identity_client.clone());
     Server::builder()
         .add_service(RuntimeProbeServer::new(RuntimeProbeApi))
         .add_service(IdentityAccessServer::new(IdentityAccessApi::new(
@@ -82,6 +88,7 @@ where
         )))
         .add_service(CatalogPricingServer::new(catalog_api))
         .add_service(EntitlementsQuotasServer::new(entitlements_api))
+        .add_service(PaymentsServer::new(payments_api))
         .add_service(RealtimeGatewayServer::new(RealtimeGatewayApi::new(
             pool,
             redis_client,
