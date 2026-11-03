@@ -91,6 +91,6 @@ Phase 3 must remain open until all of the following are true on one final HEAD S
 6. The PR description, roadmap and this acceptance record identify the same PR and CI workflow. GitHub's workflow metadata must prove that the successful run's `head_sha` is exactly the final PR head SHA; the SHA is not duplicated manually across documents.
 7. Deployment/migration execution and health verification for the target environment are recorded; otherwise production readiness remains unverified.
 
-The last code-validation run before this acceptance-record correction passed all CI jobs on SHA `7d96c1f6fbfd9cd37fba8d0ebeda1ec929682650` (workflow run [41565888509](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41565888509)). This documentation change must itself be revalidated before the PR is considered ready.
+The final code-validation run for this PR passed all CI jobs on SHA `5908ad60c6c56e8cc0614f08f0b40fc94c0c57a8` (workflow run [41569999940](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41569999940)). GitHub workflow metadata confirms that the successful run's `head_sha` exactly matches this PR's HEAD. The run validates this acceptance record, the 400-line guard, Rust quality checks, frontend suites and browser E2E.
 
 This document intentionally does not declare Phase 3 closed before all phase-level conditions, including deployment evidence, are satisfied.
