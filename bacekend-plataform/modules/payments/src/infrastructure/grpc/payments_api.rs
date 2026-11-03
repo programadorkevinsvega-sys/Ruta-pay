@@ -75,7 +75,7 @@ impl Payments for PaymentsApi {
                     body.api_key_secret,
                     tenant_id,
                     body.environment.clone(),
-                    "payment_intents:create",
+                    "payment_intents.create",
                     correlation.clone(),
                 )
                 .await?;
@@ -121,7 +121,7 @@ impl Payments for PaymentsApi {
                     body.api_key_secret,
                     tenant_id,
                     environment.clone(),
-                    "payment_intents:read",
+                    "payment_intents.read",
                     correlation.clone(),
                 )
                 .await?;
