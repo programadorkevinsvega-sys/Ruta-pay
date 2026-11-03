@@ -99,7 +99,7 @@ jobs:
         run: |
           failed=0
           while IFS= read -r -d '' file; do
-            lines=$(wc -l < "$file")
+            lines=$(awk 'END { print NR }' "$file")
             if (( lines > 400 )); then
               printf 'Rust file exceeds 400 physical lines: %s (%s lines)\n' "$file" "$lines"
               failed=1
