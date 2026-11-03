@@ -71,14 +71,14 @@ pub async fn verify() {
         .await
         .expect("authenticated Redis connection succeeds");
 
-    let published = outbox_relay::relay_batch(
-        &database.runtime_pool,
-        &jetstream,
-        &topology.subject_prefix,
-    )
-    .await
-    .expect("payments Outbox relay publishes the event");
-    assert_eq!(published, 1, "JetStream publish ACK marks one event delivered");
+    let published =
+        outbox_relay::relay_batch(&database.runtime_pool, &jetstream, &topology.subject_prefix)
+            .await
+            .expect("payments Outbox relay publishes the event");
+    assert_eq!(
+        published, 1,
+        "JetStream publish ACK marks one event delivered"
+    );
 
     let consumer_name = format!("PHASE4_ACCEPTANCE_{}", Uuid::new_v4().simple());
     let consumer = stream
@@ -117,9 +117,15 @@ pub async fn verify() {
         occurred_at.to_rfc3339(),
         "relay preserves the business event timestamp"
     );
-    assert_eq!(envelope["correlation_id"], "phase4_payments_jetstream_acceptance");
+    assert_eq!(
+        envelope["correlation_id"],
+        "phase4_payments_jetstream_acceptance"
+    );
     assert_eq!(envelope["payload"]["tenant_id"], tenant_id.to_string());
-    assert_eq!(envelope["payload"]["payment_intent_id"], intent.id.to_string());
+    assert_eq!(
+        envelope["payload"]["payment_intent_id"],
+        intent.id.to_string()
+    );
     assert!(
         envelope["payload"].get("idempotency_key").is_none(),
         "commercial idempotency keys are not published"
