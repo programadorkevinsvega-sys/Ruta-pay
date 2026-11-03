@@ -142,7 +142,7 @@ pub async fn verify() {
         platform_realtime::infrastructure::grpc::realtime_gateway_api::persist_and_publish(
             &database.runtime_pool,
             &mut redis,
-            &message.payload,
+            &event_payload,
         )
         .await
         .expect("redelivered event is safely deduplicated");
