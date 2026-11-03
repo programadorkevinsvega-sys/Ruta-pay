@@ -81,16 +81,14 @@ pub fn validate_create_input(
     let method = PaymentMethodType::parse(payment_method_type)?;
     if idempotency_key.is_empty()
         || idempotency_key.len() > 128
-        || !idempotency_key.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || b"._:-".contains(&byte)
-        })
+        || !idempotency_key
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
     {
         return Err(PaymentIntentError::IdempotencyKeyInvalid);
     }
     if merchant_reference.is_some_and(|reference| {
-        reference.is_empty()
-            || reference.len() > 128
-            || reference.chars().any(char::is_control)
+        reference.is_empty() || reference.len() > 128 || reference.chars().any(char::is_control)
     }) {
         return Err(PaymentIntentError::MerchantReferenceInvalid);
     }
@@ -142,7 +140,8 @@ mod tests {
                 Err(PaymentIntentError::CurrencyInvalid)
             );
         }
-        for key in ["", "bad key", "line\nbreak", &"k".repeat(129)] {
+        let oversized_key = "k".repeat(129);
+        for key in ["", "bad key", "line\nbreak", oversized_key.as_str()] {
             assert_eq!(
                 validate_create_input("test", 1, "COP", "card", None, key),
                 Err(PaymentIntentError::IdempotencyKeyInvalid)

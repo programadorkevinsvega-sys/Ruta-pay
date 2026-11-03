@@ -1,4 +1,4 @@
-#[path = "phase3_catalog_entitlements_acceptance/database.rs"]
+#[path = "phase4_payments_acceptance/database.rs"]
 mod database;
 
 use platform_payments::{
@@ -36,9 +36,11 @@ async fn payment_intent_creation_replay_conflict_concurrency_and_tenant_isolatio
     changed.amount_minor += 1;
     assert!(matches!(
         service.create_payment_intent(changed).await,
-        Err(platform_payments::application::payment_service::PaymentServiceError::Domain(
-            PaymentIntentError::IdempotencyConflict
-        ))
+        Err(
+            platform_payments::application::payment_service::PaymentServiceError::Domain(
+                PaymentIntentError::IdempotencyConflict
+            )
+        )
     ));
 
     let mut tasks = tokio::task::JoinSet::new();
@@ -69,9 +71,11 @@ async fn payment_intent_creation_replay_conflict_concurrency_and_tenant_isolatio
         service
             .get_payment_intent(other_tenant_id, created.id)
             .await,
-        Err(platform_payments::application::payment_service::PaymentServiceError::Domain(
-            PaymentIntentError::NotFound
-        ))
+        Err(
+            platform_payments::application::payment_service::PaymentServiceError::Domain(
+                PaymentIntentError::NotFound
+            )
+        )
     ));
 
     let outbox_count: i64 = sqlx::query_scalar(
@@ -82,11 +86,13 @@ async fn payment_intent_creation_replay_conflict_concurrency_and_tenant_isolatio
     .fetch_one(&database.migration_pool)
     .await
     .expect("outbox rows can be inspected by the migration role");
-    assert_eq!(outbox_count, 2, "each intent emits exactly one durable event");
+    assert_eq!(
+        outbox_count, 2,
+        "each intent emits exactly one durable event"
+    );
 
-    let audit_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM payments.audit_events WHERE resource_id=$1",
-    )
+    let audit_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM payments.audit_events WHERE resource_id=$1")
     .bind(created.id)
     .fetch_one(&database.migration_pool)
     .await
@@ -96,7 +102,11 @@ async fn payment_intent_creation_replay_conflict_concurrency_and_tenant_isolatio
     database.finish().await;
 }
 
-fn command(tenant_id: Uuid, actor_key_id: Uuid, idempotency_key: &str) -> CreatePaymentIntentCommand {
+fn command(
+    tenant_id: Uuid,
+    actor_key_id: Uuid,
+    idempotency_key: &str,
+) -> CreatePaymentIntentCommand {
     CreatePaymentIntentCommand {
         tenant_id,
         actor_key_id,

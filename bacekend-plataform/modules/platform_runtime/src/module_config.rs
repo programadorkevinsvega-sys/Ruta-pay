@@ -11,8 +11,8 @@ use platform_contracts::{
 use platform_contracts::{
     catalog_pricing::catalog_pricing_server::CatalogPricingServer,
     entitlements_quotas::entitlements_quotas_server::EntitlementsQuotasServer,
-    payments::payments_server::PaymentsServer,
     identity_access::identity_access_server::IdentityAccessServer,
+    payments::payments_server::PaymentsServer,
     realtime::realtime_gateway_server::RealtimeGatewayServer,
     runtime::runtime_probe_server::RuntimeProbeServer,
     tenant_registry::tenant_registry_server::TenantRegistryServer,
@@ -21,13 +21,13 @@ use platform_entitlements_quotas::{
     application::entitlement_service::EntitlementService,
     infrastructure::grpc::entitlements_api::EntitlementsQuotasApi,
 };
-use platform_payments::{
-    application::payment_service::PaymentService,
-    infrastructure::grpc::payments_api::PaymentsApi,
-};
 use platform_identity_access::{
     application::identity_service::IdentityService,
     infrastructure::grpc::identity_access_api::IdentityAccessApi,
+};
+use platform_payments::{
+    application::payment_service::PaymentService,
+    infrastructure::grpc::payments_api::PaymentsApi,
 };
 use platform_realtime::infrastructure::grpc::realtime_gateway_api::RealtimeGatewayApi;
 use platform_tenant_registry::{
@@ -77,7 +77,8 @@ where
         catalog_client,
         tenant_client,
     );
-    let payments_api = PaymentsApi::new(PaymentService::new(pool.clone()), identity_client.clone());
+    let payments_api =
+        PaymentsApi::new(PaymentService::new(pool.clone()), identity_client.clone());
     Server::builder()
         .add_service(RuntimeProbeServer::new(RuntimeProbeApi))
         .add_service(IdentityAccessServer::new(IdentityAccessApi::new(

@@ -1,26 +1,22 @@
-use opentelemetry::{
-    global,
-    propagation::Extractor,
-    trace::TraceContextExt,
-};
+use opentelemetry::{global, propagation::Extractor, trace::TraceContextExt};
 use platform_contracts::{
     identity_access::{
-        AuthorizeApiKeyOperationRequest,
-        identity_access_client::IdentityAccessClient,
+        AuthorizeApiKeyOperationRequest, identity_access_client::IdentityAccessClient,
     },
     payments::{
         CreatePaymentIntentRequest, CreatePaymentIntentResponse, GetPaymentIntentRequest,
-        GetPaymentIntentResponse, PaymentIntent as PaymentIntentMessage,
-        payments_server::Payments,
+        GetPaymentIntentResponse, PaymentIntent as PaymentIntentMessage, payments_server::Payments,
     },
 };
+use tonic::{Request, Response, Status};
 use tracing::Instrument;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
-use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
 use crate::{
-    application::payment_service::{CreatePaymentIntentCommand, PaymentService, PaymentServiceError},
+    application::payment_service::{
+        CreatePaymentIntentCommand, PaymentService, PaymentServiceError,
+    },
     domain::payment_intent::PaymentIntent,
 };
 
@@ -172,15 +168,19 @@ fn map_error(error: PaymentServiceError) -> Status {
         PaymentServiceError::Domain(
             crate::domain::payment_intent::PaymentIntentError::IdempotencyConflict,
         ) => Status::already_exists("idempotency key conflicts with the original request"),
-        PaymentServiceError::Domain(crate::domain::payment_intent::PaymentIntentError::NotFound) => {
-            Status::not_found("payment intent was not found")
-        }
+        PaymentServiceError::Domain(
+            crate::domain::payment_intent::PaymentIntentError::NotFound,
+        ) => Status::not_found("payment intent was not found"),
         PaymentServiceError::Database(error) => {
             tracing::error!(event.name="payment.persistence.failed",component="payments",error_class=%error);
             Status::internal("payment intent could not be completed")
         }
         PaymentServiceError::Serialization(_) | PaymentServiceError::SnapshotUnavailable => {
-            tracing::error!(event.name="payment.idempotency.snapshot.invalid",component="payments",error_code="idempotency_snapshot_invalid");
+            tracing::error!(
+                event.name = "payment.idempotency.snapshot.invalid",
+                component = "payments",
+                error_code = "idempotency_snapshot_invalid"
+            );
             Status::internal("payment intent could not be completed")
         }
     }
@@ -190,7 +190,8 @@ fn grpc_span<T>(request: &Request<T>, operation: &'static str, correlation: &str
     let parent = global::get_text_map_propagator(|propagator| {
         propagator.extract(&GrpcMetadataExtractor(request.metadata()))
     });
-    let span = tracing::info_span!("grpc.module.payments", operation, correlation_id = %correlation);
+    let span =
+        tracing::info_span!("grpc.module.payments", operation, correlation_id = %correlation);
     if let Err(error) = span.set_parent(parent) {
         tracing::warn!(event.name="grpc.trace_context.rejected",component="payments",operation,error_category="trace_context",error_code=%error,correlation_id=%correlation);
     }

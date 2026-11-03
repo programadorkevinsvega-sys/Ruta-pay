@@ -6,8 +6,8 @@ use tokio::{sync::watch, time};
 use platform_catalog_pricing::infrastructure::outbox_relay as catalog_outbox;
 use platform_entitlements_quotas::infrastructure::outbox_relay as entitlements_outbox;
 use platform_identity_access::infrastructure::outbox_relay as identity_outbox;
-use platform_tenant_registry::infrastructure::outbox_relay as tenant_outbox;
 use platform_payments::infrastructure::outbox_relay as payments_outbox;
+use platform_tenant_registry::infrastructure::outbox_relay as tenant_outbox;
 
 pub(super) async fn run_relays(
     pool: PgPool,

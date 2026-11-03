@@ -30,9 +30,7 @@ pub(super) fn decode(snapshot: Value) -> Result<PaymentIntent, PaymentServiceErr
     let currency = text(&snapshot, "currency")?;
     let payment_method_type = PaymentMethodType::parse(text(&snapshot, "payment_method_type")?)
         .map_err(|_| PaymentServiceError::SnapshotUnavailable)?;
-    let merchant_reference = snapshot["merchant_reference"]
-        .as_str()
-        .map(str::to_owned);
+    let merchant_reference = snapshot["merchant_reference"].as_str().map(str::to_owned);
     let status = text(&snapshot, "status")?;
     let created_at = DateTime::parse_from_rfc3339(text(&snapshot, "created_at")?)
         .map_err(|_| PaymentServiceError::SnapshotUnavailable)?
@@ -51,8 +49,7 @@ pub(super) fn decode(snapshot: Value) -> Result<PaymentIntent, PaymentServiceErr
 }
 
 fn parse_uuid(snapshot: &Value, field: &str) -> Result<Uuid, PaymentServiceError> {
-    Uuid::parse_str(text(snapshot, field)?)
-        .map_err(|_| PaymentServiceError::SnapshotUnavailable)
+    Uuid::parse_str(text(snapshot, field)?).map_err(|_| PaymentServiceError::SnapshotUnavailable)
 }
 
 fn text<'a>(snapshot: &'a Value, field: &str) -> Result<&'a str, PaymentServiceError> {

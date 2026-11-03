@@ -65,7 +65,9 @@ pub(super) async fn create(
         .ok_or(PaymentServiceError::SnapshotUnavailable)?;
         let stored_hash: Vec<u8> = row.try_get("request_hash")?;
         if stored_hash != fingerprint {
-            return Err(crate::domain::payment_intent::PaymentIntentError::IdempotencyConflict.into());
+            return Err(
+                crate::domain::payment_intent::PaymentIntentError::IdempotencyConflict.into(),
+            );
         }
         let response: Option<serde_json::Value> = row.try_get("response_snapshot")?;
         let intent = snapshot::decode(response.ok_or(PaymentServiceError::SnapshotUnavailable)?)?;
@@ -166,7 +168,9 @@ pub(super) async fn create(
     Ok((intent, false))
 }
 
-fn request_fingerprint(command: &CreatePaymentIntentCommand) -> Result<Vec<u8>, PaymentServiceError> {
+fn request_fingerprint(
+    command: &CreatePaymentIntentCommand,
+) -> Result<Vec<u8>, PaymentServiceError> {
     let canonical = RequestFingerprint {
         tenant_id: command.tenant_id.to_string(),
         environment: &command.environment,
