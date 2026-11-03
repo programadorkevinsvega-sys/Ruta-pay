@@ -38,6 +38,27 @@ fn transitions_are_forward_only_and_terminal_conflicts_need_reconciliation() {
         Err(TransitionGuardError::TransitionNotAllowed)
     );
     assert_eq!(
+        PaymentIntentStatus::Created.transition_to(
+            PaymentIntentStatus::Processing,
+            TransitionAuthority::ProviderEvent
+        ),
+        Ok(TransitionEffect::Apply)
+    );
+    assert_eq!(
+        PaymentTransactionStatus::Pending.transition_to(
+            PaymentTransactionStatus::Authorized,
+            TransitionAuthority::ProviderEvent
+        ),
+        Ok(TransitionEffect::Apply)
+    );
+    assert_eq!(
+        PaymentTransactionStatus::Failed.transition_to(
+            PaymentTransactionStatus::Succeeded,
+            TransitionAuthority::ProviderEvent
+        ),
+        Err(TransitionGuardError::ReconciliationRequired)
+    );
+    assert_eq!(
         PaymentIntentStatus::Succeeded.transition_to(
             PaymentIntentStatus::Processing,
             TransitionAuthority::ProviderEvent
