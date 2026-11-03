@@ -113,25 +113,50 @@ Acta: docs/phase-3/acceptance.md. Matriz específica: docs/phase-3/integration-m
 
 ## Fase 4 — Suscripciones y facturación de uso Payvia
 
-**Registro de decisiones pendientes:** [docs/phase-4/decision-register.md](docs/phase-4/decision-register.md). Separa las decisiones económicas que requieren aprobación de las resoluciones técnicas a cargo de arquitectura. No aprueba precios, impuestos, políticas comerciales ni capacidades de proveedores; las casillas de implementación de esta fase permanecen pendientes.
+**Estado:** implementación parcial. El PR #10 contiene un slice de Alcance B (Payment Intents) implementado y verificado; esto no equivale al cierre de Fase 4. El Alcance A (suscripciones y facturación SaaS de Payvia) continúa pendiente. La matriz de integración mantiene el estado por frontera y la trazabilidad requisito → test → CI.
 
-**Matriz de integración y evidencia:** [docs/phase-4/integration-matrix.md](docs/phase-4/integration-matrix.md). Mantiene el estado real por frontera y enlaza los requisitos con sus pruebas; diferencia el slice implementado de Payment Intents de los alcances todavía pendientes o bloqueados.
+**Registro de decisiones pendientes:** [docs/phase-4/decision-register.md](docs/phase-4/decision-register.md). Separa las decisiones económicas que requieren aprobación de las resoluciones técnicas. No aprueba precios, impuestos, políticas comerciales ni capacidades de proveedores.
 
-**Pruebas obligatorias de esta fase:** cada caso de uso y cada acción debe tener escenarios positivos/negativos, límites y tipos inválidos, duplicados/concurrencia, permisos/aislamiento, estados, fallos/reintentos, integridad y redacción aplicables. Registrar requisito→test→ejecución CI; no se aplaza a Fase 8.
+**Matriz de integración y evidencia:** [docs/phase-4/integration-matrix.md](docs/phase-4/integration-matrix.md). La matriz conserva los límites de cada prueba y los componentes que aún no cuentan con implementación o evidencia.
 
+**Pruebas obligatorias de esta fase:** cada caso de uso y cada acción debe tener escenarios positivos/negativos, límites y tipos inválidos, duplicados/concurrencia, permisos/aislamiento, estados, fallos/reintentos, integridad y redacción aplicables. Registrar requisito → test → ejecución CI; no se aplaza a Fase 8.
 
-- [ ] Ownership del ciclo de negocio de payment intents/transacciones: API Keys, idempotency scope, transiciones válidas y eventos normalizados; el backend de pasarelas ejecuta solamente llamadas de protocolo autorizadas.
+### Entregables implementados y verificados — Alcance B
+
+Los siguientes checks se limitan al slice inicial de creación/consulta de Payment Intents y a los escenarios Outbox/realtime expresamente probados. No certifican el ciclo completo de transacciones ni el procesamiento de pagos por un proveedor.
+
+- [x] Agregado inicial Payment Intent propiedad de `payments`: UUID, tenant y entorno, importe entero positivo en unidades menores, validación sintáctica de moneda y método, referencia opaca opcional y único estado persistido `created`. La creación/consulta funciona mediante REST → BFF → gRPC → módulo; el estado `created` no representa autorización, captura, éxito ni liquidación.
+- [x] Autorización de creación y consulta mediante los scopes existentes `payment_intents.create` y `payment_intents.read`, conservando API Keys bajo `identity_access`. Aceptación HTTP real cubre credencial ausente, clave revocada, scope insuficiente, tenant y entorno.
+- [x] Idempotencia de creación por tenant + entorno + operación versionada + clave; huella SHA-256 del payload normalizado, replay del snapshot original y conflicto ante payload diferente. Constraint PostgreSQL y prueba con 12 solicitudes concurrentes verifican una sola creación.
+- [x] Aislamiento de lectura y persistencia por tenant/entorno mediante filtros explícitos y RLS forzada; pruebas PostgreSQL reales rechazan accesos cross-tenant y cross-environment.
+- [x] Auditoría de creación, replay y lectura en la misma transacción que la operación correspondiente, con actor, recurso, resultado y correlación; las pruebas verifican que el secreto de API Key no se persiste.
+- [x] Escritura atómica de Payment Intent, registro idempotente, snapshot, auditoría y evento inicial `payment_intent.created` en Outbox.
+- [x] Relay Outbox con claim `FOR UPDATE SKIP LOCKED`, lease y token propietario; los propietarios vencidos/obsoletos no pueden renovar, confirmar, reprogramar ni poner eventos en cuarentena.
+- [x] Timeouts independientes de 10 segundos para publicación y ACK; backoff exponencial con jitter acotado; `Nats-Msg-Id` estable y confirmación PostgreSQL solo después del ACK JetStream.
+- [x] Cuarentena durable de errores permanentes de contrato, conservando la fila/payload y excluyéndolos de claims automáticos. Están probados con PostgreSQL/JetStream reales los escenarios de lease vencido, recuperación tras rechazo del stream, dos relays concurrentes y cuarentena permanente.
+- [x] Integración inicial con journal realtime: persistencia del envelope antes del ACK, señal Redis y recuperación por cursor con aislamiento tenant, según el test de aceptación integrado.
+
+**Evidencia:** [CI #913](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41716834260) verificó los tests reales del slice y resiliencia Outbox sobre el SHA de código `1858766a46a5b92d6b6b75207e728ddaa6933498`. [CI #914](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41717663987) verificó el HEAD documental previo del PR (`e1d2c4281e70d117719398d9bad0730e393f1169`): detección de alcance, quality, documentación y YAML, todos en success. La matriz describe qué escenarios concretos cubre cada ejecución y qué no demuestra.
+
+### Entregables de Fase 4 aún pendientes o bloqueados
+
+- [ ] Completar el ciclo de negocio de Payment Intents/transacciones: agregados de intentos y transacciones, transiciones y guards, estados normalizados por proveedor, callbacks verificados, eventos tardíos, resultado incierto y reconciliación.
+- [ ] Definir e implementar captura, cancelación, expiración y reembolsos totales/parciales únicamente después de aprobar las decisiones comerciales/financieras correspondientes.
 - [ ] Cobro a compradores de los tenants según el flujo configurado, separado del cobro que Payvia realiza a los tenants por usar la plataforma.
-- [ ] Ciclo de suscripción, periodos, prorrateo si se aprueba, facturas y partidas inmutables.
-- [ ] Cálculo de cobros de Payvia independiente de montos y fees de una transacción procesada para el tenant.
-- [ ] Cobro de invoices de Payvia por `platform_billing_wompi`, con cuenta/credenciales de Payvia y callbacks propios verificados; no atraviesa `bacekend-pasarela` ni comparte credenciales tenant.
-- [ ] Integración `invoice_factus` para emisión/consulta de documentos electrónicos de Payvia, manteniendo `platform_billing` como dueño de invoices, ledger y estados financieros.
-- [ ] Integración `notification_resend` para correo transaccional/operativo, despachada desde Outbox con idempotencia, reintentos clasificados y trazabilidad.
-- [ ] Estados de pago/reintentos y conciliación de la factura, sin duplicar efectos financieros.
-- [ ] Eventos Outbox de invoice, pago, mora, suspensión y cambios de suscripción.
-- [ ] Reglas de notificación y recuperación realtime a las apps pertinentes.
+- [ ] Implementar el ciclo de suscripción, periodos, medición facturable, prorrateo si se aprueba, invoices y partidas inmutables.
+- [ ] Implementar cálculo de cobros de Payvia independiente de montos y fees de transacciones procesadas para el tenant, con snapshot económico reproducible y ledger financiero.
+- [ ] Implementar cobro de invoices de Payvia por `platform_billing_wompi`, con cuenta/credenciales de Payvia, callbacks propios verificados y reconciliación; no atraviesa `bacekend-pasarela` ni comparte credenciales tenant.
+- [ ] Implementar `invoice_factus` para emisión/consulta de documentos electrónicos de Payvia, manteniendo `platform_billing` como dueño de invoices, ledger y estados financieros.
+- [ ] Implementar `notification_resend` para correo transaccional/operativo, despachado desde Outbox con idempotencia, reintentos clasificados y trazabilidad.
+- [ ] Completar estados de pago/reintentos y conciliación de la factura, sin duplicar efectos financieros.
+- [ ] Completar eventos Outbox de invoice, pago, mora, suspensión y cambios de suscripción.
+- [ ] Completar notificaciones y recuperación realtime para las aplicaciones pertinentes.
+- [ ] Completar pruebas de caída/reinicio físico del proceso NATS, reconexión de socket, restart del consumidor, WebSocket autenticado y recuperación de cliente; la recuperación ante stream ausente/restaurado ya probada no demuestra estos escenarios.
+- [ ] Completar pruebas de fallo/rollback total de PostgreSQL y los demás escenarios de fallos aún señalados en la matriz.
 
-**Salida:** aceptación integrada comprueba invoice persistida → adapter Wompi de plataforma → callback oficial verificado → ledger/Outbox, incluyendo timeout, redelivery y reconciliación. También verifica emisión Factus y entrega Resend con claves de idempotencia, errores clasificados y estados recuperables. Los entornos sandbox/cuentas oficiales y credenciales reales apropiadas son requisito antes de declarar cada adapter validado. La capacidad de cobro recurrente automático se verifica antes de diseñar ese comportamiento.
+**Bloqueos y dependencias:** las decisiones económicas A-EC/B-EC que correspondan deben aprobarse antes de implementar cálculos o políticas comerciales; las cuentas, credenciales y sandboxes oficiales de Wompi, Factus y Resend deben validarse antes de certificar sus adapters. mTLS, signed grants y enforcement cross-backend permanecen asignados a Fase 5 y no se implementan ni se sustituyen en esta fase.
+
+**Salida de Fase 4:** solo podrá declararse cerrada cuando ambos alcances tengan decisiones aprobadas, implementación completa, pruebas reales positivas/negativas/límites/concurrencia/permisos/aislamiento/estados/fallos/reintentos/integridad/redacción, integraciones externas verificadas y trazabilidad requisito → test → ejecución CI sobre el SHA final. Los checks completados arriba no eliminan los pendientes de esta sección.
 
 ### Extensibilidad de proveedores propios
 
