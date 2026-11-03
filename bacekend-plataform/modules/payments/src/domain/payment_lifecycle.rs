@@ -1,6 +1,5 @@
 use chrono::{DateTime, Utc};
 use thiserror::Error;
-use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PaymentEnvironment {
@@ -257,100 +256,6 @@ pub fn ensure_provider_event_is_newer(
     Ok(())
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PaymentAttempt {
-    pub id: Uuid,
-    pub tenant_id: Uuid,
-    pub payment_intent_id: Uuid,
-    pub environment: PaymentEnvironment,
-    pub attempt_number: u32,
-    pub provider_code: String,
-    pub provider_account_reference: String,
-    pub status: PaymentAttemptStatus,
-}
-
-impl PaymentAttempt {
-    pub fn new(
-        id: Uuid,
-        tenant_id: Uuid,
-        payment_intent_id: Uuid,
-        environment: PaymentEnvironment,
-        attempt_number: u32,
-        provider_code: String,
-        provider_account_reference: String,
-    ) -> Result<Self, LifecycleModelError> {
-        validate_provider_code(&provider_code)?;
-        validate_opaque_reference(&provider_account_reference)?;
-        if attempt_number == 0 {
-            return Err(LifecycleModelError::AttemptNumberInvalid);
-        }
-        Ok(Self {
-            id,
-            tenant_id,
-            payment_intent_id,
-            environment,
-            attempt_number,
-            provider_code,
-            provider_account_reference,
-            status: PaymentAttemptStatus::Created,
-        })
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PaymentTransaction {
-    pub id: Uuid,
-    pub tenant_id: Uuid,
-    pub payment_intent_id: Uuid,
-    pub payment_attempt_id: Uuid,
-    pub environment: PaymentEnvironment,
-    pub provider_code: String,
-    pub provider_account_reference: String,
-    pub provider_transaction_reference: String,
-    pub amount_minor: i64,
-    pub currency: String,
-    pub status: PaymentTransactionStatus,
-}
-
-impl PaymentTransaction {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        id: Uuid,
-        tenant_id: Uuid,
-        payment_intent_id: Uuid,
-        payment_attempt_id: Uuid,
-        environment: PaymentEnvironment,
-        provider_code: String,
-        provider_account_reference: String,
-        provider_transaction_reference: String,
-        amount_minor: i64,
-        currency: String,
-    ) -> Result<Self, LifecycleModelError> {
-        validate_provider_code(&provider_code)?;
-        validate_opaque_reference(&provider_account_reference)?;
-        validate_opaque_reference(&provider_transaction_reference)?;
-        if amount_minor <= 0 {
-            return Err(LifecycleModelError::AmountInvalid);
-        }
-        if currency.len() != 3 || !currency.bytes().all(|byte| byte.is_ascii_uppercase()) {
-            return Err(LifecycleModelError::CurrencyInvalid);
-        }
-        Ok(Self {
-            id,
-            tenant_id,
-            payment_intent_id,
-            payment_attempt_id,
-            environment,
-            provider_code,
-            provider_account_reference,
-            provider_transaction_reference,
-            amount_minor,
-            currency,
-            status: PaymentTransactionStatus::Pending,
-        })
-    }
-}
-
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum LifecycleModelError {
     #[error("payment environment is invalid")]
@@ -367,19 +272,19 @@ pub enum LifecycleModelError {
     CurrencyInvalid,
 }
 
-fn validate_provider_code(value: &str) -> Result<(), LifecycleModelError> {
+pub(super) fn validate_provider_code(value: &str) -> Result<(), LifecycleModelError> {
     if value.is_empty()
         || value.len() > 64
-        || !value
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._-".contains(&byte))
+        || !value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._-".contains(&byte)
+        })
     {
         return Err(LifecycleModelError::ProviderCodeInvalid);
     }
     Ok(())
 }
 
-fn validate_opaque_reference(value: &str) -> Result<(), LifecycleModelError> {
+pub(super) fn validate_opaque_reference(value: &str) -> Result<(), LifecycleModelError> {
     if value.is_empty()
         || value.len() > 255
         || value.bytes().any(|byte| byte.is_ascii_control())
@@ -394,7 +299,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn normalized_provider_status_maps_without_provider_specific_codes() {
+    fn normalized_status_maps_without_provider_specific_codes() {
         assert_eq!(
             NormalizedProviderPaymentStatus::RequiresAction.attempt_status(),
             PaymentAttemptStatus::RequiresAction
@@ -410,17 +315,10 @@ mod tests {
     }
 
     #[test]
-    fn attempts_follow_forward_transitions_and_reject_regressions() {
+    fn transitions_are_forward_only_and_terminal_conflicts_need_reconciliation() {
         assert_eq!(
             PaymentAttemptStatus::Created.transition_to(
                 PaymentAttemptStatus::Submitted,
-                TransitionAuthority::ProviderEvent
-            ),
-            Ok(TransitionEffect::Apply)
-        );
-        assert_eq!(
-            PaymentAttemptStatus::Processing.transition_to(
-                PaymentAttemptStatus::RequiresAction,
                 TransitionAuthority::ProviderEvent
             ),
             Ok(TransitionEffect::Apply)
@@ -432,10 +330,6 @@ mod tests {
             ),
             Err(TransitionGuardError::TransitionNotAllowed)
         );
-    }
-
-    #[test]
-    fn terminal_states_never_overwrite_and_require_reconciliation() {
         assert_eq!(
             PaymentIntentStatus::Succeeded.transition_to(
                 PaymentIntentStatus::Failed,
@@ -443,17 +337,10 @@ mod tests {
             ),
             Err(TransitionGuardError::ReconciliationRequired)
         );
-        assert_eq!(
-            PaymentTransactionStatus::Failed.transition_to(
-                PaymentTransactionStatus::Succeeded,
-                TransitionAuthority::ProviderEvent
-            ),
-            Err(TransitionGuardError::ReconciliationRequired)
-        );
     }
 
     #[test]
-    fn unknown_outcome_can_only_be_resolved_by_reconciliation() {
+    fn outcome_unknown_requires_reconciliation_to_resolve() {
         assert_eq!(
             PaymentAttemptStatus::OutcomeUnknown.transition_to(
                 PaymentAttemptStatus::Succeeded,
@@ -471,39 +358,18 @@ mod tests {
     }
 
     #[test]
-    fn event_timestamps_must_be_strictly_monotonic() {
+    fn provider_event_timestamps_must_be_strictly_monotonic() {
         let applied_at = Utc::now();
         assert_eq!(
             ensure_provider_event_is_newer(Some(applied_at), applied_at),
             Err(TransitionGuardError::EventIsNotNewer)
         );
         assert_eq!(
-            ensure_provider_event_is_newer(Some(applied_at), applied_at + chrono::Duration::seconds(1)),
+            ensure_provider_event_is_newer(
+                Some(applied_at),
+                applied_at + chrono::Duration::seconds(1)
+            ),
             Ok(())
         );
-    }
-
-    #[test]
-    fn attempt_and_transaction_models_reject_invalid_identity_and_money() {
-        let tenant_id = Uuid::new_v4();
-        let intent_id = Uuid::new_v4();
-        assert!(PaymentAttempt::new(
-            Uuid::new_v4(), tenant_id, intent_id, PaymentEnvironment::Test, 0,
-            "wompi".to_owned(), "account_01".to_owned()
-        ).is_err());
-        assert!(PaymentAttempt::new(
-            Uuid::new_v4(), tenant_id, intent_id, PaymentEnvironment::Test, 1,
-            "Wompi".to_owned(), "account_01".to_owned()
-        ).is_err());
-        assert!(PaymentTransaction::new(
-            Uuid::new_v4(), tenant_id, intent_id, Uuid::new_v4(), PaymentEnvironment::Live,
-            "wompi".to_owned(), "account_01".to_owned(), "txn_01".to_owned(),
-            0, "COP".to_owned()
-        ).is_err());
-        assert!(PaymentTransaction::new(
-            Uuid::new_v4(), tenant_id, intent_id, Uuid::new_v4(), PaymentEnvironment::Live,
-            "wompi".to_owned(), "account_01".to_owned(), "txn_01".to_owned(),
-            100, "cop".to_owned()
-        ).is_err());
     }
 }
