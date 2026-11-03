@@ -16,9 +16,10 @@ use platform_contracts::tenant_registry::{
 
 use super::{
     models::{ChangeTenantStatus, NewTenant, TenantList, TenantQuery, TenantView},
-    support::{auth_error, csrf_error, csrf_value, map_tenant, tenant_grpc_error,
-        OPERATOR_CSRF_COOKIE, OPERATOR_SESSION_COOKIE, TENANT_CSRF_COOKIE,
-        TENANT_SESSION_COOKIE},
+    support::{
+        OPERATOR_CSRF_COOKIE, OPERATOR_SESSION_COOKIE, TENANT_CSRF_COOKIE, TENANT_SESSION_COOKIE,
+        auth_error, csrf_error, csrf_value, map_tenant, tenant_grpc_error,
+    },
 };
 
 #[utoipa::path(post, path = "/v1/tenants", request_body = NewTenant, responses((status = 201, body = TenantView), (status = 409, body = crate::http::dto::error_envelope::ErrorEnvelope)))]
@@ -45,7 +46,9 @@ pub async fn register(
     match TenantRegistryClient::register(&state.tenant_client, request, &correlation).await {
         Ok(response) => (StatusCode::CREATED, Json(map_tenant(response))).into_response(),
         Err(status) => tenant_grpc_error(
-            status, "register_tenant", &correlation,
+            status,
+            "register_tenant",
+            &correlation,
             started.elapsed().as_millis() as u64,
         ),
     }
@@ -90,7 +93,9 @@ async fn get_with_session(
     match TenantRegistryClient::get(&state.tenant_client, request, &correlation).await {
         Ok(response) => Json(map_tenant(response)).into_response(),
         Err(status) => tenant_grpc_error(
-            status, "get_tenant", &correlation,
+            status,
+            "get_tenant",
+            &correlation,
             started.elapsed().as_millis() as u64,
         ),
     }
@@ -125,9 +130,12 @@ pub async fn list_for_operator(
         Ok(result) => Json(TenantList {
             tenants: result.tenants.into_iter().map(map_tenant).collect(),
             total: result.total,
-        }).into_response(),
+        })
+        .into_response(),
         Err(status) => tenant_grpc_error(
-            status, "list_tenants", &correlation,
+            status,
+            "list_tenants",
+            &correlation,
             started.elapsed().as_millis() as u64,
         ),
     }
@@ -163,7 +171,9 @@ pub async fn change_status(
     match TenantRegistryClient::change_status(&state.tenant_client, request, &correlation).await {
         Ok(response) => Json(map_tenant(response)).into_response(),
         Err(status) => tenant_grpc_error(
-            status, "change_tenant_status", &correlation,
+            status,
+            "change_tenant_status",
+            &correlation,
             started.elapsed().as_millis() as u64,
         ),
     }
