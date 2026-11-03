@@ -97,6 +97,7 @@ impl NormalizedProviderPaymentStatus {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TransitionAuthority {
+    OperationSubmitted,
     ProviderEvent,
     OperationTimeout,
     Reconciliation,
@@ -122,6 +123,8 @@ trait LifecycleState: Copy + Eq {
     fn can_transition_to(self, next: Self) -> bool;
     fn is_terminal(self) -> bool;
     fn is_outcome_unknown(self) -> bool;
+    fn can_become_outcome_unknown(self) -> bool;
+    fn requires_operation_submission(self, next: Self) -> bool;
 }
 
 fn evaluate_transition<S: LifecycleState>(
@@ -142,8 +145,17 @@ fn evaluate_transition<S: LifecycleState>(
             Err(TransitionGuardError::ReconciliationRequired)
         };
     }
+    if current.requires_operation_submission(next) {
+        return if authority == TransitionAuthority::OperationSubmitted {
+            Ok(TransitionEffect::Apply)
+        } else {
+            Err(TransitionGuardError::TransitionNotAllowed)
+        };
+    }
     if next.is_outcome_unknown() {
-        return if authority == TransitionAuthority::OperationTimeout {
+        return if authority == TransitionAuthority::OperationTimeout
+            && current.can_become_outcome_unknown()
+        {
             Ok(TransitionEffect::Apply)
         } else {
             Err(TransitionGuardError::TransitionNotAllowed)
@@ -191,6 +203,17 @@ impl LifecycleState for PaymentIntentStatus {
     fn is_outcome_unknown(self) -> bool {
         self == Self::OutcomeUnknown
     }
+
+    fn can_become_outcome_unknown(self) -> bool {
+        matches!(self, Self::Processing | Self::RequiresAction | Self::Authorized)
+    }
+
+    fn requires_operation_submission(self, next: Self) -> bool {
+        matches!(
+            (self, next),
+            (Self::Created, Self::Processing) | (Self::RequiresAction, Self::Processing)
+        )
+    }
 }
 
 impl PaymentAttemptStatus {
@@ -232,6 +255,17 @@ impl LifecycleState for PaymentAttemptStatus {
     fn is_outcome_unknown(self) -> bool {
         self == Self::OutcomeUnknown
     }
+
+    fn can_become_outcome_unknown(self) -> bool {
+        matches!(
+            self,
+            Self::Submitted | Self::Processing | Self::RequiresAction | Self::Authorized
+        )
+    }
+
+    fn requires_operation_submission(self, next: Self) -> bool {
+        self == Self::Created && next == Self::Submitted
+    }
 }
 
 impl PaymentTransactionStatus {
@@ -260,6 +294,14 @@ impl LifecycleState for PaymentTransactionStatus {
 
     fn is_outcome_unknown(self) -> bool {
         self == Self::OutcomeUnknown
+    }
+
+    fn can_become_outcome_unknown(self) -> bool {
+        matches!(self, Self::Pending | Self::Authorized)
+    }
+
+    fn requires_operation_submission(self, _next: Self) -> bool {
+        false
     }
 }
 
