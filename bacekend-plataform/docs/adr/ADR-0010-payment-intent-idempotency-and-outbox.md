@@ -16,7 +16,7 @@ La Fase 4 asigna a plataforma el ownership del estado de negocio de Payment Inte
 - El bounded context `payments` en plataforma es dueño del agregado Payment Intent, sus claves de idempotencia para creación, auditoría y Outbox.
 - `identity_access` conserva el ownership de API Keys, sus digests, scopes, estado y revocación.
 - El BFF es la única frontera REST. Llama al módulo `payments` por gRPC y no consulta su schema.
-- La autorización de creación/lectura se comprueba en `identity_access` con los scopes exactos `payment_intents:create` y `payment_intents:read`.
+- La autorización de creación/lectura se comprueba en `identity_access` con los scopes exactos `payment_intents.create` y `payment_intents.read`.
 - Esta ADR no autoriza una llamada al backend de pasarelas. mTLS, grants firmados y enforcement de la operación protegida continúan asignados a Fase 5.
 
 ### Modelo inicial del agregado
