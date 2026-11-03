@@ -35,7 +35,7 @@ El contrato de plataforma consume estados neutrales; no contiene nombres de esta
 
 ### 3. Guards y orden de eventos
 
-- Las transiciones avanzan por estados explícitos; una regresión no se aplica.
+- Las transiciones avanzan por estados explícitos; una regresión no se aplica. El inicio de ejecución (`created → submitted/processing`) requiere autoridad `OperationSubmitted`; un callback no puede inventar que la plataforma envió una operación. `outcome_unknown` solo se introduce por `OperationTimeout` cuando ya existe una operación enviada/en curso.
 - `succeeded` y `failed` son terminales para el intento/transacción. Un hecho posterior contradictorio no sobrescribe el estado.
 - Un estado `outcome_unknown` solo se resuelve con autoridad de reconciliación, nunca con un callback tardío aislado.
 - Para aplicar un evento nuevo, `occurred_at` debe ser estrictamente posterior al último evento aplicado. Un timestamp menor o igual no permite inferir orden; se deriva a reconciliación.
