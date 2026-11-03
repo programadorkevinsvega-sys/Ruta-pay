@@ -1,5 +1,7 @@
 #[path = "phase4_payments_acceptance/database.rs"]
 mod database;
+#[path = "phase4_payments_acceptance/jetstream.rs"]
+mod jetstream_acceptance;
 
 use platform_payments::{
     application::payment_service::{CreatePaymentIntentCommand, PaymentService},
@@ -261,4 +263,9 @@ async fn invalid_payment_intents_are_rejected_before_any_business_write() {
     );
 
     database.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn payment_intent_outbox_is_published_deduplicated_and_recoverable_in_realtime() {
+    jetstream_acceptance::verify().await;
 }
