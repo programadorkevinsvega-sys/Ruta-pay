@@ -44,7 +44,7 @@ El contrato de plataforma consume estados neutrales; no contiene nombres de esta
 
 ### 4. Eventos normalizados y callback verificado
 
-- El contrato `NormalizedProviderPaymentEventV1` transporta schema version, proveedor, referencia de cuenta, ID externo estable del evento, tenant, entorno, intent, attempt, referencia de transacción, estado neutral, timestamp de origen, correlation ID y SHA-256 del cuerpo verificado.
+- El contrato `NormalizedProviderPaymentEventV1` transporta schema version, UUID estable del sobre (`event_id`), proveedor, referencia de cuenta, ID externo estable del evento (`provider_event_id`), tenant, entorno, intent, attempt, referencia de transacción, estado neutral, timestamp de origen, correlation ID y SHA-256 del cuerpo verificado. `event_id` identifica la entrega interna; `provider_event_id` participa en la deduplicación externa.
 - No transporta body crudo, secretos, firmas, credenciales ni datos de tarjeta sensibles.
 - El schema Protobuf por sí solo **no prueba autenticidad**. Solo puede ser aceptado después de que el adapter del proveedor verifique el callback según el protocolo oficial, anti-replay y asociación de cuenta; además, la identidad del productor debe autenticarse en la frontera entre backends.
 - La verificación criptográfica de callbacks pertenece al backend de pasarelas (su fase de webhooks). La autenticación mTLS/grants plataforma↔pasarelas pertenece a Fase 5. Ninguno de esos trabajos se implementa en esta ADR.
