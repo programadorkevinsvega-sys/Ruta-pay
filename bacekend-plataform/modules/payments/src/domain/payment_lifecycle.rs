@@ -319,6 +319,8 @@ pub fn ensure_provider_event_is_newer(
 pub enum LifecycleModelError {
     #[error("payment identifier is invalid")]
     IdentifierInvalid,
+    #[error("payment attempt must be submitted before a transaction exists")]
+    AttemptNotSubmitted,
     #[error("payment lifecycle ownership relationship is invalid")]
     OwnershipMismatch,
     #[error("payment environment is invalid")]
