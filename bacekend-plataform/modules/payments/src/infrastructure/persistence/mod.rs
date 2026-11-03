@@ -12,6 +12,7 @@ pub struct PendingOutboxEvent {
     pub payload: serde_json::Value,
     pub traceparent: Option<String>,
     pub correlation_id: String,
+    pub occurred_at: chrono::DateTime<chrono::Utc>,
     pub lease_token: Uuid,
 }
 
@@ -21,7 +22,7 @@ pub async fn claim_outbox_events(
 ) -> Result<Vec<PendingOutboxEvent>, sqlx::Error> {
     let lease_token = Uuid::new_v4();
     let rows = sqlx::query(
-        "WITH candidates AS (SELECT event_id FROM payments.outbox_events WHERE published_at IS NULL AND available_at <= now() AND (lease_until IS NULL OR lease_until < now()) ORDER BY occurred_at,event_id FOR UPDATE SKIP LOCKED LIMIT $1) UPDATE payments.outbox_events event SET lease_token=$2,lease_until=now()+interval '30 seconds',attempts=attempts+1 FROM candidates WHERE event.event_id=candidates.event_id RETURNING event.event_id,event.aggregate_id,event.aggregate_version,event.event_type,event.schema_version,event.audience,event.payload,event.traceparent,event.correlation_id,event.lease_token",
+        "WITH candidates AS (SELECT event_id FROM payments.outbox_events WHERE published_at IS NULL AND available_at <= now() AND (lease_until IS NULL OR lease_until < now()) ORDER BY occurred_at,event_id FOR UPDATE SKIP LOCKED LIMIT $1) UPDATE payments.outbox_events event SET lease_token=$2,lease_until=now()+interval '30 seconds',attempts=attempts+1 FROM candidates WHERE event.event_id=candidates.event_id RETURNING event.event_id,event.aggregate_id,event.aggregate_version,event.event_type,event.schema_version,event.audience,event.payload,event.traceparent,event.correlation_id,event.occurred_at,event.lease_token",
     )
     .bind(limit)
     .bind(lease_token)
@@ -39,6 +40,7 @@ pub async fn claim_outbox_events(
                 payload: row.try_get("payload")?,
                 traceparent: row.try_get("traceparent")?,
                 correlation_id: row.try_get("correlation_id")?,
+                occurred_at: row.try_get("occurred_at")?,
                 lease_token: row.try_get("lease_token")?,
             })
         })
