@@ -11,6 +11,7 @@ members = [
     "bacekend-plataform/modules/realtime",
     "bacekend-plataform/modules/catalog_pricing",
     "bacekend-plataform/modules/entitlements_quotas",
+    "bacekend-plataform/modules/payments",
     "crates/observability",
     "bacekend-pasarela",
 ]
