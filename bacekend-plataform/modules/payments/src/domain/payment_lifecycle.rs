@@ -63,7 +63,6 @@ pub enum NormalizedProviderPaymentStatus {
     Authorized,
     Succeeded,
     Failed,
-    OutcomeUnknown,
 }
 
 impl NormalizedProviderPaymentStatus {
@@ -74,7 +73,6 @@ impl NormalizedProviderPaymentStatus {
             Self::Authorized => PaymentIntentStatus::Authorized,
             Self::Succeeded => PaymentIntentStatus::Succeeded,
             Self::Failed => PaymentIntentStatus::Failed,
-            Self::OutcomeUnknown => PaymentIntentStatus::OutcomeUnknown,
         }
     }
 
@@ -85,7 +83,6 @@ impl NormalizedProviderPaymentStatus {
             Self::Authorized => PaymentAttemptStatus::Authorized,
             Self::Succeeded => PaymentAttemptStatus::Succeeded,
             Self::Failed => PaymentAttemptStatus::Failed,
-            Self::OutcomeUnknown => PaymentAttemptStatus::OutcomeUnknown,
         }
     }
 
@@ -95,7 +92,6 @@ impl NormalizedProviderPaymentStatus {
             Self::Authorized => PaymentTransactionStatus::Authorized,
             Self::Succeeded => PaymentTransactionStatus::Succeeded,
             Self::Failed => PaymentTransactionStatus::Failed,
-            Self::OutcomeUnknown => PaymentTransactionStatus::OutcomeUnknown,
         }
     }
 }
