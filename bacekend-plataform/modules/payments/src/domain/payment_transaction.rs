@@ -1,9 +1,6 @@
 use uuid::Uuid;
 
-use crate::domain::{
-    payment_attempt::PaymentAttempt,
-    payment_intent::PaymentIntent,
-};
+use crate::domain::{payment_attempt::PaymentAttempt, payment_intent::PaymentIntent};
 
 use super::payment_lifecycle::{
     LifecycleModelError, PaymentEnvironment, PaymentTransactionStatus, TransitionAuthority,
@@ -107,7 +104,10 @@ impl PaymentTransaction {
             return Err(LifecycleModelError::AmountInvalid);
         }
         if intent.currency.len() != 3
-            || !intent.currency.bytes().all(|byte| byte.is_ascii_uppercase())
+            || !intent
+                .currency
+                .bytes()
+                .all(|byte| byte.is_ascii_uppercase())
         {
             return Err(LifecycleModelError::CurrencyInvalid);
         }
@@ -169,13 +169,8 @@ mod tests {
     }
 
     fn transaction(intent: &PaymentIntent, attempt: &PaymentAttempt) -> PaymentTransaction {
-        PaymentTransaction::new(
-            Uuid::new_v4(),
-            intent,
-            attempt,
-            "txn_01".to_owned(),
-        )
-        .expect("transaction belongs to its submitted attempt")
+        PaymentTransaction::new(Uuid::new_v4(), intent, attempt, "txn_01".to_owned())
+            .expect("transaction belongs to its submitted attempt")
     }
 
     #[test]
@@ -221,12 +216,7 @@ mod tests {
         )
         .expect("attempt identity is valid");
         assert_eq!(
-            PaymentTransaction::new(
-                Uuid::new_v4(),
-                &intent,
-                &attempt,
-                "txn_01".to_owned()
-            ),
+            PaymentTransaction::new(Uuid::new_v4(), &intent, &attempt, "txn_01".to_owned()),
             Err(LifecycleModelError::AttemptNotSubmitted)
         );
     }
