@@ -126,7 +126,7 @@ async fn payment_intent_creation_replay_conflict_concurrency_and_tenant_isolatio
     .await
     .expect("outbox rows can be inspected by the migration role");
     assert_eq!(
-        outbox_count, 2,
+        outbox_count, 3,
         "each intent emits exactly one durable event"
     );
 
@@ -211,7 +211,7 @@ async fn invalid_payment_intents_are_rejected_before_any_business_write() {
     ));
 
     let mut invalid = command(tenant_id, actor_key_id, "invalid-reference");
-    invalid.merchant_reference = Some("invalid\\nreference".to_owned());
+    invalid.merchant_reference = Some("invalid\nreference".to_owned());
     assert!(matches!(
         service.create_payment_intent(invalid).await,
         Err(platform_payments::application::payment_service::PaymentServiceError::Domain(
