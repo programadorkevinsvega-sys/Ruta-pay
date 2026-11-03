@@ -4,7 +4,7 @@
 
 This acceptance record covers the Rust platform modules `catalog_pricing` and `entitlements_quotas`, their PostgreSQL ownership, gRPC contracts, BFF routes, Outbox/JetStream delivery and the realtime journal boundary.
 
-A criterion is accepted only when its executable test passes on the exact PR HEAD SHA. A test file existing, a prior green workflow, or a successful compile alone is not acceptance evidence. CI and deployment evidence are recorded separately.
+A criterion is accepted only when its executable test passes on the exact PR HEAD SHA. A test file existing, a prior green workflow, or a successful compile alone is not acceptance evidence. CI evidence is recorded against the exact GitHub commit. Production deployment is outside the current construction-stage acceptance scope.
 
 ## Required test environment
 
@@ -91,6 +91,6 @@ Phase 3 must remain open until all of the following are true on one final HEAD S
 6. The PR description, roadmap and this acceptance record identify the same PR and CI workflow. GitHub's workflow metadata must prove that the successful run's `head_sha` is exactly the final PR head SHA; the SHA is not duplicated manually across documents.
 7. Build and migration artifacts, configuration contracts and operational procedures are present and covered by repository-level validation where applicable. Production deployment, applying migrations to a target environment and production health checks are explicitly outside the construction-phase closure gate.
 
-The final code-validation run for this PR passed all CI jobs on SHA `5908ad60c6c56e8cc0614f08f0b40fc94c0c57a8` (workflow run [41569999940](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41569999940)). GitHub workflow metadata confirms that the successful run's `head_sha` exactly matches this PR's HEAD. The run validates this acceptance record, the 400-line guard, Rust quality checks, frontend suites and browser E2E.
+Historical validation: workflow run [41571087710](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41571087710) passed on SHA `871090cc5421fa0635c42e9fbad19fee0c9636a9`. That run is evidence for that historical commit only; the authoritative acceptance evidence for this revision is the successful workflow run whose GitHub metadata `head_sha` matches the final PR #8 HEAD.
 
 Phase 3 construction acceptance is satisfied when criteria 1–7 pass on the same final GitHub PR HEAD and the matching workflow run is successful. This is a repository/construction milestone, not a production-readiness declaration. No VPS access, production deployment, target-environment migration execution or production health check is required to close this phase in the current project stage.
