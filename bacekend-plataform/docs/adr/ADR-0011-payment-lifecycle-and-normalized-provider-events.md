@@ -30,7 +30,7 @@ El contrato de plataforma consume estados neutrales; no contiene nombres de esta
 - **Payment Attempt:** `created`, `submitted`, `processing`, `requires_action`, `authorized`, `succeeded`, `failed`, `outcome_unknown`.
 - **Payment Transaction:** `pending`, `authorized`, `succeeded`, `failed`, `outcome_unknown`.
 - `outcome_unknown` no es un estado informado por el proveedor ni una respuesta negativa: representa que plataforma no pudo conocer con certeza el resultado de una operación. Solo una consulta/reconciliación autoritativa puede resolverlo.
-- El fallo de un intento no cierra automáticamente el Payment Intent. La política de reintentos B-EC-10 no está aprobada; por eso el estado `failed` pertenece al intento/transacción y no se proyecta directamente como `PaymentIntentStatus::Failed`.
+- El fallo de un intento no cierra automáticamente el Payment Intent. La política de reintentos B-EC-10 no está aprobada; por eso el estado `failed` pertenece al intento/transacción y no se proyecta automáticamente como un estado terminal del Payment Intent.
 - Esta entrega agrega modelos de dominio y guards, y el mensaje Protobuf `NormalizedProviderPaymentEventV1`. No agrega todavía migraciones, persistencia, RPC de ingestión ni consumidor de eventos; no debe anunciarse como ciclo operativo implementado.
 
 ### 3. Guards y orden de eventos
