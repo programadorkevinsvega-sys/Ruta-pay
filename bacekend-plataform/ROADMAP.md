@@ -113,7 +113,7 @@ Acta: docs/phase-3/acceptance.md. Matriz específica: docs/phase-3/integration-m
 
 ## Fase 4 — Suscripciones y facturación de uso Payvia
 
-**Estado:** implementación parcial. El PR #10 contiene un slice de Alcance B (Payment Intents) implementado y verificado; esto no equivale al cierre de Fase 4. El Alcance A (suscripciones y facturación SaaS de Payvia) continúa pendiente. La matriz de integración mantiene el estado por frontera y la trazabilidad requisito → test → CI.
+**Estado:** implementación parcial. El PR #10 está integrado en `main` y entregó el slice inicial de Payment Intents/Outbox. El PR #11 añade una base de dominio y contrato neutral para el lifecycle de intentos/transacciones, verificada por CI #920; todavía no implementa la persistencia ni el ciclo operativo completo. El Alcance A (suscripciones y facturación SaaS de Payvia) continúa pendiente. La matriz de integración mantiene el estado por frontera y la trazabilidad requisito → test → CI.
 
 **Registro de decisiones pendientes:** [docs/phase-4/decision-register.md](docs/phase-4/decision-register.md). Separa las decisiones económicas que requieren aprobación de las resoluciones técnicas. No aprueba precios, impuestos, políticas comerciales ni capacidades de proveedores.
 
@@ -142,7 +142,7 @@ Los siguientes checks se limitan al slice inicial de creación/consulta de Payme
 
 El código de esta rama introduce la base de dominio y el contrato neutral documentados en [ADR-0011](docs/adr/ADR-0011-payment-lifecycle-and-normalized-provider-events.md). Estos elementos no equivalen a una integración operativa ni cierran los entregables completos:
 
-- [ ] Modelos de intentos/transacciones, guards, normalización y contrato de evento: implementación de dominio/Protobuf pendiente de verificación CI. No hay todavía persistencia, casos de uso, ingestión de eventos ni reconciliación ejecutable.
+- [x] Modelos de dominio `PaymentAttempt` y `PaymentTransaction`, estados canónicos separados, guards forward-only, protección de estados terminales, control unitario del orden de eventos y contrato Protobuf neutral `NormalizedProviderPaymentEventV1`. **Verificado:** CI #920 sobre SHA `dd23a3aabf36fd9cc24e0a90b440a679dce46463`; pasaron límite de 400 líneas, fmt, Clippy, tests workspace, ambos frontends, E2E tenant/plataforma/multi-réplica y documentación. Este check certifica solamente el modelo/contrato y sus pruebas unitarias.
 - [ ] Persistencia PostgreSQL con RLS/constraints, inbox idempotente, casos de reconciliación, auditoría, Outbox y pruebas reales de aislamiento/concurrencia/rollback.
 - [ ] API/contratos de creación de intentos, consulta de intentos/transacciones y actualización del estado del intent, con scopes y aceptación HTTP→BFF→gRPC→módulo.
 - [ ] Ingestión de eventos normalizados solo después de verificar el callback en el adapter y autenticar al productor cross-backend. El mensaje Protobuf no autentica por sí mismo y no se añadió un RPC/consumer de ingreso.
