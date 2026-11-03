@@ -31,7 +31,6 @@ pub enum PaymentIntentStatus {
     RequiresAction,
     Authorized,
     Succeeded,
-    Failed,
     OutcomeUnknown,
 }
 
@@ -66,13 +65,13 @@ pub enum NormalizedProviderPaymentStatus {
 }
 
 impl NormalizedProviderPaymentStatus {
-    pub fn intent_status(self) -> PaymentIntentStatus {
+    pub fn intent_status(self) -> Option<PaymentIntentStatus> {
         match self {
-            Self::Processing => PaymentIntentStatus::Processing,
-            Self::RequiresAction => PaymentIntentStatus::RequiresAction,
-            Self::Authorized => PaymentIntentStatus::Authorized,
-            Self::Succeeded => PaymentIntentStatus::Succeeded,
-            Self::Failed => PaymentIntentStatus::Failed,
+            Self::Processing => Some(PaymentIntentStatus::Processing),
+            Self::RequiresAction => Some(PaymentIntentStatus::RequiresAction),
+            Self::Authorized => Some(PaymentIntentStatus::Authorized),
+            Self::Succeeded => Some(PaymentIntentStatus::Succeeded),
+            Self::Failed => None,
         }
     }
 
@@ -165,15 +164,15 @@ impl LifecycleState for PaymentIntentStatus {
         use PaymentIntentStatus::*;
         matches!(
             (self, next),
-            (Created, Processing | RequiresAction | Authorized | Succeeded | Failed | OutcomeUnknown)
-                | (Processing, RequiresAction | Authorized | Succeeded | Failed | OutcomeUnknown)
-                | (RequiresAction, Processing | Authorized | Succeeded | Failed | OutcomeUnknown)
+            (Created, Processing | RequiresAction | Authorized | Succeeded | OutcomeUnknown)
+                | (Processing, RequiresAction | Authorized | Succeeded | OutcomeUnknown)
+                | (RequiresAction, Processing | Authorized | Succeeded | OutcomeUnknown)
                 | (Authorized, Succeeded | OutcomeUnknown)
         )
     }
 
     fn is_terminal(self) -> bool {
-        matches!(self, Self::Succeeded | Self::Failed)
+        self == Self::Succeeded
     }
 
     fn is_outcome_unknown(self) -> bool {
