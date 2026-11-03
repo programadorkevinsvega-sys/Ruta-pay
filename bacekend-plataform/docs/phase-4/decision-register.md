@@ -1,9 +1,11 @@
 # Fase 4 — Registro formal de decisiones pendientes
 
-**Producto:** Payvia  
-**Componente:** backend de plataforma (`bacekend-plataform`)  
-**Fecha de corte:** 2026-11-03  
-**Base auditada:** `main` — `eb13e4fef024a3428460dbdc260bf3d254bb0eb3`  
+| Campo | Valor |
+|---|---|
+| Producto | Payvia |
+| Componente | backend de plataforma (`bacekend-plataform`) |
+| Fecha de corte | 2026-11-03 |
+| Base auditada | `main` — `eb13e4fef024a3428460dbdc260bf3d254bb0eb3` |
 **Estado:** decisiones pendientes; este documento no constituye aprobación comercial ni cierre de fase.
 
 ## 1. Propósito
