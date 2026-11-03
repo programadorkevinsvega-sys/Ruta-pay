@@ -65,17 +65,34 @@ La indisponibilidad de un stream/subject se prueba mediante rechazo real de JetS
 
 ## 3. Alcance B — Transacciones e intentos
 
-| Área | Diseño actual | Estado |
-|---|---|---|
-| Payment Intent | Entidad persistida con status inicial `created`, importe entero minor-unit, currency, método, tenant y entorno. | Base implementada |
-| Transaction / Attempt | No existe aún tabla ni agregado para intentos y transacciones. | Pendiente |
-| Máquina de estados | La migración solo admite `created`; no existe todavía transición terminal/prohibida versionada. | Pendiente |
-| Provider mapping / normalized result | ADR-0005 define el contrato conceptual del método; no hay mapping versionado de estados externos en este módulo. | Pendiente |
-| Webhook/callback verificado | No existe ingreso de resultados externos de transacción en `payments`. | Pendiente |
-| Resultado incierto y reconciliación | No se repite ninguna llamada de proveedor porque este slice todavía no invoca proveedores. El procedimiento de consulta/reconciliación externa no está implementado. | Pendiente |
-| Refund / partial refund / capture | Sus políticas económicas/funcionales están pendientes en B-EC-07 y B-EC-12..14. | Bloqueado por aprobación; no implementar supuestos |
+**Estado:** se añadió una primera base de dominio Rust y el contrato Protobuf neutral en esta rama. Aún no existe persistencia, caso de uso, API, consumidor ni ingestión confiable de resultados de proveedor. Los criterios de esta sección permanecen abiertos.
 
-No se puede interpretar el estado inicial `created` como pago autorizado, capturado, exitoso o liquidado.
+| Área | Diseño/implementación disponible | Estado real |
+|---|---|---|
+| Payment Intent | Continúa persistido únicamente en `created` por el slice ADR-0010. El modelo de lifecycle define estados de proyección, sin ampliar todavía la migración ni mutar la tabla. | Creación/consulta implementada; transiciones persistidas pendientes. |
+| Payment Attempt | `domain/payment_attempt.rs` define identidad interna, tenant, intent, entorno, número secuencial, proveedor/cuenta opacos y estado inicial `created`; valida secuencia y referencias. | Modelo de dominio unit-tested; sin tabla, RLS ni use case. |
+| Payment Transaction | `domain/payment_transaction.rs` define identidad interna, vínculo con intent/attempt, proveedor/cuenta/referencia externa, importe entero, moneda y estado inicial `pending`. | Modelo de dominio unit-tested; sin tabla, constraints ni persistencia. |
+| Guards y estados | `domain/payment_lifecycle.rs` separa estados de intent/attempt/transaction, transiciones forward-only, terminales protegidos y `outcome_unknown` resoluble solo por reconciliación. Fallo de un intento no se proyecta automáticamente a fallo del intent. | Unit tests del dominio; aún no aplicados dentro de transacciones PostgreSQL. |
+| Orden de eventos tardíos | Exige timestamp del proveedor estrictamente mayor al último timestamp aplicado; timestamps viejos o iguales no se aplican automáticamente. Conflictos terminales requieren reconciliación. | Guard unitario; falta inbox durable, control de versión y test concurrente PostgreSQL. |
+| Estado normalizado proveedor | `NormalizedProviderPaymentEventV1` y enum neutral en `crates/platform_contracts/proto/payments.proto`. `outcome_unknown` es estado interno de plataforma, no un estado del proveedor. | Schema añadido; no hay traducción de status específico ni adapter en plataforma. Mapping de proveedor pertenece al adapter gateway. |
+| Callback verificado | El mensaje de Protobuf no prueba identidad ni firma. No se añadió RPC/HTTP o consumer que acepte callbacks. | Bloqueado hasta que gateway verifique firma/anti-replay y exista identidad autenticada del productor. |
+| Deduplicación | La decisión técnica reserva proveedor + cuenta + provider event ID como clave externa, distinta de la idempotencia de create intent. | ADR documentada; no hay event inbox/constraint ni persistencia. |
+| Resultado incierto | El modelo mantiene `outcome_unknown` separado de rechazo/fallo; solo autoridad de reconciliación puede resolverlo. | Guard unitario; no hay timeout de operación de proveedor ni estado persistido. |
+| Reconciliación | Debe consultar una fuente autoritativa del proveedor, registrar resultado/caso y evitar repetir efectos inciertos. | Pendiente: no hay provider adapter, capability de consulta, caso durable ni worker/API. |
+| Captura, cancelación, expiración y refunds | No se añaden estados/commands/endpoints. | Bloqueados por aprobaciones B-EC-07..13. |
+
+### 3.1. Trazabilidad del modelo de dominio
+
+| Requisito técnico | Test | Evidencia/limitación |
+|---|---|---|
+| Mapear estados canónicos sin códigos específicos de proveedor | `normalized_status_maps_without_provider_specific_codes` | Unit test de dominio; no valida mapping en adapter. |
+| Transiciones forward-only y conflictos terminales | `transitions_are_forward_only_and_terminal_conflicts_need_reconciliation` | Unit test; no hay reducer persistente. |
+| Resolver `outcome_unknown` solo por reconciliación | `outcome_unknown_requires_reconciliation_to_resolve` | Unit test; no consulta un proveedor real. |
+| Rechazar timestamps iguales/anteriores | `provider_event_timestamps_must_be_strictly_monotonic` | Unit test; asume timestamp fiable proveniente del adapter verificado. |
+| Secuencia de intento y proveedor válido | `attempt_requires_positive_sequence_and_normalized_provider_code` | Unit test de constructor. |
+| Dinero y estado inicial de transacción | `transaction_rejects_invalid_money`, `transaction_starts_pending_with_valid_financial_identity` | Unit tests de constructor/modelo. |
+
+La presencia de modelos y tests unitarios no equivale a persistencia, integración HTTP/gRPC, callback autenticado ni aceptación cross-backend. La siguiente implementación para cerrar el ciclo requiere migraciones/RLS, use cases y pruebas PostgreSQL reales, además de la frontera segura y adapters reales indicados arriba.
 
 ## 4. Alcance A — Suscripciones y facturación SaaS de Payvia
 
@@ -95,7 +112,8 @@ No se puede interpretar el estado inicial `created` como pago autorizado, captur
 ## 5. Restricciones cross-backend y despliegue
 
 - Plataforma no delega el cobro SaaS al backend de pasarelas.
-- El slice actual de Payment Intents no llama al gateway. La falta del mecanismo de mTLS/grants de Fase 5 no se sustituye con headers, IP allowlists, permisos locales ni mocks.
+- El slice actual de Payment Intents no llama al gateway. El nuevo mensaje `NormalizedProviderPaymentEventV1` es solo un contrato; no se expone endpoint ni consumer para recibirlo sin autenticación.
+- El callback del proveedor debe ser verificado en el adapter gateway y el productor debe autenticarse en la frontera cross-backend. La ausencia de esas capacidades bloquea la ingestión; no se sustituye con headers, IP allowlists, permisos locales ni mocks.
 - No se comparten schemas ni se hacen joins/escrituras SQL entre dominios.
 - PostgreSQL es fuente de verdad; Redis no decide importes, autorización ni idempotencia comercial.
 - No se afirman adaptadores Wompi, Factus o Resend operativos sin credenciales y pruebas oficiales de sandbox.
