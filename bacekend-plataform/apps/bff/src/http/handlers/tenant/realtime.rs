@@ -1,22 +1,26 @@
 use axum::{
     Json,
-    extract::{Query, State, ws::{Message, WebSocket, WebSocketUpgrade}},
+    extract::{
+        Query, State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
+    },
     http::HeaderMap,
     response::{IntoResponse, Response},
 };
 use opentelemetry::propagation::Injector;
 use std::sync::Arc;
 
-use crate::{
-    http::{handlers::identity, middleware::correlation_id::correlation_id, routes::AppState},
+use crate::http::{
+    handlers::identity, middleware::correlation_id::correlation_id, routes::AppState,
 };
 use platform_contracts::realtime::{RealtimeEvent, ReplayEventsRequest, SubscribeEventsRequest};
 
 use super::{
     models::{RealtimeEventView, RealtimeQuery, RealtimeReplayView},
-    support::{auth_error, csrf_error, tenant_grpc_error,
-        OPERATOR_CSRF_COOKIE, OPERATOR_SESSION_COOKIE, TENANT_CSRF_COOKIE,
-        TENANT_SESSION_COOKIE},
+    support::{
+        OPERATOR_CSRF_COOKIE, OPERATOR_SESSION_COOKIE, TENANT_CSRF_COOKIE, TENANT_SESSION_COOKIE,
+        auth_error, csrf_error, tenant_grpc_error,
+    },
 };
 
 pub async fn replay_events(
@@ -28,34 +32,46 @@ pub async fn replay_events(
     if !matches!(query.audience.as_str(), "tenant" | "platform") {
         return tenant_grpc_error(
             tonic::Status::invalid_argument("realtime audience is invalid"),
-            "replay_realtime_events", &correlation, 0,
+            "replay_realtime_events",
+            &correlation,
+            0,
         );
     }
     let Some((session, csrf)) = realtime_credentials(&headers, &query.audience) else {
         return auth_error(correlation);
     };
-    let request = tonic_request(ReplayEventsRequest {
-        session_token: session,
-        csrf_token: csrf,
-        audience: query.audience,
-        tenant_id: query.tenant_id.unwrap_or_default(),
-        after_cursor: query.cursor.unwrap_or(0),
-        limit: 250,
-        correlation_id: correlation.clone(),
-    }, &correlation);
+    let request = tonic_request(
+        ReplayEventsRequest {
+            session_token: session,
+            csrf_token: csrf,
+            audience: query.audience,
+            tenant_id: query.tenant_id.unwrap_or_default(),
+            after_cursor: query.cursor.unwrap_or(0),
+            limit: 250,
+            correlation_id: correlation.clone(),
+        },
+        &correlation,
+    );
     let started = std::time::Instant::now();
     let mut client = state.realtime_client.clone();
     match client.replay_events(request).await {
         Ok(response) => {
             let response = response.into_inner();
             Json(RealtimeReplayView {
-                events: response.events.into_iter().map(realtime_event_view).collect(),
+                events: response
+                    .events
+                    .into_iter()
+                    .map(realtime_event_view)
+                    .collect(),
                 next_cursor: response.next_cursor,
                 has_more: response.has_more,
-            }).into_response()
+            })
+            .into_response()
         }
         Err(status) => tenant_grpc_error(
-            status, "replay_realtime_events", &correlation,
+            status,
+            "replay_realtime_events",
+            &correlation,
             started.elapsed().as_millis() as u64,
         ),
     }
@@ -74,21 +90,26 @@ pub async fn websocket_events(
     if !matches!(query.audience.as_str(), "tenant" | "platform") {
         return tenant_grpc_error(
             tonic::Status::invalid_argument("realtime audience is invalid"),
-            "subscribe_realtime_events", &correlation, 0,
+            "subscribe_realtime_events",
+            &correlation,
+            0,
         );
     }
     let Some((session, csrf)) = realtime_credentials(&headers, &query.audience) else {
         return auth_error(correlation);
     };
     let audience = query.audience.clone();
-    let request = tonic_request(SubscribeEventsRequest {
-        session_token: session,
-        csrf_token: csrf,
-        audience: query.audience,
-        tenant_id: query.tenant_id.unwrap_or_default(),
-        after_cursor: query.cursor.unwrap_or(0),
-        correlation_id: correlation.clone(),
-    }, &correlation);
+    let request = tonic_request(
+        SubscribeEventsRequest {
+            session_token: session,
+            csrf_token: csrf,
+            audience: query.audience,
+            tenant_id: query.tenant_id.unwrap_or_default(),
+            after_cursor: query.cursor.unwrap_or(0),
+            correlation_id: correlation.clone(),
+        },
+        &correlation,
+    );
     let mut client = state.realtime_client.clone();
     match client.subscribe_events(request).await {
         Ok(stream) => {
