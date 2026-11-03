@@ -58,7 +58,9 @@ La operación actual tiene el nombre versionado `payment_intent.create.v1`.
 - El relay reclama filas con leases y `FOR UPDATE SKIP LOCKED`, publica con JetStream `Nats-Msg-Id` y marca como publicado solo después del ACK.
 - Los errores liberan el lease y programan retry con backoff. La entrega es al menos una vez; los consumidores deben deduplicar por `event_id`.
 - El envelope publica el timestamp persistido del Outbox, no la hora de reintento/publicación.
-- Esta ADR no declara completada la integración con journal realtime ni la recuperación por WebSocket.
+- El consumidor realtime admite `payment_intent.created`; persiste el envelope en el journal y emite la señal Redis antes de confirmar el ACK de JetStream.
+- La aceptación integrada `payment_intent_outbox_is_published_deduplicated_and_recoverable_in_realtime` verifica el publish/ACK real, el timestamp original, la persistencia en journal, replay por cursor tenant y aislamiento, y el crash-window ACK→confirmación Outbox con republicación deduplicada por `Nats-Msg-Id`.
+- Esta evidencia no cubre WebSocket autenticado de pagos, restart del consumidor, outage/reconexión NATS ni toda la política de backoff; esos comportamientos permanecen pendientes.
 
 ## Consecuencias y límites
 
@@ -66,5 +68,7 @@ La operación actual tiene el nombre versionado `payment_intent.create.v1`.
 - No crea transacciones ni intentos, no modifica el estado más allá de `created`, no selecciona proveedor y no llama al gateway.
 - No implementa captura, cancelación, expiración, refund, settlement, fees ni conciliación.
 - No define importe mínimo/máximo comercial, moneda habilitada, método permitido por proveedor ni flujo de autorización/captura.
-- La aceptación específica de HTTP→BFF→gRPC, denegaciones por scope, fallos PostgreSQL/JetStream, redelivery, y journal/realtime sigue pendiente y está registrada en `docs/phase-4/integration-matrix.md`.
+- La aceptación HTTP→BFF→gRPC y las denegaciones por scope/tenant/entorno están verificadas en `payment_intents_http_acceptance.rs`.
+- La integración publish/ACK Outbox→JetStream→journal/cursor y su crash-window de republicación deduplicada están verificadas en `payment_intent_outbox_is_published_deduplicated_and_recoverable_in_realtime` con dependencias reales.
+- Siguen pendientes los fallos de PostgreSQL/timeout, outage y restart NATS/consumer, backoff exhaustivo, WebSocket autenticado, y el ciclo de vida de transacciones/intentos. La matriz de `docs/phase-4/integration-matrix.md` conserva la evidencia y los límites.
 - Cualquier expansión del ciclo de vida requiere ampliar esta ADR o una ADR nueva, definir estados/transiciones y añadir pruebas de aceptación con dependencias reales antes de declarar su comportamiento operativo.
