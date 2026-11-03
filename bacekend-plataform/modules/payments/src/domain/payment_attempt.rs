@@ -53,25 +53,29 @@ mod tests {
     fn attempt_requires_positive_sequence_and_normalized_provider_code() {
         let tenant_id = Uuid::new_v4();
         let intent_id = Uuid::new_v4();
-        assert!(PaymentAttempt::new(
-            Uuid::new_v4(),
-            tenant_id,
-            intent_id,
-            PaymentEnvironment::Test,
-            0,
-            "wompi".to_owned(),
-            "account_01".to_owned()
-        )
-        .is_err());
-        assert!(PaymentAttempt::new(
-            Uuid::new_v4(),
-            tenant_id,
-            intent_id,
-            PaymentEnvironment::Test,
-            1,
-            "Wompi".to_owned(),
-            "account_01".to_owned()
-        )
-        .is_err());
+        assert!(
+            PaymentAttempt::new(
+                Uuid::new_v4(),
+                tenant_id,
+                intent_id,
+                PaymentEnvironment::Test,
+                0,
+                "wompi".to_owned(),
+                "account_01".to_owned()
+            )
+            .is_err()
+        );
+        assert!(
+            PaymentAttempt::new(
+                Uuid::new_v4(),
+                tenant_id,
+                intent_id,
+                PaymentEnvironment::Test,
+                1,
+                "Wompi".to_owned(),
+                "account_01".to_owned()
+            )
+            .is_err()
+        );
     }
 }
