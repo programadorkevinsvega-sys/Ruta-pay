@@ -119,7 +119,7 @@ pub async fn create_payment_intent(
     }
 }
 
-#[utoipa::path(get, path="/v1/tenants/{tenant_id}/payment-intents/{payment_intent_id}", responses((status=200, body=PaymentIntentView), (status=401), (status=403), (status=404)))]
+#[utoipa::path(get, path="/v1/tenants/{tenant_id}/payment-intents/{payment_intent_id}", params(("tenant_id" = String, Path), ("payment_intent_id" = String, Path)), responses((status=200, body=PaymentIntentView), (status=401), (status=403), (status=404)))]
 pub async fn get_payment_intent(
     State(state): State<Arc<AppState>>,
     Path((tenant_id, payment_intent_id)): Path<(Uuid, Uuid)>,
