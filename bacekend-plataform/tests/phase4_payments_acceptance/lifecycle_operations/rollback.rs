@@ -17,7 +17,10 @@ async fn failed_outbox_write_rolls_back_attempt_intent_and_audit_changes() {
         .expect("intent is created");
     let (attempt, _) = service
         .create_payment_attempt(attempt_command(
-            tenant_id, actor_key_id, intent.id, "attempt-rollback-001",
+            tenant_id,
+            actor_key_id,
+            intent.id,
+            "attempt-rollback-001",
         ))
         .await
         .expect("attempt is created");
@@ -31,7 +34,12 @@ async fn failed_outbox_write_rolls_back_attempt_intent_and_audit_changes() {
 
     let result = service
         .update_payment_intent_status(status_command(
-            tenant_id, actor_key_id, intent.id, attempt.id, "processing", 1,
+            tenant_id,
+            actor_key_id,
+            intent.id,
+            attempt.id,
+            "processing",
+            1,
         ))
         .await;
     assert!(matches!(result, Err(PaymentServiceError::Database(_))));

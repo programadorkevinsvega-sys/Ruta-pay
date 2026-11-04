@@ -140,8 +140,7 @@ async fn payment_attempt_and_transaction_apis_cross_http_bff_grpc_and_payments_m
         .await
         .expect("attempt query crosses the complete HTTP path");
     assert_eq!(listed_attempts.status(), StatusCode::OK);
-    let attempts_body: serde_json::Value =
-        listed_attempts.json().await.expect("attempt list JSON");
+    let attempts_body: serde_json::Value = listed_attempts.json().await.expect("attempt list JSON");
     assert_eq!(attempts_body["attempts"].as_array().unwrap().len(), 1);
 
     let denied_attempt = client
@@ -167,8 +166,10 @@ async fn payment_attempt_and_transaction_apis_cross_http_bff_grpc_and_payments_m
         .await
         .expect("status update crosses HTTP, BFF, gRPC and payments module");
     assert_eq!(processing.status(), StatusCode::OK);
-    let processing_body: serde_json::Value =
-        processing.json().await.expect("status update response JSON");
+    let processing_body: serde_json::Value = processing
+        .json()
+        .await
+        .expect("status update response JSON");
     assert_eq!(processing_body["payment_intent"]["status"], "processing");
     assert_eq!(processing_body["aggregate_version"], 2);
 
@@ -242,9 +243,14 @@ async fn payment_attempt_and_transaction_apis_cross_http_bff_grpc_and_payments_m
         .await
         .expect("transaction query crosses the complete HTTP path");
     assert_eq!(listed_transactions.status(), StatusCode::OK);
-    let transactions_body: serde_json::Value =
-        listed_transactions.json().await.expect("transaction list JSON");
-    assert_eq!(transactions_body["transactions"].as_array().unwrap().len(), 1);
+    let transactions_body: serde_json::Value = listed_transactions
+        .json()
+        .await
+        .expect("transaction list JSON");
+    assert_eq!(
+        transactions_body["transactions"].as_array().unwrap().len(),
+        1
+    );
     assert_eq!(
         transactions_body["transactions"][0]["transaction_id"],
         transaction_id.to_string()
@@ -270,8 +276,10 @@ async fn payment_attempt_and_transaction_apis_cross_http_bff_grpc_and_payments_m
         .await
         .expect("timeout status creates a reconciliation case");
     assert_eq!(timeout.status(), StatusCode::OK);
-    let timeout_body: serde_json::Value =
-        timeout.json().await.expect("timeout transition response JSON");
+    let timeout_body: serde_json::Value = timeout
+        .json()
+        .await
+        .expect("timeout transition response JSON");
     assert_eq!(timeout_body["payment_intent"]["status"], "outcome_unknown");
     assert_eq!(timeout_body["aggregate_version"], 3);
     let reconciliation_cases: i64 = sqlx::query_scalar(
@@ -303,12 +311,18 @@ async fn payment_attempt_and_transaction_apis_cross_http_bff_grpc_and_payments_m
     .fetch_one(&database.migration_pool)
     .await
     .expect("lifecycle audit rows are queryable");
-    assert!(audit_count >= 5, "mutations and authorized reads are audited");
+    assert!(
+        audit_count >= 5,
+        "mutations and authorized reads are audited"
+    );
 
     let _ = http_shutdown.send(());
     http_task.await.expect("BFF task joins").expect("BFF stops");
     let _ = runtime_shutdown.send(());
-    runtime_task.await.expect("runtime task joins").expect("runtime stops");
+    runtime_task
+        .await
+        .expect("runtime task joins")
+        .expect("runtime stops");
     database.finish().await;
 }
 
@@ -322,7 +336,10 @@ async fn insert_api_key(
     let secret = format!("test_{}", Uuid::new_v4().simple());
     let digest = Sha256::digest(secret.as_bytes());
     let prefix = secret[..13].to_owned();
-    let scopes = scopes.iter().map(|scope| (*scope).to_owned()).collect::<Vec<_>>();
+    let scopes = scopes
+        .iter()
+        .map(|scope| (*scope).to_owned())
+        .collect::<Vec<_>>();
     sqlx::query(
         "INSERT INTO identity_access.api_keys (id,tenant_id,name,environment,prefix,secret_digest,scopes,status,created_by) VALUES ($1,$2,$3,'test',$4,$5,$6,'active',$7)",
     )

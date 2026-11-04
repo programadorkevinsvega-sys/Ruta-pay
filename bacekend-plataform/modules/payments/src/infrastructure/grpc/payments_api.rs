@@ -215,7 +215,7 @@ pub(super) fn map_error(error: PaymentServiceError) -> Status {
         ) => Status::not_found("payment intent was not found"),
         PaymentServiceError::AttemptAlreadyExists => {
             Status::already_exists("a payment attempt already exists for this intent")
-        },
+        }
         PaymentServiceError::Lifecycle(
             crate::domain::payment_lifecycle::LifecycleModelError::IdentifierInvalid
             | crate::domain::payment_lifecycle::LifecycleModelError::AttemptNotSubmitted
@@ -228,10 +228,12 @@ pub(super) fn map_error(error: PaymentServiceError) -> Status {
             | crate::domain::payment_lifecycle::LifecycleModelError::CurrencyInvalid,
         )
         | PaymentServiceError::StatusUpdateNotAllowed
-        | PaymentServiceError::InvalidPageSize => Status::invalid_argument("payment lifecycle input is invalid"),
+        | PaymentServiceError::InvalidPageSize => {
+            Status::invalid_argument("payment lifecycle input is invalid")
+        }
         PaymentServiceError::AttemptAlreadyExists => {
             Status::failed_precondition("commercial payment retries are not enabled")
-        },
+        }
         PaymentServiceError::Transition(_) | PaymentServiceError::VersionConflict => {
             Status::failed_precondition("payment lifecycle transition cannot be applied")
         }
@@ -250,7 +252,11 @@ pub(super) fn map_error(error: PaymentServiceError) -> Status {
     }
 }
 
-pub(super) fn grpc_span<T>(request: &Request<T>, operation: &'static str, correlation: &str) -> tracing::Span {
+pub(super) fn grpc_span<T>(
+    request: &Request<T>,
+    operation: &'static str,
+    correlation: &str,
+) -> tracing::Span {
     let parent = global::get_text_map_propagator(|propagator| {
         propagator.extract(&GrpcMetadataExtractor(request.metadata()))
     });

@@ -57,7 +57,10 @@ pub(super) async fn list(
     .bind(json!({"environment": environment, "limit": limit}))
     .execute(&mut *tx)
     .await?;
-    let records = rows.iter().map(transaction_from_row).collect::<Result<Vec<_>, _>>()?;
+    let records = rows
+        .iter()
+        .map(transaction_from_row)
+        .collect::<Result<Vec<_>, _>>()?;
     tx.commit().await?;
     Ok(records)
 }

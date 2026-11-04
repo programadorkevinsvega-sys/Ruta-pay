@@ -55,7 +55,10 @@ async fn attempt_creation_is_idempotent_under_concurrency_and_disallows_unapprov
     assert!(matches!(
         service
             .create_payment_attempt(attempt_command(
-                tenant_id, actor_key_id, intent.id, "attempt-create-002",
+                tenant_id,
+                actor_key_id,
+                intent.id,
+                "attempt-create-002",
             ))
             .await,
         Err(PaymentServiceError::AttemptAlreadyExists)
@@ -63,7 +66,12 @@ async fn attempt_creation_is_idempotent_under_concurrency_and_disallows_unapprov
 
     let attempts = service
         .list_payment_attempts(
-            tenant_id, "test", intent.id, actor_key_id, "phase4-attempt-list", 50,
+            tenant_id,
+            "test",
+            intent.id,
+            actor_key_id,
+            "phase4-attempt-list",
+            50,
         )
         .await
         .expect("tenant can list its attempts");
@@ -73,7 +81,12 @@ async fn attempt_creation_is_idempotent_under_concurrency_and_disallows_unapprov
 
     let foreign = service
         .list_payment_attempts(
-            Uuid::new_v4(), "test", intent.id, Uuid::new_v4(), "phase4-attempt-cross-tenant", 50,
+            Uuid::new_v4(),
+            "test",
+            intent.id,
+            Uuid::new_v4(),
+            "phase4-attempt-cross-tenant",
+            50,
         )
         .await;
     assert!(matches!(

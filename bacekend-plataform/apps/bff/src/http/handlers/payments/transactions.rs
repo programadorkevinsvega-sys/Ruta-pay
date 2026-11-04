@@ -9,9 +9,9 @@ use std::sync::Arc;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use super::{bearer_key, payment_error, payment_grpc_error, payment_request};
 use crate::http::routes::AppState;
 use platform_contracts::payments::ListPaymentTransactionsRequest;
-use super::{bearer_key, payment_error, payment_grpc_error, payment_request};
 
 #[derive(Serialize, ToSchema)]
 pub struct PaymentTransactionView {
@@ -44,10 +44,22 @@ pub async fn list(
 ) -> Response {
     let correlation = crate::http::middleware::correlation_id::correlation_id(&headers);
     let Some((secret, environment)) = bearer_key(&headers) else {
-        return payment_error(StatusCode::UNAUTHORIZED, "api_key_invalid", "authentication", false, correlation);
+        return payment_error(
+            StatusCode::UNAUTHORIZED,
+            "api_key_invalid",
+            "authentication",
+            false,
+            correlation,
+        );
     };
     let Some(mut client) = state.payments_client.clone() else {
-        return payment_error(StatusCode::SERVICE_UNAVAILABLE, "payments_unavailable", "dependency", true, correlation);
+        return payment_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "payments_unavailable",
+            "dependency",
+            true,
+            correlation,
+        );
     };
     let request = ListPaymentTransactionsRequest {
         api_key_secret: secret,
@@ -58,11 +70,25 @@ pub async fn list(
         correlation_id: correlation.clone(),
     };
     let started = std::time::Instant::now();
-    match client.list_payment_transactions(payment_request(request, &correlation)).await {
+    match client
+        .list_payment_transactions(payment_request(request, &correlation))
+        .await
+    {
         Ok(response) => Json(PaymentTransactionList {
-            transactions: response.into_inner().transactions.into_iter().map(transaction_view).collect(),
-        }).into_response(),
-        Err(status) => payment_grpc_error(status, "list_payment_transactions", &correlation, started.elapsed().as_millis() as u64),
+            transactions: response
+                .into_inner()
+                .transactions
+                .into_iter()
+                .map(transaction_view)
+                .collect(),
+        })
+        .into_response(),
+        Err(status) => payment_grpc_error(
+            status,
+            "list_payment_transactions",
+            &correlation,
+            started.elapsed().as_millis() as u64,
+        ),
     }
 }
 

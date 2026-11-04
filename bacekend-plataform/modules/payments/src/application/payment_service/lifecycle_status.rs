@@ -3,8 +3,8 @@ use sqlx::{PgRow, Row};
 use uuid::Uuid;
 
 use crate::domain::{
-    payment_lifecycle::PaymentAttemptStatus,
     payment_intent::{PaymentIntent, PaymentIntentError, PaymentMethodType},
+    payment_lifecycle::PaymentAttemptStatus,
     payment_lifecycle::{
         PaymentEnvironment, PaymentIntentStatus, TransitionAuthority, TransitionEffect,
     },
@@ -23,9 +23,14 @@ pub(super) async fn update(
     if command.expected_version <= 0
         || command.correlation_id.is_empty()
         || command.correlation_id.len() > 128
-        || command.correlation_id.bytes().any(|byte| byte.is_ascii_control())
+        || command
+            .correlation_id
+            .bytes()
+            .any(|byte| byte.is_ascii_control())
     {
-        return Err(crate::domain::payment_lifecycle::LifecycleModelError::IdentifierInvalid.into());
+        return Err(
+            crate::domain::payment_lifecycle::LifecycleModelError::IdentifierInvalid.into(),
+        );
     }
     let (next_intent, next_attempt, authority) = match command.status.as_str() {
         "processing" => (
@@ -69,9 +74,7 @@ pub(super) async fn update(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(PaymentIntentError::NotFound)?;
-    let current_attempt = parse_attempt_status(
-        &attempt_row.try_get::<String, _>("status")?,
-    )?;
+    let current_attempt = parse_attempt_status(&attempt_row.try_get::<String, _>("status")?)?;
     let attempt_version: i64 = attempt_row.try_get("aggregate_version")?;
 
     if current_intent_status == next_intent {

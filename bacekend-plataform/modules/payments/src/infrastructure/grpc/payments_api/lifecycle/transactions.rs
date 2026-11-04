@@ -18,21 +18,33 @@ pub async fn list(
     let payment_intent_id = parse_uuid(&body.payment_intent_id)?;
     let limit = if body.limit == 0 { 50 } else { body.limit };
     async move {
-        let actor_key_id = api.authorize_key(
-            body.api_key_secret,
-            tenant_id,
-            body.environment.clone(),
-            "payment_transactions.read",
-            correlation.clone(),
-        ).await?;
-        let transactions = api.service.list_payment_transactions(
-            tenant_id, &body.environment, payment_intent_id,
-            actor_key_id, &correlation, limit,
-        ).await.map_err(map_error)?;
+        let actor_key_id = api
+            .authorize_key(
+                body.api_key_secret,
+                tenant_id,
+                body.environment.clone(),
+                "payment_transactions.read",
+                correlation.clone(),
+            )
+            .await?;
+        let transactions = api
+            .service
+            .list_payment_transactions(
+                tenant_id,
+                &body.environment,
+                payment_intent_id,
+                actor_key_id,
+                &correlation,
+                limit,
+            )
+            .await
+            .map_err(map_error)?;
         Ok(Response::new(ListPaymentTransactionsResponse {
             transactions: transactions.into_iter().map(transaction_message).collect(),
         }))
-    }.instrument(span).await
+    }
+    .instrument(span)
+    .await
 }
 
 fn transaction_message(

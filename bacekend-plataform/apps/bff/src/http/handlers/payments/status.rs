@@ -9,9 +9,11 @@ use std::sync::Arc;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use super::{
+    PaymentIntentView, bearer_key, payment_error, payment_grpc_error, payment_request, payment_view,
+};
 use crate::http::routes::AppState;
 use platform_contracts::payments::UpdatePaymentIntentStatusRequest;
-use super::{bearer_key, payment_error, payment_grpc_error, payment_request, payment_view, PaymentIntentView};
 
 #[derive(Deserialize, ToSchema)]
 pub struct NewPaymentIntentStatus {
@@ -35,10 +37,22 @@ pub async fn update(
 ) -> Response {
     let correlation = crate::http::middleware::correlation_id::correlation_id(&headers);
     let Some((secret, environment)) = bearer_key(&headers) else {
-        return payment_error(StatusCode::UNAUTHORIZED, "api_key_invalid", "authentication", false, correlation);
+        return payment_error(
+            StatusCode::UNAUTHORIZED,
+            "api_key_invalid",
+            "authentication",
+            false,
+            correlation,
+        );
     };
     let Some(mut client) = state.payments_client.clone() else {
-        return payment_error(StatusCode::SERVICE_UNAVAILABLE, "payments_unavailable", "dependency", true, correlation);
+        return payment_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "payments_unavailable",
+            "dependency",
+            true,
+            correlation,
+        );
     };
     let request = UpdatePaymentIntentStatusRequest {
         api_key_secret: secret,
@@ -51,17 +65,32 @@ pub async fn update(
         correlation_id: correlation.clone(),
     };
     let started = std::time::Instant::now();
-    match client.update_payment_intent_status(payment_request(request, &correlation)).await {
+    match client
+        .update_payment_intent_status(payment_request(request, &correlation))
+        .await
+    {
         Ok(response) => {
             let response = response.into_inner();
             match response.payment_intent {
                 Some(intent) => Json(PaymentIntentStatusView {
                     payment_intent: payment_view(intent),
                     aggregate_version: response.aggregate_version,
-                }).into_response(),
-                None => payment_error(StatusCode::INTERNAL_SERVER_ERROR, "payment_response_invalid", "internal", false, correlation),
+                })
+                .into_response(),
+                None => payment_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "payment_response_invalid",
+                    "internal",
+                    false,
+                    correlation,
+                ),
             }
         }
-        Err(status) => payment_grpc_error(status, "update_payment_intent_status", &correlation, started.elapsed().as_millis() as u64),
+        Err(status) => payment_grpc_error(
+            status,
+            "update_payment_intent_status",
+            &correlation,
+            started.elapsed().as_millis() as u64,
+        ),
     }
 }

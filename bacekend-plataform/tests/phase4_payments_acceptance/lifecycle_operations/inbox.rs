@@ -74,10 +74,20 @@ async fn concurrent_provider_event_deliveries_create_one_canonical_inbox_row() {
             Err(error) => panic!("unexpected inbox insert error: {error}"),
         }
     }
-    assert_eq!(inserted, 1, "only one delivery creates the canonical inbox row");
-    assert_eq!(duplicated, 1, "the unique key rejects the concurrent duplicate");
+    assert_eq!(
+        inserted, 1,
+        "only one delivery creates the canonical inbox row"
+    );
+    assert_eq!(
+        duplicated, 1,
+        "the unique key rejects the concurrent duplicate"
+    );
 
-    let mut check = database.runtime_pool.begin().await.expect("read transaction starts");
+    let mut check = database
+        .runtime_pool
+        .begin()
+        .await
+        .expect("read transaction starts");
     set_tenant(&mut check, tenant_id).await;
     let count: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM payments.provider_event_inbox WHERE tenant_id=$1 AND environment='test' AND provider_code='wompi' AND provider_account_reference='account_01' AND provider_event_id='concurrent-provider-event-001'",

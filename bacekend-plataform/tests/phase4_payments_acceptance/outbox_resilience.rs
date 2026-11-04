@@ -249,7 +249,6 @@ async fn permanent_outbox_errors_are_quarantined_without_retrying_forever() {
     database.finish().await;
 }
 
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn lifecycle_outbox_event_types_are_acknowledged_by_real_jetstream() {
     let database = TestDatabase::new().await;

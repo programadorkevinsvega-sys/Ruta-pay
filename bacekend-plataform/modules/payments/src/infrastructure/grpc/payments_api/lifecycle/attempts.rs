@@ -5,9 +5,7 @@ use platform_contracts::payments::{
 use tonic::{Request, Response, Status};
 use tracing::Instrument;
 
-use super::super::{
-    PaymentsApi, grpc_span, map_error, parse_uuid,
-};
+use super::super::{PaymentsApi, grpc_span, map_error, parse_uuid};
 use crate::application::payment_service::CreatePaymentAttemptCommand;
 
 pub async fn create(
@@ -20,28 +18,36 @@ pub async fn create(
     let tenant_id = parse_uuid(&body.tenant_id)?;
     let payment_intent_id = parse_uuid(&body.payment_intent_id)?;
     async move {
-        let actor_key_id = api.authorize_key(
-            body.api_key_secret,
-            tenant_id,
-            body.environment.clone(),
-            "payment_attempts.create",
-            correlation.clone(),
-        ).await?;
-        let (attempt, replayed) = api.service.create_payment_attempt(CreatePaymentAttemptCommand {
-            tenant_id,
-            actor_key_id,
-            environment: body.environment,
-            payment_intent_id,
-            provider_code: body.provider_code,
-            provider_account_reference: body.provider_account_reference,
-            idempotency_key: body.idempotency_key,
-            correlation_id: correlation,
-        }).await.map_err(map_error)?;
+        let actor_key_id = api
+            .authorize_key(
+                body.api_key_secret,
+                tenant_id,
+                body.environment.clone(),
+                "payment_attempts.create",
+                correlation.clone(),
+            )
+            .await?;
+        let (attempt, replayed) = api
+            .service
+            .create_payment_attempt(CreatePaymentAttemptCommand {
+                tenant_id,
+                actor_key_id,
+                environment: body.environment,
+                payment_intent_id,
+                provider_code: body.provider_code,
+                provider_account_reference: body.provider_account_reference,
+                idempotency_key: body.idempotency_key,
+                correlation_id: correlation,
+            })
+            .await
+            .map_err(map_error)?;
         Ok(Response::new(CreatePaymentAttemptResponse {
             attempt: Some(attempt_message(attempt)),
             replayed,
         }))
-    }.instrument(span).await
+    }
+    .instrument(span)
+    .await
 }
 
 pub async fn list(
@@ -55,21 +61,33 @@ pub async fn list(
     let payment_intent_id = parse_uuid(&body.payment_intent_id)?;
     let limit = if body.limit == 0 { 50 } else { body.limit };
     async move {
-        let actor_key_id = api.authorize_key(
-            body.api_key_secret,
-            tenant_id,
-            body.environment.clone(),
-            "payment_attempts.read",
-            correlation.clone(),
-        ).await?;
-        let attempts = api.service.list_payment_attempts(
-            tenant_id, &body.environment, payment_intent_id,
-            actor_key_id, &correlation, limit,
-        ).await.map_err(map_error)?;
+        let actor_key_id = api
+            .authorize_key(
+                body.api_key_secret,
+                tenant_id,
+                body.environment.clone(),
+                "payment_attempts.read",
+                correlation.clone(),
+            )
+            .await?;
+        let attempts = api
+            .service
+            .list_payment_attempts(
+                tenant_id,
+                &body.environment,
+                payment_intent_id,
+                actor_key_id,
+                &correlation,
+                limit,
+            )
+            .await
+            .map_err(map_error)?;
         Ok(Response::new(ListPaymentAttemptsResponse {
             attempts: attempts.into_iter().map(attempt_message).collect(),
         }))
-    }.instrument(span).await
+    }
+    .instrument(span)
+    .await
 }
 
 fn attempt_message(

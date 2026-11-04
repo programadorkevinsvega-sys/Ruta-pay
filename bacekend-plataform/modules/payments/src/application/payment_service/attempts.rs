@@ -86,13 +86,17 @@ pub(super) async fn create(
     .bind(command.payment_intent_id)
     .fetch_one(&mut *tx)
     .await?;
-    let attempt_number = i32::try_from(next_number)
-        .map_err(|_| PaymentServiceError::Lifecycle(crate::domain::payment_lifecycle::LifecycleModelError::AttemptNumberInvalid))?;
+    let attempt_number = i32::try_from(next_number).map_err(|_| {
+        PaymentServiceError::Lifecycle(
+            crate::domain::payment_lifecycle::LifecycleModelError::AttemptNumberInvalid,
+        )
+    })?;
     let attempt = PaymentAttempt::new(
         Uuid::new_v4(),
         &intent,
-        u32::try_from(attempt_number)
-            .map_err(|_| crate::domain::payment_lifecycle::LifecycleModelError::AttemptNumberInvalid)?,
+        u32::try_from(attempt_number).map_err(|_| {
+            crate::domain::payment_lifecycle::LifecycleModelError::AttemptNumberInvalid
+        })?,
         command.provider_code.clone(),
         command.provider_account_reference.clone(),
     )?;
@@ -182,7 +186,10 @@ pub(super) async fn list(
     .bind(json!({"environment": environment, "limit": limit}))
     .execute(&mut *tx)
     .await?;
-    let records = rows.iter().map(attempt_from_row).collect::<Result<Vec<_>, _>>()?;
+    let records = rows
+        .iter()
+        .map(attempt_from_row)
+        .collect::<Result<Vec<_>, _>>()?;
     tx.commit().await?;
     Ok(records)
 }
@@ -190,26 +197,34 @@ pub(super) async fn list(
 fn validate_command(command: &CreatePaymentAttemptCommand) -> Result<(), PaymentServiceError> {
     if command.provider_code.len() < 2
         || command.provider_code.len() > 32
-        || !command.provider_code.bytes().all(|byte| {
-            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'
-        })
+        || !command
+            .provider_code
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
     {
         return Err(LifecycleModelError::ProviderCodeInvalid.into());
     }
     if command.provider_account_reference.is_empty()
         || command.provider_account_reference.len() > 128
-        || command.provider_account_reference.bytes().any(|byte| byte.is_ascii_control())
+        || command
+            .provider_account_reference
+            .bytes()
+            .any(|byte| byte.is_ascii_control())
     {
         return Err(LifecycleModelError::ProviderReferenceInvalid.into());
     }
     if command.idempotency_key.is_empty()
         || command.idempotency_key.len() > 128
-        || !command.idempotency_key.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || b"._:-".contains(&byte)
-        })
+        || !command
+            .idempotency_key
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
         || command.correlation_id.is_empty()
         || command.correlation_id.len() > 128
-        || command.correlation_id.bytes().any(|byte| byte.is_ascii_control())
+        || command
+            .correlation_id
+            .bytes()
+            .any(|byte| byte.is_ascii_control())
     {
         return Err(LifecycleModelError::IdentifierInvalid.into());
     }
@@ -290,7 +305,8 @@ fn payment_intent_from_row(row: &PgRow) -> Result<PaymentIntent, PaymentServiceE
         currency: row.try_get("currency")?,
         payment_method_type: PaymentMethodType::parse(
             &row.try_get::<String, _>("payment_method_type")?,
-        ).map_err(|_| PaymentServiceError::SnapshotUnavailable)?,
+        )
+        .map_err(|_| PaymentServiceError::SnapshotUnavailable)?,
         merchant_reference: row.try_get("merchant_reference")?,
         status: row.try_get("status")?,
         created_at: row.try_get("created_at")?,

@@ -17,14 +17,22 @@ async fn status_transitions_are_guarded_atomic_and_create_durable_reconciliation
         .expect("intent is created");
     let (attempt, replayed) = service
         .create_payment_attempt(attempt_command(
-            tenant_id, actor_key_id, intent.id, "attempt-status-001",
+            tenant_id,
+            actor_key_id,
+            intent.id,
+            "attempt-status-001",
         ))
         .await
         .expect("attempt is created");
     assert!(!replayed);
 
     let submitted = status_command(
-        tenant_id, actor_key_id, intent.id, attempt.id, "processing", 1,
+        tenant_id,
+        actor_key_id,
+        intent.id,
+        attempt.id,
+        "processing",
+        1,
     );
     let mut tasks = tokio::task::JoinSet::new();
     for _ in 0..8 {
@@ -42,7 +50,10 @@ async fn status_transitions_are_guarded_atomic_and_create_durable_reconciliation
 
     let (replay, replayed) = service
         .create_payment_attempt(attempt_command(
-            tenant_id, actor_key_id, intent.id, "attempt-status-001",
+            tenant_id,
+            actor_key_id,
+            intent.id,
+            "attempt-status-001",
         ))
         .await
         .expect("same idempotency key can replay after attempt submission");
@@ -64,7 +75,12 @@ async fn status_transitions_are_guarded_atomic_and_create_durable_reconciliation
 
     let transactions = service
         .list_payment_transactions(
-            tenant_id, "test", intent.id, actor_key_id, "phase4-transactions-list", 50,
+            tenant_id,
+            "test",
+            intent.id,
+            actor_key_id,
+            "phase4-transactions-list",
+            50,
         )
         .await
         .expect("tenant can query transactions");
@@ -75,7 +91,12 @@ async fn status_transitions_are_guarded_atomic_and_create_durable_reconciliation
 
     let foreign = service
         .list_payment_transactions(
-            Uuid::new_v4(), "test", intent.id, Uuid::new_v4(), "phase4-transactions-cross-tenant", 50,
+            Uuid::new_v4(),
+            "test",
+            intent.id,
+            Uuid::new_v4(),
+            "phase4-transactions-cross-tenant",
+            50,
         )
         .await;
     assert!(matches!(
@@ -87,7 +108,12 @@ async fn status_transitions_are_guarded_atomic_and_create_durable_reconciliation
 
     let unknown = service
         .update_payment_intent_status(status_command(
-            tenant_id, actor_key_id, intent.id, attempt.id, "outcome_unknown", 2,
+            tenant_id,
+            actor_key_id,
+            intent.id,
+            attempt.id,
+            "outcome_unknown",
+            2,
         ))
         .await
         .expect("timeout moves intent and attempt to uncertain state");
@@ -97,7 +123,12 @@ async fn status_transitions_are_guarded_atomic_and_create_durable_reconciliation
     assert!(matches!(
         service
             .update_payment_intent_status(status_command(
-                tenant_id, actor_key_id, intent.id, attempt.id, "succeeded", 3,
+                tenant_id,
+                actor_key_id,
+                intent.id,
+                attempt.id,
+                "succeeded",
+                3,
             ))
             .await,
         Err(PaymentServiceError::StatusUpdateNotAllowed)

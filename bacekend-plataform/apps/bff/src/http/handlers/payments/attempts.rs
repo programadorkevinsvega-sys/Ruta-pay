@@ -9,11 +9,9 @@ use std::sync::Arc;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::http::routes::AppState;
-use platform_contracts::payments::{
-    CreatePaymentAttemptRequest, ListPaymentAttemptsRequest,
-};
 use super::{bearer_key, payment_error, payment_grpc_error, payment_request};
+use crate::http::routes::AppState;
+use platform_contracts::payments::{CreatePaymentAttemptRequest, ListPaymentAttemptsRequest};
 
 #[derive(Deserialize, ToSchema)]
 pub struct NewPaymentAttempt {
@@ -50,13 +48,34 @@ pub async fn create(
 ) -> Response {
     let correlation = crate::http::middleware::correlation_id::correlation_id(&headers);
     let Some((secret, environment)) = bearer_key(&headers) else {
-        return payment_error(StatusCode::UNAUTHORIZED, "api_key_invalid", "authentication", false, correlation);
+        return payment_error(
+            StatusCode::UNAUTHORIZED,
+            "api_key_invalid",
+            "authentication",
+            false,
+            correlation,
+        );
     };
-    let Some(idempotency_key) = headers.get("idempotency-key").and_then(|value| value.to_str().ok()) else {
-        return payment_error(StatusCode::BAD_REQUEST, "idempotency_key_required", "validation", false, correlation);
+    let Some(idempotency_key) = headers
+        .get("idempotency-key")
+        .and_then(|value| value.to_str().ok())
+    else {
+        return payment_error(
+            StatusCode::BAD_REQUEST,
+            "idempotency_key_required",
+            "validation",
+            false,
+            correlation,
+        );
     };
     let Some(mut client) = state.payments_client.clone() else {
-        return payment_error(StatusCode::SERVICE_UNAVAILABLE, "payments_unavailable", "dependency", true, correlation);
+        return payment_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "payments_unavailable",
+            "dependency",
+            true,
+            correlation,
+        );
     };
     let request = CreatePaymentAttemptRequest {
         api_key_secret: secret,
@@ -69,16 +88,38 @@ pub async fn create(
         correlation_id: correlation.clone(),
     };
     let started = std::time::Instant::now();
-    match client.create_payment_attempt(payment_request(request, &correlation)).await {
+    match client
+        .create_payment_attempt(payment_request(request, &correlation))
+        .await
+    {
         Ok(response) => {
             let response = response.into_inner();
             let Some(attempt) = response.attempt else {
-                return payment_error(StatusCode::INTERNAL_SERVER_ERROR, "payment_response_invalid", "internal", false, correlation);
+                return payment_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "payment_response_invalid",
+                    "internal",
+                    false,
+                    correlation,
+                );
             };
             let view = attempt_view(attempt);
-            (if response.replayed { StatusCode::OK } else { StatusCode::CREATED }, Json(view)).into_response()
+            (
+                if response.replayed {
+                    StatusCode::OK
+                } else {
+                    StatusCode::CREATED
+                },
+                Json(view),
+            )
+                .into_response()
         }
-        Err(status) => payment_grpc_error(status, "create_payment_attempt", &correlation, started.elapsed().as_millis() as u64),
+        Err(status) => payment_grpc_error(
+            status,
+            "create_payment_attempt",
+            &correlation,
+            started.elapsed().as_millis() as u64,
+        ),
     }
 }
 
@@ -90,10 +131,22 @@ pub async fn list(
 ) -> Response {
     let correlation = crate::http::middleware::correlation_id::correlation_id(&headers);
     let Some((secret, environment)) = bearer_key(&headers) else {
-        return payment_error(StatusCode::UNAUTHORIZED, "api_key_invalid", "authentication", false, correlation);
+        return payment_error(
+            StatusCode::UNAUTHORIZED,
+            "api_key_invalid",
+            "authentication",
+            false,
+            correlation,
+        );
     };
     let Some(mut client) = state.payments_client.clone() else {
-        return payment_error(StatusCode::SERVICE_UNAVAILABLE, "payments_unavailable", "dependency", true, correlation);
+        return payment_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "payments_unavailable",
+            "dependency",
+            true,
+            correlation,
+        );
     };
     let request = ListPaymentAttemptsRequest {
         api_key_secret: secret,
@@ -104,11 +157,25 @@ pub async fn list(
         correlation_id: correlation.clone(),
     };
     let started = std::time::Instant::now();
-    match client.list_payment_attempts(payment_request(request, &correlation)).await {
+    match client
+        .list_payment_attempts(payment_request(request, &correlation))
+        .await
+    {
         Ok(response) => Json(PaymentAttemptList {
-            attempts: response.into_inner().attempts.into_iter().map(attempt_view).collect(),
-        }).into_response(),
-        Err(status) => payment_grpc_error(status, "list_payment_attempts", &correlation, started.elapsed().as_millis() as u64),
+            attempts: response
+                .into_inner()
+                .attempts
+                .into_iter()
+                .map(attempt_view)
+                .collect(),
+        })
+        .into_response(),
+        Err(status) => payment_grpc_error(
+            status,
+            "list_payment_attempts",
+            &correlation,
+            started.elapsed().as_millis() as u64,
+        ),
     }
 }
 

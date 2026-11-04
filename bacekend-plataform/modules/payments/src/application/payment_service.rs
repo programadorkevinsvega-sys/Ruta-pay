@@ -8,8 +8,11 @@ mod transactions;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::domain::{
+    payment_intent::{PaymentIntent, PaymentIntentError},
+    payment_lifecycle::{LifecycleModelError, TransitionGuardError},
+};
 use chrono::{DateTime, Utc};
-use crate::domain::{payment_intent::{PaymentIntent, PaymentIntentError}, payment_lifecycle::{LifecycleModelError, TransitionGuardError}};
 
 #[derive(Clone)]
 pub struct PaymentService {
@@ -100,7 +103,16 @@ impl PaymentService {
         correlation_id: &str,
         limit: i32,
     ) -> Result<Vec<PaymentAttemptRecord>, PaymentServiceError> {
-        attempts::list(self, tenant_id, environment, payment_intent_id, actor_key_id, correlation_id, limit).await
+        attempts::list(
+            self,
+            tenant_id,
+            environment,
+            payment_intent_id,
+            actor_key_id,
+            correlation_id,
+            limit,
+        )
+        .await
     }
 
     pub async fn list_payment_transactions(
@@ -112,7 +124,16 @@ impl PaymentService {
         correlation_id: &str,
         limit: i32,
     ) -> Result<Vec<PaymentTransactionRecord>, PaymentServiceError> {
-        transactions::list(self, tenant_id, environment, payment_intent_id, actor_key_id, correlation_id, limit).await
+        transactions::list(
+            self,
+            tenant_id,
+            environment,
+            payment_intent_id,
+            actor_key_id,
+            correlation_id,
+            limit,
+        )
+        .await
     }
 
     pub async fn update_payment_intent_status(

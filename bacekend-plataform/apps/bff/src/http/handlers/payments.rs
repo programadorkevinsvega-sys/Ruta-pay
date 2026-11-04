@@ -219,7 +219,9 @@ pub(super) fn bearer_key(headers: &HeaderMap) -> Option<(String, String)> {
     Some((secret.to_owned(), environment.to_owned()))
 }
 
-pub(super) fn payment_view(intent: platform_contracts::payments::PaymentIntent) -> PaymentIntentView {
+pub(super) fn payment_view(
+    intent: platform_contracts::payments::PaymentIntent,
+) -> PaymentIntentView {
     PaymentIntentView {
         payment_intent_id: intent.payment_intent_id,
         tenant_id: intent.tenant_id,
