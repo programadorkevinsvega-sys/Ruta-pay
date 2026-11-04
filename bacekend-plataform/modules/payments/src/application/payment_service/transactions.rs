@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde_json::json;
-use sqlx::{postgres::PgRow, Row};
+use sqlx::{Row, postgres::PgRow};
 use uuid::Uuid;
 
 use crate::domain::{payment_intent::PaymentIntentError, payment_lifecycle::PaymentEnvironment};
