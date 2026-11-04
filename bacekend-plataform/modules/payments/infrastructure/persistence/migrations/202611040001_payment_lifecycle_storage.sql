@@ -1,6 +1,23 @@
 -- Additive payment-lifecycle storage. Roll back by reverting the application release;
 -- retain these financial/audit records and do not DROP the new tables automatically.
 ALTER TABLE payments.payment_intents
+    DROP CONSTRAINT IF EXISTS payment_intents_status_check;
+ALTER TABLE payments.payment_intents
+    ADD CONSTRAINT payment_intents_status_check CHECK (
+        status IN (
+            'created', 'processing', 'requires_action',
+            'authorized', 'succeeded', 'outcome_unknown'
+        )
+    );
+ALTER TABLE payments.payment_intents
+    DROP CONSTRAINT IF EXISTS payment_intents_aggregate_version_check;
+ALTER TABLE payments.payment_intents
+    ADD CONSTRAINT payment_intents_aggregate_version_check
+        CHECK (aggregate_version > 0);
+ALTER TABLE payments.payment_intents
+    ADD COLUMN updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ADD COLUMN last_event_at TIMESTAMPTZ;
+ALTER TABLE payments.payment_intents
     ADD CONSTRAINT payment_intents_scope_money_unique
     UNIQUE (tenant_id, environment, id, amount_minor, currency);
 
@@ -74,7 +91,7 @@ CREATE TABLE payments.payment_transactions (
     UNIQUE (
         tenant_id, environment, id, payment_intent_id, payment_attempt_id
     ),
-    UNIQUE (provider_code, provider_account_reference, provider_transaction_reference),
+    UNIQUE (tenant_id, environment, provider_code, provider_account_reference, provider_transaction_reference),
     FOREIGN KEY (
         tenant_id, environment, payment_intent_id, amount_minor, currency
     ) REFERENCES payments.payment_intents (
@@ -180,7 +197,7 @@ CREATE TABLE payments.provider_event_inbox (
     CHECK ((processing_status = 'received') = (processed_at IS NULL)),
     UNIQUE (tenant_id, environment, inbox_id),
     UNIQUE (
-        provider_code, provider_account_reference, provider_event_id
+        tenant_id, environment, provider_code, provider_account_reference, provider_event_id
     ),
     FOREIGN KEY (
         tenant_id, environment, payment_attempt_id, payment_intent_id,
@@ -269,6 +286,10 @@ CREATE UNIQUE INDEX payment_reconciliation_one_open_case_per_attempt
 CREATE INDEX payment_reconciliation_claim_idx
     ON payments.payment_reconciliation_cases (next_attempt_at, created_at)
     WHERE status = 'pending';
+
+CREATE INDEX payment_reconciliation_expired_lease_idx
+    ON payments.payment_reconciliation_cases (lease_until, created_at)
+    WHERE status = 'leased';
 
 ALTER TABLE payments.payment_reconciliation_cases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payments.payment_reconciliation_cases FORCE ROW LEVEL SECURITY;
