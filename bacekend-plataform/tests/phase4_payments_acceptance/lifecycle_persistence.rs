@@ -85,13 +85,24 @@ async fn lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_i
     .expect("accepted delivery is associated with its canonical inbox event");
 
     sqlx::query(
+        "INSERT INTO payments.provider_event_deliveries (delivery_id,tenant_id,environment,inbox_id,event_id,provider_code,provider_account_reference,provider_event_id,producer_identity,disposition) VALUES ($1,$2,'test',$3,$4,'wompi','account_01','provider-event-01','spiffe://gateway/payments','duplicate')",
+    )
+    .bind(Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(inbox_id)
+    .bind(Uuid::new_v4())
+    .execute(&mut *transaction)
+    .await
+    .expect("duplicate delivery keeps its event ID and references the canonical inbox");
+
+    sqlx::query(
         "INSERT INTO payments.provider_event_deliveries (delivery_id,tenant_id,environment,producer_identity,disposition,rejection_code) VALUES ($1,$2,'test','spiffe://gateway/payments','rejected','tenant_scope_mismatch')",
     )
     .bind(Uuid::new_v4())
     .bind(tenant_id)
     .execute(&mut *transaction)
     .await
-    .expect("rejected authenticated delivery is retained without trusting an inbox event");
+    .expect("rejected delivery is retained without creating a trusted inbox event");
 
     sqlx::query(
         "INSERT INTO payments.payment_reconciliation_cases (id,tenant_id,environment,payment_intent_id,payment_attempt_id,payment_transaction_id,reason,status,attempts) VALUES ($1,$2,'test',$3,$4,$5,'outcome_unknown','pending',0)",
@@ -165,7 +176,7 @@ async fn lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_i
         .expect("isolated transaction starts");
     set_tenant(&mut isolated, other_tenant).await;
     let visible: i64 = sqlx::query_scalar(
-        "SELECT (SELECT count(*) FROM payments.payment_attempts WHERE id=$1) + (SELECT count(*) FROM payments.payment_transactions WHERE id=$2) + (SELECT count(*) FROM payments.provider_event_inbox WHERE inbox_id=$3) + (SELECT count(*) FROM payments.provider_event_deliveries) + (SELECT count(*) FROM payments.payment_reconciliation_cases WHERE id=$5) + (SELECT count(*) FROM payments.payment_reconciliation_attempts WHERE id=$6)",
+        "SELECT (SELECT count(*) FROM payments.payment_attempts WHERE id=$1) + (SELECT count(*) FROM payments.payment_transactions WHERE id=$2) + (SELECT count(*) FROM payments.provider_event_inbox WHERE inbox_id=$3) + (SELECT count(*) FROM payments.provider_event_deliveries) + (SELECT count(*) FROM payments.payment_reconciliation_cases WHERE id=$4) + (SELECT count(*) FROM payments.payment_reconciliation_attempts WHERE id=$5)",
     )
     .bind(attempt_id)
     .bind(transaction_id)
