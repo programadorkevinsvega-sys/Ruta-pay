@@ -1,7 +1,5 @@
 use super::database::TestDatabase;
-use platform_payments::application::payment_service::{
-    CreatePaymentIntentCommand, PaymentService,
-};
+use platform_payments::application::payment_service::{CreatePaymentIntentCommand, PaymentService};
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -117,9 +115,16 @@ async fn lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_i
     .execute(&mut *transaction)
     .await
     .expect("reconciliation query evidence is durable and redacted");
-    transaction.commit().await.expect("lifecycle records commit atomically");
+    transaction
+        .commit()
+        .await
+        .expect("lifecycle records commit atomically");
 
-    let mut same_tenant = database.runtime_pool.begin().await.expect("read transaction starts");
+    let mut same_tenant = database
+        .runtime_pool
+        .begin()
+        .await
+        .expect("read transaction starts");
     set_tenant(&mut same_tenant, tenant_id).await;
     let counts = sqlx::query(
         "SELECT (SELECT count(*) FROM payments.payment_attempts WHERE id=$1) AS attempts,(SELECT count(*) FROM payments.payment_transactions WHERE id=$2) AS transactions,(SELECT count(*) FROM payments.provider_event_inbox WHERE inbox_id=$3) AS inbox,(SELECT count(*) FROM payments.provider_event_deliveries WHERE inbox_id=$3) AS deliveries,(SELECT count(*) FROM payments.payment_reconciliation_cases WHERE id=$4) AS cases,(SELECT count(*) FROM payments.payment_reconciliation_attempts WHERE id=$5) AS reconciliation_attempts",
@@ -132,14 +137,32 @@ async fn lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_i
     .fetch_one(&mut *same_tenant)
     .await
     .expect("tenant can read its own lifecycle records");
-    for column in ["attempts", "transactions", "inbox", "deliveries", "cases", "reconciliation_attempts"] {
+    for column in [
+        "attempts",
+        "transactions",
+        "inbox",
+        "deliveries",
+        "cases",
+        "reconciliation_attempts",
+    ] {
         let expected = if column == "deliveries" { 2 } else { 1 };
-        assert_eq!(counts.get::<i64, _>(column), expected, "{column} rows are visible");
+        assert_eq!(
+            counts.get::<i64, _>(column),
+            expected,
+            "{column} rows are visible"
+        );
     }
-    same_tenant.commit().await.expect("read transaction commits");
+    same_tenant
+        .commit()
+        .await
+        .expect("read transaction commits");
 
     let other_tenant = Uuid::new_v4();
-    let mut isolated = database.runtime_pool.begin().await.expect("isolated transaction starts");
+    let mut isolated = database
+        .runtime_pool
+        .begin()
+        .await
+        .expect("isolated transaction starts");
     set_tenant(&mut isolated, other_tenant).await;
     let visible: i64 = sqlx::query_scalar(
         "SELECT (SELECT count(*) FROM payments.payment_attempts WHERE id=$1) + (SELECT count(*) FROM payments.payment_transactions WHERE id=$2) + (SELECT count(*) FROM payments.provider_event_inbox WHERE inbox_id=$3) + (SELECT count(*) FROM payments.provider_event_deliveries WHERE delivery_id=$4) + (SELECT count(*) FROM payments.payment_reconciliation_cases WHERE id=$5) + (SELECT count(*) FROM payments.payment_reconciliation_attempts WHERE id=$6)",
@@ -163,9 +186,16 @@ async fn lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_i
         .await
         .expect("cross-tenant update is filtered by RLS");
     assert_eq!(changed.rows_affected(), 0);
-    isolated.commit().await.expect("isolated transaction commits");
+    isolated
+        .commit()
+        .await
+        .expect("isolated transaction commits");
 
-    let mut duplicate_event = database.runtime_pool.begin().await.expect("duplicate test starts");
+    let mut duplicate_event = database
+        .runtime_pool
+        .begin()
+        .await
+        .expect("duplicate test starts");
     set_tenant(&mut duplicate_event, tenant_id).await;
     let duplicate = sqlx::query(
         "INSERT INTO payments.provider_event_inbox (inbox_id,event_id,tenant_id,environment,payment_intent_id,payment_attempt_id,provider_code,provider_account_reference,provider_event_id,normalized_status,schema_version,occurred_at,payload_sha256,correlation_id,producer_identity) VALUES ($1,$2,$3,'test',$4,$5,'wompi','account_01','provider-event-01','succeeded',1,now(),$6,'duplicate-delivery','spiffe://gateway/payments')",
@@ -178,10 +208,20 @@ async fn lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_i
     .bind(vec![8_u8; 32])
     .execute(&mut *duplicate_event)
     .await;
-    assert!(duplicate.is_err(), "provider/account/event identity is unique");
-    duplicate_event.rollback().await.expect("duplicate transaction rolls back");
+    assert!(
+        duplicate.is_err(),
+        "provider/account/event identity is unique"
+    );
+    duplicate_event
+        .rollback()
+        .await
+        .expect("duplicate transaction rolls back");
 
-    let mut duplicate_case = database.runtime_pool.begin().await.expect("case uniqueness test starts");
+    let mut duplicate_case = database
+        .runtime_pool
+        .begin()
+        .await
+        .expect("case uniqueness test starts");
     set_tenant(&mut duplicate_case, tenant_id).await;
     let duplicate = sqlx::query(
         "INSERT INTO payments.payment_reconciliation_cases (id,tenant_id,environment,payment_intent_id,payment_attempt_id,reason,status) VALUES ($1,$2,'test',$3,$4,'outcome_unknown','pending')",
@@ -192,11 +232,21 @@ async fn lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_i
     .bind(attempt_id)
     .execute(&mut *duplicate_case)
     .await;
-    assert!(duplicate.is_err(), "an attempt has at most one unresolved reconciliation case");
-    duplicate_case.rollback().await.expect("duplicate case rolls back");
+    assert!(
+        duplicate.is_err(),
+        "an attempt has at most one unresolved reconciliation case"
+    );
+    duplicate_case
+        .rollback()
+        .await
+        .expect("duplicate case rolls back");
 
     let created_attempt_id = Uuid::new_v4();
-    let mut created_attempt = database.runtime_pool.begin().await.expect("created attempt transaction starts");
+    let mut created_attempt = database
+        .runtime_pool
+        .begin()
+        .await
+        .expect("created attempt transaction starts");
     set_tenant(&mut created_attempt, tenant_id).await;
     sqlx::query(
         "INSERT INTO payments.payment_attempts (id,tenant_id,environment,payment_intent_id,attempt_number,provider_code,provider_account_reference,status) VALUES ($1,$2,'test',$3,2,'wompi','account_01','created')",
@@ -207,9 +257,16 @@ async fn lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_i
     .execute(&mut *created_attempt)
     .await
     .expect("a second historical attempt can be prepared without executing a charge");
-    created_attempt.commit().await.expect("prepared attempt commits");
+    created_attempt
+        .commit()
+        .await
+        .expect("prepared attempt commits");
 
-    let mut premature_transaction = database.runtime_pool.begin().await.expect("transaction guard test starts");
+    let mut premature_transaction = database
+        .runtime_pool
+        .begin()
+        .await
+        .expect("transaction guard test starts");
     set_tenant(&mut premature_transaction, tenant_id).await;
     let rejected = sqlx::query(
         "INSERT INTO payments.payment_transactions (id,tenant_id,environment,payment_intent_id,payment_attempt_id,provider_code,provider_account_reference,provider_transaction_reference,amount_minor,currency,status) VALUES ($1,$2,'test',$3,$4,'wompi','account_01','provider-tx-before-submit',1299,'COP','pending')",
@@ -220,10 +277,20 @@ async fn lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_i
     .bind(created_attempt_id)
     .execute(&mut *premature_transaction)
     .await;
-    assert!(rejected.is_err(), "transaction cannot predate operation submission");
-    premature_transaction.rollback().await.expect("premature transaction rolls back");
+    assert!(
+        rejected.is_err(),
+        "transaction cannot predate operation submission"
+    );
+    premature_transaction
+        .rollback()
+        .await
+        .expect("premature transaction rolls back");
 
-    let mut rollback = database.runtime_pool.begin().await.expect("rollback transaction starts");
+    let mut rollback = database
+        .runtime_pool
+        .begin()
+        .await
+        .expect("rollback transaction starts");
     set_tenant(&mut rollback, tenant_id).await;
     let rolled_back_attempt_id = Uuid::new_v4();
     sqlx::query(
@@ -235,19 +302,28 @@ async fn lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_i
     .execute(&mut *rollback)
     .await
     .expect("temporary lifecycle write succeeds");
-    rollback.rollback().await.expect("temporary lifecycle write rolls back");
+    rollback
+        .rollback()
+        .await
+        .expect("temporary lifecycle write rolls back");
 
-    let mut verify_rollback = database.runtime_pool.begin().await.expect("rollback verification starts");
+    let mut verify_rollback = database
+        .runtime_pool
+        .begin()
+        .await
+        .expect("rollback verification starts");
     set_tenant(&mut verify_rollback, tenant_id).await;
-    let persisted: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM payments.payment_attempts WHERE id=$1",
-    )
-    .bind(rolled_back_attempt_id)
-    .fetch_one(&mut *verify_rollback)
-    .await
-    .expect("rolled-back attempt can be checked");
+    let persisted: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM payments.payment_attempts WHERE id=$1")
+            .bind(rolled_back_attempt_id)
+            .fetch_one(&mut *verify_rollback)
+            .await
+            .expect("rolled-back attempt can be checked");
     assert_eq!(persisted, 0, "rollback leaves no partial lifecycle record");
-    verify_rollback.commit().await.expect("rollback verification commits");
+    verify_rollback
+        .commit()
+        .await
+        .expect("rollback verification commits");
 
     database.finish().await;
 }
