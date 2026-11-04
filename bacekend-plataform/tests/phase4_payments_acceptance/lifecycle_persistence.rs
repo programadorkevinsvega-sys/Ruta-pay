@@ -76,7 +76,7 @@ async fn lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_i
     .expect("normalized event envelope is stored without raw payload");
 
     sqlx::query(
-        "INSERT INTO payments.provider_event_deliveries (delivery_id,tenant_id,environment,inbox_id,event_id,producer_identity,disposition) VALUES ($1,$2,'test',$3,$4,'spiffe://gateway/payments','accepted')",
+        "INSERT INTO payments.provider_event_deliveries (delivery_id,tenant_id,environment,inbox_id,event_id,provider_code,provider_account_reference,provider_event_id,producer_identity,disposition) VALUES ($1,$2,'test',$3,$4,'wompi','account_01','provider-event-01','spiffe://gateway/payments','accepted')",
     )
     .bind(delivery_id)
     .bind(tenant_id)
@@ -84,7 +84,16 @@ async fn lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_i
     .bind(event_id)
     .execute(&mut *transaction)
     .await
-    .expect("delivery trace is associated with the canonical inbox event");
+    .expect("accepted delivery is associated with its canonical inbox event");
+
+    sqlx::query(
+        "INSERT INTO payments.provider_event_deliveries (delivery_id,tenant_id,environment,producer_identity,disposition,rejection_code) VALUES ($1,$2,'test','spiffe://gateway/payments','rejected','tenant_scope_mismatch')",
+    )
+    .bind(Uuid::new_v4())
+    .bind(tenant_id)
+    .execute(&mut *transaction)
+    .await
+    .expect("rejected authenticated delivery is retained without trusting an inbox event");
 
     sqlx::query(
         "INSERT INTO payments.payment_reconciliation_cases (id,tenant_id,environment,payment_intent_id,payment_attempt_id,payment_transaction_id,reason,status,attempts) VALUES ($1,$2,'test',$3,$4,$5,'outcome_unknown','pending',0)",
@@ -124,7 +133,8 @@ async fn lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_i
     .await
     .expect("tenant can read its own lifecycle records");
     for column in ["attempts", "transactions", "inbox", "deliveries", "cases", "reconciliation_attempts"] {
-        assert_eq!(counts.get::<i64, _>(column), 1, "{column} row is visible");
+        let expected = if column == "deliveries" { 2 } else { 1 };
+        assert_eq!(counts.get::<i64, _>(column), expected, "{column} rows are visible");
     }
     same_tenant.commit().await.expect("read transaction commits");
 
@@ -215,16 +225,29 @@ async fn lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_i
 
     let mut rollback = database.runtime_pool.begin().await.expect("rollback transaction starts");
     set_tenant(&mut rollback, tenant_id).await;
+    let rolled_back_attempt_id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO payments.payment_attempts (id,tenant_id,environment,payment_intent_id,attempt_number,provider_code,provider_account_reference,status) VALUES ($1,$2,'test',$3,3,'wompi','account_01','created')",
     )
-    .bind(Uuid::new_v4())
+    .bind(rolled_back_attempt_id)
     .bind(tenant_id)
     .bind(intent.id)
     .execute(&mut *rollback)
     .await
     .expect("temporary lifecycle write succeeds");
     rollback.rollback().await.expect("temporary lifecycle write rolls back");
+
+    let mut verify_rollback = database.runtime_pool.begin().await.expect("rollback verification starts");
+    set_tenant(&mut verify_rollback, tenant_id).await;
+    let persisted: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM payments.payment_attempts WHERE id=$1",
+    )
+    .bind(rolled_back_attempt_id)
+    .fetch_one(&mut *verify_rollback)
+    .await
+    .expect("rolled-back attempt can be checked");
+    assert_eq!(persisted, 0, "rollback leaves no partial lifecycle record");
+    verify_rollback.commit().await.expect("rollback verification commits");
 
     database.finish().await;
 }
