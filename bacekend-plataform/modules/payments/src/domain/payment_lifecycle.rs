@@ -262,7 +262,10 @@ impl PaymentTransactionStatus {
 impl LifecycleState for PaymentTransactionStatus {
     fn can_transition_to(self, next: Self) -> bool {
         use PaymentTransactionStatus::*;
-        matches!((self, next), (Pending, Authorized | Succeeded | Failed))
+        matches!(
+            (self, next),
+            (Pending, Authorized | Succeeded | Failed) | (Authorized, Succeeded)
+        )
     }
 
     fn is_terminal(self) -> bool {
