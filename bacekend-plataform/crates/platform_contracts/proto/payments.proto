@@ -46,3 +46,32 @@ message GetPaymentIntentRequest {
 message GetPaymentIntentResponse {
   PaymentIntent payment_intent = 1;
 }
+
+// This is a normalized integration contract, not proof of producer authenticity.
+// It must only be accepted after gateway-side provider verification and an
+// authenticated cross-backend transport are in place. No RPC accepts it yet.
+enum NormalizedProviderPaymentStatus {
+  NORMALIZED_PROVIDER_PAYMENT_STATUS_UNSPECIFIED = 0;
+  NORMALIZED_PROVIDER_PAYMENT_STATUS_PROCESSING = 1;
+  NORMALIZED_PROVIDER_PAYMENT_STATUS_REQUIRES_ACTION = 2;
+  NORMALIZED_PROVIDER_PAYMENT_STATUS_AUTHORIZED = 3;
+  NORMALIZED_PROVIDER_PAYMENT_STATUS_SUCCEEDED = 4;
+  NORMALIZED_PROVIDER_PAYMENT_STATUS_FAILED = 5;
+}
+
+message NormalizedProviderPaymentEventV1 {
+  uint32 schema_version = 1;
+  string provider_code = 2;
+  string provider_account_reference = 3;
+  string provider_event_id = 4;
+  string tenant_id = 5;
+  string environment = 6;
+  string payment_intent_id = 7;
+  string payment_attempt_id = 8;
+  string provider_transaction_reference = 9;
+  NormalizedProviderPaymentStatus status = 10;
+  int64 occurred_at_unix_millis = 11;
+  string correlation_id = 12;
+  bytes payload_sha256 = 13;
+  string event_id = 14;
+}

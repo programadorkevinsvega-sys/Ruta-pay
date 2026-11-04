@@ -113,7 +113,7 @@ Acta: docs/phase-3/acceptance.md. Matriz específica: docs/phase-3/integration-m
 
 ## Fase 4 — Suscripciones y facturación de uso Payvia
 
-**Estado:** implementación parcial. El PR #10 contiene un slice de Alcance B (Payment Intents) implementado y verificado; esto no equivale al cierre de Fase 4. El Alcance A (suscripciones y facturación SaaS de Payvia) continúa pendiente. La matriz de integración mantiene el estado por frontera y la trazabilidad requisito → test → CI.
+**Estado:** implementación parcial. El PR #10 está integrado en `main` y entregó el slice inicial de creación/consulta de Payment Intents, Outbox y journal/cursor realtime. El PR #11 continúa abierto en `feat/phase-4-payment-lifecycle`; su base de dominio y contrato neutral del lifecycle está implementada y verificada en el HEAD `c036f0010fa8140b1a8809ffa2d6be3c3e190f71` por [CI #942](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41753921841), con quality, documentación, ambos frontends y E2E en success. Esta evidencia no implementa la persistencia ni el ciclo operativo de intentos/transacciones. El Alcance A (suscripciones y facturación SaaS de Payvia) continúa pendiente. La matriz de integración conserva el estado por frontera y la trazabilidad requisito → test → ejecución CI.
 
 **Registro de decisiones pendientes:** [docs/phase-4/decision-register.md](docs/phase-4/decision-register.md). Separa las decisiones económicas que requieren aprobación de las resoluciones técnicas. No aprueba precios, impuestos, políticas comerciales ni capacidades de proveedores.
 
@@ -138,11 +138,21 @@ Los siguientes checks se limitan al slice inicial de creación/consulta de Payme
 
 **Evidencia:** [CI #913](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41716834260) verificó los tests reales del slice y resiliencia Outbox sobre el SHA de código `1858766a46a5b92d6b6b75207e728ddaa6933498`. [CI #914](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41717663987) verificó el HEAD documental previo del PR (`e1d2c4281e70d117719398d9bad0730e393f1169`): detección de alcance, quality, documentación y YAML, todos en success. La matriz describe qué escenarios concretos cubre cada ejecución y qué no demuestra.
 
+### Base técnica del ciclo de pagos — avance parcial
+
+El código de esta rama introduce la base de dominio y el contrato neutral documentados en [ADR-0011](docs/adr/ADR-0011-payment-lifecycle-and-normalized-provider-events.md). Estos elementos no equivalen a una integración operativa ni cierran los entregables completos:
+
+- [x] Modelos de dominio `PaymentAttempt` y `PaymentTransaction`; validaciones de identidad, ownership, secuencia, proveedor, referencia e importe; estados canónicos separados; guards forward-only y terminales; transición `Pending → Authorized → Succeeded`; control unitario de timestamps y `outcome_unknown`; contrato Protobuf neutral `NormalizedProviderPaymentEventV1`. **Verificado en el HEAD actual:** [CI #942](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41753921841), SHA `c036f0010fa8140b1a8809ffa2d6be3c3e190f71`. Pasaron límite de 400 líneas, `cargo fmt`, Clippy, `cargo test --locked --workspace`, ambos frontends, E2E tenant/plataforma/multi-réplica y documentación. Este check certifica únicamente los modelos, guards, contrato y pruebas incluidas; no acredita persistencia ni operación de pagos.
+- [ ] Persistencia PostgreSQL con RLS/constraints, inbox idempotente, casos de reconciliación, auditoría, Outbox y pruebas reales de aislamiento/concurrencia/rollback.
+- [ ] API/contratos de creación de intentos, consulta de intentos/transacciones y actualización del estado del intent, con scopes y aceptación HTTP→BFF→gRPC→módulo.
+- [ ] Ingestión de eventos normalizados solo después de verificar el callback en el adapter y autenticar al productor cross-backend. El mensaje Protobuf no autentica por sí mismo y no se añadió un RPC/consumer de ingreso.
+- [ ] Consultas reales al proveedor, resolución durable de resultado incierto y conciliación; no repetir un cobro ante timeout sin resultado autoritativo.
+
 ### Entregables de Fase 4 aún pendientes o bloqueados
 
-- [ ] Completar el ciclo de negocio de Payment Intents/transacciones: agregados de intentos y transacciones, transiciones y guards, estados normalizados por proveedor, callbacks verificados, eventos tardíos, resultado incierto y reconciliación.
-- [ ] Definir e implementar captura, cancelación, expiración y reembolsos totales/parciales únicamente después de aprobar las decisiones comerciales/financieras correspondientes.
-- [ ] Cobro a compradores de los tenants según el flujo configurado, separado del cobro que Payvia realiza a los tenants por usar la plataforma.
+- [ ] Completar el ciclo de negocio de Payment Intents/transacciones de extremo a extremo: persistencia de intentos/transacciones, estados y guards aplicados transaccionalmente, eventos normalizados consumidos desde una frontera autenticada, manejo durable de eventos tardíos, outcome unknown y reconciliación contra el proveedor.
+- [ ] Definir e implementar captura, cancelación, expiración y reembolsos totales/parciales únicamente después de aprobar B-EC-07..13 (autorización/captura, vigencia, cancelación, reintentos, cambio de proveedor y política/límites de reembolsos). No se crean comandos, endpoints ni estados para estas operaciones mientras sigan sin aprobación.
+- [ ] Cobro a compradores de los tenants mediante el flujo configurado, separado del recaudo SaaS que Payvia realiza a sus tenants. Bloqueado por decisiones funcionales aplicables y por adapters/callbacks reales del backend de pasarelas; el scaffold de gateway no se sustituye con una simulación.
 - [ ] Implementar el ciclo de suscripción, periodos, medición facturable, prorrateo si se aprueba, invoices y partidas inmutables.
 - [ ] Implementar cálculo de cobros de Payvia independiente de montos y fees de transacciones procesadas para el tenant, con snapshot económico reproducible y ledger financiero.
 - [ ] Implementar cobro de invoices de Payvia por `platform_billing_wompi`, con cuenta/credenciales de Payvia, callbacks propios verificados y reconciliación; no atraviesa `bacekend-pasarela` ni comparte credenciales tenant.
