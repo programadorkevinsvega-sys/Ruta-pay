@@ -85,6 +85,7 @@ pub(super) async fn update(
         audit_status(
             &mut tx,
             &command,
+            command.payment_intent_id,
             "payment_intent.status_transition_replayed",
             json!({
                 "status": command.status,
@@ -144,6 +145,7 @@ pub(super) async fn update(
     audit_status(
         &mut tx,
         &command,
+        command.payment_intent_id,
         "payment_intent.status_changed",
         json!({
             "from_status": current_intent.status,
@@ -156,6 +158,7 @@ pub(super) async fn update(
     audit_status(
         &mut tx,
         &command,
+        command.payment_attempt_id,
         "payment_attempt.status_changed",
         json!({
             "to_status": next_attempt.as_str(),
@@ -260,6 +263,7 @@ pub(super) async fn update(
 async fn audit_status(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     command: &UpdatePaymentIntentStatusCommand,
+    resource_id: Uuid,
     action: &str,
     details: serde_json::Value,
 ) -> Result<(), sqlx::Error> {
@@ -270,7 +274,7 @@ async fn audit_status(
     .bind(command.tenant_id)
     .bind(command.actor_key_id)
     .bind(action)
-    .bind(command.payment_intent_id)
+    .bind(resource_id)
     .bind(&command.correlation_id)
     .bind(payvia_observability::current_trace_id())
     .bind(details)

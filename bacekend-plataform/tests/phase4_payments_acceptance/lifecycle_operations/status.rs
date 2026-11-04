@@ -166,6 +166,24 @@ async fn status_transitions_are_guarded_atomic_and_create_durable_reconciliation
         "outcome_unknown"
     );
 
+    let intent_audit_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM payments.audit_events WHERE resource_id=$1 AND action='payment_intent.status_changed'",
+    )
+    .bind(intent.id)
+    .fetch_one(&database.migration_pool)
+    .await
+    .expect("intent transition audit is queryable");
+    assert_eq!(intent_audit_count, 2);
+
+    let attempt_audit_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM payments.audit_events WHERE resource_id=$1 AND action='payment_attempt.status_changed'",
+    )
+    .bind(attempt.id)
+    .fetch_one(&database.migration_pool)
+    .await
+    .expect("attempt transition audit is queryable");
+    assert_eq!(attempt_audit_count, 2, "attempt audit rows identify the attempt resource");
+
     let events: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM payments.outbox_events WHERE aggregate_id IN ($1,$2,$3)",
     )
