@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use sqlx::{PgRow, Row};
+use sqlx::{postgres::PgRow, Row};
 use uuid::Uuid;
 
 use crate::domain::{

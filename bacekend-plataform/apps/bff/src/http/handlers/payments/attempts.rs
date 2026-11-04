@@ -42,11 +42,35 @@ pub struct PaymentAttemptList {
 #[utoipa::path(post, path="/v1/tenants/{tenant_id}/payment-intents/{payment_intent_id}/attempts", request_body=NewPaymentAttempt, responses((status=201, body=PaymentAttemptView), (status=200, body=PaymentAttemptView), (status=400), (status=401), (status=403), (status=404), (status=409)))]
 pub async fn create(
     State(state): State<Arc<AppState>>,
-    Path((tenant_id, payment_intent_id)): Path<(Uuid, Uuid)>,
+    Path((tenant_id, payment_intent_id)): Path<(String, String)>,
     headers: HeaderMap,
     Json(body): Json<NewPaymentAttempt>,
 ) -> Response {
     let correlation = crate::http::middleware::correlation_id::correlation_id(&headers);
+    let tenant_id = match Uuid::parse_str(&tenant_id) {
+        Ok(id) => id,
+        Err(_) => {
+            return payment_error(
+                StatusCode::BAD_REQUEST,
+                "payment_identifier_invalid",
+                "validation",
+                false,
+                correlation,
+            );
+        }
+    };
+    let payment_intent_id = match Uuid::parse_str(&payment_intent_id) {
+        Ok(id) => id,
+        Err(_) => {
+            return payment_error(
+                StatusCode::BAD_REQUEST,
+                "payment_identifier_invalid",
+                "validation",
+                false,
+                correlation,
+            );
+        }
+    };
     let Some((secret, environment)) = bearer_key(&headers) else {
         return payment_error(
             StatusCode::UNAUTHORIZED,

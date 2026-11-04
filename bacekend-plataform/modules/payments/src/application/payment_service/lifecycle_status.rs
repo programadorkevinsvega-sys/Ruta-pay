@@ -1,5 +1,5 @@
 use serde_json::json;
-use sqlx::{PgRow, Row};
+use sqlx::{postgres::PgRow, Row};
 use uuid::Uuid;
 
 use crate::domain::{

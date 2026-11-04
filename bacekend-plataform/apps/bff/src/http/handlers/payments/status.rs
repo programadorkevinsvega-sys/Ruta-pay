@@ -17,7 +17,7 @@ use platform_contracts::payments::UpdatePaymentIntentStatusRequest;
 
 #[derive(Deserialize, ToSchema)]
 pub struct NewPaymentIntentStatus {
-    payment_attempt_id: Uuid,
+    payment_attempt_id: String,
     status: String,
     expected_version: i64,
 }
@@ -31,11 +31,35 @@ pub struct PaymentIntentStatusView {
 #[utoipa::path(patch, path="/v1/tenants/{tenant_id}/payment-intents/{payment_intent_id}/status", request_body=NewPaymentIntentStatus, responses((status=200, body=PaymentIntentStatusView), (status=400), (status=401), (status=403), (status=404), (status=409)))]
 pub async fn update(
     State(state): State<Arc<AppState>>,
-    Path((tenant_id, payment_intent_id)): Path<(Uuid, Uuid)>,
+    Path((tenant_id, payment_intent_id)): Path<(String, String)>,
     headers: axum::http::HeaderMap,
     Json(body): Json<NewPaymentIntentStatus>,
 ) -> Response {
     let correlation = crate::http::middleware::correlation_id::correlation_id(&headers);
+    let tenant_id = match Uuid::parse_str(&tenant_id) {
+        Ok(id) => id,
+        Err(_) => {
+            return payment_error(
+                StatusCode::BAD_REQUEST,
+                "payment_identifier_invalid",
+                "validation",
+                false,
+                correlation,
+            );
+        }
+    };
+    let payment_intent_id = match Uuid::parse_str(&payment_intent_id) {
+        Ok(id) => id,
+        Err(_) => {
+            return payment_error(
+                StatusCode::BAD_REQUEST,
+                "payment_identifier_invalid",
+                "validation",
+                false,
+                correlation,
+            );
+        }
+    };
     let Some((secret, environment)) = bearer_key(&headers) else {
         return payment_error(
             StatusCode::UNAUTHORIZED,
@@ -44,6 +68,18 @@ pub async fn update(
             false,
             correlation,
         );
+    };
+    let payment_attempt_id = match Uuid::parse_str(&body.payment_attempt_id) {
+        Ok(id) => id,
+        Err(_) => {
+            return payment_error(
+                StatusCode::BAD_REQUEST,
+                "payment_identifier_invalid",
+                "validation",
+                false,
+                correlation,
+            );
+        }
     };
     let Some(mut client) = state.payments_client.clone() else {
         return payment_error(
@@ -59,7 +95,7 @@ pub async fn update(
         tenant_id: tenant_id.to_string(),
         environment,
         payment_intent_id: payment_intent_id.to_string(),
-        payment_attempt_id: body.payment_attempt_id.to_string(),
+        payment_attempt_id: payment_attempt_id.to_string(),
         status: body.status,
         expected_version: body.expected_version,
         correlation_id: correlation.clone(),
