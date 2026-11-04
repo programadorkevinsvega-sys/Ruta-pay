@@ -31,6 +31,7 @@ async fn lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_i
     let transaction_id = Uuid::new_v4();
     let inbox_id = Uuid::new_v4();
     let event_id = Uuid::new_v4();
+    let delivery_id = Uuid::new_v4();
     let reconciliation_id = Uuid::new_v4();
     let reconciliation_attempt_id = Uuid::new_v4();
 
@@ -77,7 +78,7 @@ async fn lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_i
     sqlx::query(
         "INSERT INTO payments.provider_event_deliveries (delivery_id,tenant_id,environment,inbox_id,event_id,producer_identity,disposition) VALUES ($1,$2,'test',$3,$4,'spiffe://gateway/payments','accepted')",
     )
-    .bind(Uuid::new_v4())
+    .bind(delivery_id)
     .bind(tenant_id)
     .bind(inbox_id)
     .bind(event_id)
@@ -131,13 +132,21 @@ async fn lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_i
     let mut isolated = database.runtime_pool.begin().await.expect("isolated transaction starts");
     set_tenant(&mut isolated, other_tenant).await;
     let visible: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM payments.payment_attempts WHERE id=$1",
+        "SELECT (SELECT count(*) FROM payments.payment_attempts WHERE id=$1) + (SELECT count(*) FROM payments.payment_transactions WHERE id=$2) + (SELECT count(*) FROM payments.provider_event_inbox WHERE inbox_id=$3) + (SELECT count(*) FROM payments.provider_event_deliveries WHERE delivery_id=$4) + (SELECT count(*) FROM payments.payment_reconciliation_cases WHERE id=$5) + (SELECT count(*) FROM payments.payment_reconciliation_attempts WHERE id=$6)",
     )
     .bind(attempt_id)
+    .bind(transaction_id)
+    .bind(inbox_id)
+    .bind(delivery_id)
+    .bind(reconciliation_id)
+    .bind(reconciliation_attempt_id)
     .fetch_one(&mut *isolated)
     .await
-    .expect("cross-tenant lookup is evaluated under RLS");
-    assert_eq!(visible, 0, "known foreign identifiers do not bypass RLS");
+    .expect("cross-tenant lookups are evaluated under each table's RLS policy");
+    assert_eq!(
+        visible, 0,
+        "known foreign identifiers do not bypass lifecycle table RLS"
+    );
     let changed = sqlx::query("UPDATE payments.payment_attempts SET status='failed' WHERE id=$1")
         .bind(attempt_id)
         .execute(&mut *isolated)
