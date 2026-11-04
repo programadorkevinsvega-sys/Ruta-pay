@@ -179,7 +179,6 @@ CREATE TABLE payments.provider_event_inbox (
     processed_at TIMESTAMPTZ,
     CHECK ((processing_status = 'received') = (processed_at IS NULL)),
     UNIQUE (tenant_id, environment, inbox_id),
-    UNIQUE (tenant_id, environment, inbox_id, event_id),
     UNIQUE (
         provider_code, provider_account_reference, provider_event_id
     ),
@@ -207,13 +206,247 @@ CREATE TABLE payments.provider_event_deliveries (
     delivery_id UUID PRIMARY KEY,
     tenant_id UUID NOT NULL,
     environment TEXT NOT NULL CHECK (environment IN ('test', 'live')),
-    inbox_id UUID NOT NULL,
-    event_id UUID NOT NULL,
+    inbox_id UUID,
+    event_id UUID,
+    provider_code TEXT CHECK (
+        provider_code IS NULL OR provider_code ~ '^[a-z][a-z0-9_]{1,31}
+
+CREATE INDEX payment_event_deliveries_inbox_time_idx
+    ON payments.provider_event_deliveries (tenant_id, environment, inbox_id, received_at DESC);
+
+ALTER TABLE payments.provider_event_deliveries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payments.provider_event_deliveries FORCE ROW LEVEL SECURITY;
+CREATE POLICY payment_event_deliveries_tenant_isolation ON payments.provider_event_deliveries
+    USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+    WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
+
+CREATE TABLE payments.payment_reconciliation_cases (
+    id UUID PRIMARY KEY,
+    tenant_id UUID NOT NULL,
+    environment TEXT NOT NULL CHECK (environment IN ('test', 'live')),
+    payment_intent_id UUID NOT NULL,
+    payment_attempt_id UUID NOT NULL,
+    payment_transaction_id UUID,
+    reason TEXT NOT NULL CHECK (
+        reason IN ('outcome_unknown', 'late_event', 'terminal_conflict')
+    ),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (
+        status IN ('pending', 'leased', 'resolved', 'manual_review')
+    ),
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    lease_token UUID,
+    lease_until TIMESTAMPTZ,
+    last_error_code TEXT,
+    result_status TEXT CHECK (
+        result_status IS NULL OR
+        result_status IN ('processing', 'requires_action', 'authorized', 'succeeded', 'failed')
+    ),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    resolved_at TIMESTAMPTZ,
+    UNIQUE (tenant_id, environment, id),
+    FOREIGN KEY (tenant_id, environment, payment_attempt_id, payment_intent_id)
+        REFERENCES payments.payment_attempts (
+            tenant_id, environment, id, payment_intent_id
+        ),
+    FOREIGN KEY (
+        tenant_id, environment, payment_transaction_id, payment_intent_id, payment_attempt_id
+    ) REFERENCES payments.payment_transactions (
+        tenant_id, environment, id, payment_intent_id, payment_attempt_id
+    ),
+    CHECK ((lease_token IS NULL) = (lease_until IS NULL)),
+    CHECK ((status = 'leased') = (lease_token IS NOT NULL)),
+    CHECK ((status = 'resolved') = (resolved_at IS NOT NULL))
+);
+
+CREATE UNIQUE INDEX payment_reconciliation_one_open_case_per_attempt
+    ON payments.payment_reconciliation_cases (
+        tenant_id, environment, payment_attempt_id
+    )
+    WHERE status IN ('pending', 'leased', 'manual_review');
+
+CREATE INDEX payment_reconciliation_claim_idx
+    ON payments.payment_reconciliation_cases (next_attempt_at, created_at)
+    WHERE status = 'pending';
+
+ALTER TABLE payments.payment_reconciliation_cases ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payments.payment_reconciliation_cases FORCE ROW LEVEL SECURITY;
+CREATE POLICY payment_reconciliation_cases_tenant_isolation
+    ON payments.payment_reconciliation_cases
+    USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+    WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
+
+CREATE TABLE payments.payment_reconciliation_attempts (
+    id UUID PRIMARY KEY,
+    tenant_id UUID NOT NULL,
+    environment TEXT NOT NULL CHECK (environment IN ('test', 'live')),
+    reconciliation_case_id UUID NOT NULL,
+    attempt_number INTEGER NOT NULL CHECK (attempt_number > 0),
+    result_status TEXT NOT NULL CHECK (
+        result_status IN (
+            'not_found', 'processing', 'requires_action', 'authorized',
+            'succeeded', 'failed', 'inconclusive', 'transport_error'
+        )
+    ),
+    provider_transaction_reference TEXT,
+    evidence_sha256 BYTEA CHECK (
+        evidence_sha256 IS NULL OR octet_length(evidence_sha256) = 32
+    ),
+    safe_error_code TEXT,
+    queried_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at TIMESTAMPTZ,
+    UNIQUE (tenant_id, environment, id),
+    UNIQUE (tenant_id, environment, reconciliation_case_id, attempt_number),
+    FOREIGN KEY (tenant_id, environment, reconciliation_case_id)
+        REFERENCES payments.payment_reconciliation_cases (tenant_id, environment, id)
+);
+
+CREATE INDEX payment_reconciliation_attempts_history_idx
+    ON payments.payment_reconciliation_attempts (
+        tenant_id, environment, reconciliation_case_id, queried_at DESC
+    );
+
+ALTER TABLE payments.payment_reconciliation_attempts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payments.payment_reconciliation_attempts FORCE ROW LEVEL SECURITY;
+CREATE POLICY payment_reconciliation_attempts_tenant_isolation
+    ON payments.payment_reconciliation_attempts
+    USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+    WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
+
+    ),
+    provider_account_reference TEXT
+        CHECK (
+            provider_account_reference IS NULL OR
+            (char_length(provider_account_reference) BETWEEN 1 AND 128
+                AND provider_account_reference !~ '[[:cntrl:]]')
+        ),
+    provider_event_id TEXT
+        CHECK (
+            provider_event_id IS NULL OR
+            (char_length(provider_event_id) BETWEEN 1 AND 160
+                AND provider_event_id !~ '[[:cntrl:]]')
+        ),
     producer_identity TEXT NOT NULL CHECK (char_length(producer_identity) BETWEEN 1 AND 256),
     disposition TEXT NOT NULL CHECK (disposition IN ('accepted', 'duplicate', 'rejected')),
+    rejection_code TEXT CHECK (
+        rejection_code IS NULL OR rejection_code ~ '^[a-z][a-z0-9_]{1,63}
+
+CREATE INDEX payment_event_deliveries_inbox_time_idx
+    ON payments.provider_event_deliveries (tenant_id, environment, inbox_id, received_at DESC);
+
+ALTER TABLE payments.provider_event_deliveries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payments.provider_event_deliveries FORCE ROW LEVEL SECURITY;
+CREATE POLICY payment_event_deliveries_tenant_isolation ON payments.provider_event_deliveries
+    USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+    WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
+
+CREATE TABLE payments.payment_reconciliation_cases (
+    id UUID PRIMARY KEY,
+    tenant_id UUID NOT NULL,
+    environment TEXT NOT NULL CHECK (environment IN ('test', 'live')),
+    payment_intent_id UUID NOT NULL,
+    payment_attempt_id UUID NOT NULL,
+    payment_transaction_id UUID,
+    reason TEXT NOT NULL CHECK (
+        reason IN ('outcome_unknown', 'late_event', 'terminal_conflict')
+    ),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (
+        status IN ('pending', 'leased', 'resolved', 'manual_review')
+    ),
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    lease_token UUID,
+    lease_until TIMESTAMPTZ,
+    last_error_code TEXT,
+    result_status TEXT CHECK (
+        result_status IS NULL OR
+        result_status IN ('processing', 'requires_action', 'authorized', 'succeeded', 'failed')
+    ),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    resolved_at TIMESTAMPTZ,
+    UNIQUE (tenant_id, environment, id),
+    FOREIGN KEY (tenant_id, environment, payment_attempt_id, payment_intent_id)
+        REFERENCES payments.payment_attempts (
+            tenant_id, environment, id, payment_intent_id
+        ),
+    FOREIGN KEY (
+        tenant_id, environment, payment_transaction_id, payment_intent_id, payment_attempt_id
+    ) REFERENCES payments.payment_transactions (
+        tenant_id, environment, id, payment_intent_id, payment_attempt_id
+    ),
+    CHECK ((lease_token IS NULL) = (lease_until IS NULL)),
+    CHECK ((status = 'leased') = (lease_token IS NOT NULL)),
+    CHECK ((status = 'resolved') = (resolved_at IS NOT NULL))
+);
+
+CREATE UNIQUE INDEX payment_reconciliation_one_open_case_per_attempt
+    ON payments.payment_reconciliation_cases (
+        tenant_id, environment, payment_attempt_id
+    )
+    WHERE status IN ('pending', 'leased', 'manual_review');
+
+CREATE INDEX payment_reconciliation_claim_idx
+    ON payments.payment_reconciliation_cases (next_attempt_at, created_at)
+    WHERE status = 'pending';
+
+ALTER TABLE payments.payment_reconciliation_cases ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payments.payment_reconciliation_cases FORCE ROW LEVEL SECURITY;
+CREATE POLICY payment_reconciliation_cases_tenant_isolation
+    ON payments.payment_reconciliation_cases
+    USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+    WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
+
+CREATE TABLE payments.payment_reconciliation_attempts (
+    id UUID PRIMARY KEY,
+    tenant_id UUID NOT NULL,
+    environment TEXT NOT NULL CHECK (environment IN ('test', 'live')),
+    reconciliation_case_id UUID NOT NULL,
+    attempt_number INTEGER NOT NULL CHECK (attempt_number > 0),
+    result_status TEXT NOT NULL CHECK (
+        result_status IN (
+            'not_found', 'processing', 'requires_action', 'authorized',
+            'succeeded', 'failed', 'inconclusive', 'transport_error'
+        )
+    ),
+    provider_transaction_reference TEXT,
+    evidence_sha256 BYTEA CHECK (
+        evidence_sha256 IS NULL OR octet_length(evidence_sha256) = 32
+    ),
+    safe_error_code TEXT,
+    queried_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at TIMESTAMPTZ,
+    UNIQUE (tenant_id, environment, id),
+    UNIQUE (tenant_id, environment, reconciliation_case_id, attempt_number),
+    FOREIGN KEY (tenant_id, environment, reconciliation_case_id)
+        REFERENCES payments.payment_reconciliation_cases (tenant_id, environment, id)
+);
+
+CREATE INDEX payment_reconciliation_attempts_history_idx
+    ON payments.payment_reconciliation_attempts (
+        tenant_id, environment, reconciliation_case_id, queried_at DESC
+    );
+
+ALTER TABLE payments.payment_reconciliation_attempts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payments.payment_reconciliation_attempts FORCE ROW LEVEL SECURITY;
+CREATE POLICY payment_reconciliation_attempts_tenant_isolation
+    ON payments.payment_reconciliation_attempts
+    USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+    WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
+
+    ),
     received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    FOREIGN KEY (tenant_id, environment, inbox_id, event_id)
-        REFERENCES payments.provider_event_inbox (tenant_id, environment, inbox_id, event_id)
+    CHECK (
+        (disposition IN ('accepted', 'duplicate')) =
+        (inbox_id IS NOT NULL AND event_id IS NOT NULL
+            AND provider_code IS NOT NULL
+            AND provider_account_reference IS NOT NULL
+            AND provider_event_id IS NOT NULL)
+    ),
+    CHECK ((disposition = 'rejected') = (rejection_code IS NOT NULL)),
+    FOREIGN KEY (tenant_id, environment, inbox_id)
+        REFERENCES payments.provider_event_inbox (tenant_id, environment, inbox_id)
 );
 
 CREATE INDEX payment_event_deliveries_inbox_time_idx
