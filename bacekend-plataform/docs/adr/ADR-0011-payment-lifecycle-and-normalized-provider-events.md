@@ -68,6 +68,21 @@ No se agregan estados, comandos ni endpoints para captura, cancelación, expirac
 - El cobro de suscripciones/facturas SaaS que Payvia realiza a sus tenants pertenece a `platform_billing_wompi`, con cuenta y credenciales propias de Payvia. No utiliza los adapters ni las credenciales tenant del backend de pasarelas.
 - El backend de pasarelas continúa siendo scaffold sin adapters operativos; por tanto, el cobro real a compradores no se declara disponible ni se simula en plataforma.
 
+## 8. Persistencia relacional del lifecycle
+
+La rama `feat/phase-4-payment-lifecycle-persistence` añade una migración aditiva para materializar el ownership ya definido por esta ADR:
+
+- `payments.payment_attempts` conserva tenant/entorno/intent, secuencia positiva, proveedor/cuenta, estado, versión del agregado y último timestamp aplicado. Una clave única serializa la secuencia por Payment Intent.
+- `payments.payment_transactions` enlaza intent y attempt mediante claves foráneas compuestas. La relación incluye tenant, entorno, proveedor y cuenta; el importe y moneda se referencian también contra el Payment Intent. Un trigger rechaza crear una transacción cuando el attempt todavía está en `created`.
+- `payments.provider_event_inbox` conserva solo el envelope normalizado, hash SHA-256 y metadatos necesarios; deduplica por proveedor + cuenta + provider_event_id. No almacena el body crudo, firmas ni secretos.
+- `payments.provider_event_deliveries` conserva la traza por entrega y una FK compuesta asegura que el event_id corresponde al inbox_id registrado.
+- `payments.payment_reconciliation_cases` y `payment_reconciliation_attempts` almacenan casos pendientes/leased/manual review, leases recuperables e historial de consultas/resultados/evidencia.
+- Las seis tablas nuevas aplican ENABLE y FORCE RLS sobre `app.tenant_id`; las relaciones usan tenant y entorno en sus claves. La prueba de integración usa un rol runtime sin BYPASSRLS.
+
+El esquema por sí solo no autentica productores, no verifica callbacks, no procesa transiciones, no ejecuta consultas de proveedor ni resuelve resultados inciertos. No se expone una entrada de eventos ni se inicia reconciliación hasta implementar las fronteras autenticadas y las capacidades reales. La migración es aditiva; una reversión de aplicación conserva los registros financieros y no ejecuta DROP automático.
+
+**Estado de esta ampliación:** código de migración y aceptación añadidos en `feat/phase-4-payment-lifecycle-persistence`; ejecución CI pendiente. No se declara todavía como verificada.
+
 ## Evidencia y trabajo que queda pendiente
 
 Esta entrega contiene únicamente:
@@ -77,7 +92,7 @@ Esta entrega contiene únicamente:
 - pruebas unitarias de modelos, mapping neutral, transiciones, estado terminal, ownership entre intent/attempt, resultado incierto y orden de timestamps. `transaction_status_is_guarded_and_terminal_state_is_immutable` verifica `Pending → Authorized → Succeeded` y rechaza el cambio contradictorio después del estado terminal. **Verificado en el HEAD `c036f0010fa8140b1a8809ffa2d6be3c3e190f71` por [CI #942](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41753921841)**: límite de 400 líneas, fmt, Clippy, tests del workspace, ambos frontends, E2E tenant/plataforma/multi-réplica y checks documentales.
 
 Continúa pendiente para cerrar el ciclo:
-1. Migraciones/tablas, RLS, constraints, idempotencia y persistencia transaccional de intentos, transacciones, inbox y casos de reconciliación.
+1. La migración aditiva y la aceptación de esquema están añadidas en `feat/phase-4-payment-lifecycle-persistence` y pendientes de CI; siguen pendientes repositorios/casos de uso, aplicación transaccional de estados, auditoría/Outbox del lifecycle y procesamiento del inbox.
 2. Use cases y API de consulta de intentos/transacciones, autorización/scope, auditoría y Outbox/realtime.
 3. Operación autorizada plataforma→gateway, cuando corresponda, tras completar la frontera de confianza asignada.
 4. Callback verification/anti-replay y publicación del evento desde adapters reales del backend de pasarelas.
