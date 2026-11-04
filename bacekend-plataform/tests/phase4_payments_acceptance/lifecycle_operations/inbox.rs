@@ -88,7 +88,9 @@ async fn concurrent_provider_event_deliveries_create_one_canonical_inbox_row() {
         .begin()
         .await
         .expect("read transaction starts");
-    set_tenant(&mut check, tenant_id).await;
+    set_tenant(&mut check, tenant_id)
+        .await
+        .expect("tenant context is set for the scoped inbox read");
     let count: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM payments.provider_event_inbox WHERE tenant_id=$1 AND environment='test' AND provider_code='wompi' AND provider_account_reference='account_01' AND provider_event_id='concurrent-provider-event-001'",
     )
