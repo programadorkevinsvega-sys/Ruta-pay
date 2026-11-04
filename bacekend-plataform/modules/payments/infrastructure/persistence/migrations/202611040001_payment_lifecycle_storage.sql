@@ -1,3 +1,5 @@
+-- Additive payment-lifecycle storage. Roll back by reverting the application release;
+-- retain these financial/audit records and do not DROP the new tables automatically.
 ALTER TABLE payments.payment_intents
     ADD CONSTRAINT payment_intents_scope_money_unique
     UNIQUE (tenant_id, environment, id, amount_minor, currency);
@@ -175,7 +177,9 @@ CREATE TABLE payments.provider_event_inbox (
     ),
     received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     processed_at TIMESTAMPTZ,
+    CHECK ((processing_status = 'received') = (processed_at IS NULL)),
     UNIQUE (tenant_id, environment, inbox_id),
+    UNIQUE (tenant_id, environment, inbox_id, event_id),
     UNIQUE (
         provider_code, provider_account_reference, provider_event_id
     ),
@@ -208,8 +212,8 @@ CREATE TABLE payments.provider_event_deliveries (
     producer_identity TEXT NOT NULL CHECK (char_length(producer_identity) BETWEEN 1 AND 256),
     disposition TEXT NOT NULL CHECK (disposition IN ('accepted', 'duplicate', 'rejected')),
     received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    FOREIGN KEY (tenant_id, environment, inbox_id)
-        REFERENCES payments.provider_event_inbox (tenant_id, environment, inbox_id)
+    FOREIGN KEY (tenant_id, environment, inbox_id, event_id)
+        REFERENCES payments.provider_event_inbox (tenant_id, environment, inbox_id, event_id)
 );
 
 CREATE INDEX payment_event_deliveries_inbox_time_idx
