@@ -213,9 +213,6 @@ pub(super) fn map_error(error: PaymentServiceError) -> Status {
         PaymentServiceError::Domain(
             crate::domain::payment_intent::PaymentIntentError::NotFound,
         ) => Status::not_found("payment intent was not found"),
-        PaymentServiceError::AttemptAlreadyExists => {
-            Status::already_exists("a payment attempt already exists for this intent")
-        }
         PaymentServiceError::Lifecycle(
             crate::domain::payment_lifecycle::LifecycleModelError::IdentifierInvalid
             | crate::domain::payment_lifecycle::LifecycleModelError::AttemptNotSubmitted
