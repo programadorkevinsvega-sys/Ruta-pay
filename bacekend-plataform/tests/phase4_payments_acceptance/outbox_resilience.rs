@@ -263,7 +263,7 @@ async fn lifecycle_outbox_event_types_are_acknowledged_by_real_jetstream() {
     }
     let jetstream = connect_jetstream().await;
     let (namespace, topology) = topology();
-    let stream = topology
+    let mut stream = topology
         .ensure_stream(&jetstream)
         .await
         .expect("stream accepts the lifecycle event subject namespace");
