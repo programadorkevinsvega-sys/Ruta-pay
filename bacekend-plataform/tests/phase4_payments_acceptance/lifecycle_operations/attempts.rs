@@ -30,7 +30,9 @@ async fn attempt_creation_is_idempotent_under_concurrency_and_disallows_unapprov
         let (attempt, replayed) = result
             .expect("concurrent task completes")
             .expect("concurrent idempotent creation succeeds");
-        first_creations += usize::from(!replayed);
+        if !replayed {
+            first_creations += 1;
+        }
         assert_eq!(attempt.attempt_number, 1);
         if let Some(expected) = attempt_id {
             assert_eq!(attempt.id, expected);
