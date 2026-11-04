@@ -52,7 +52,7 @@ El contrato de plataforma consume estados neutrales; no contiene nombres de esta
 
 ### 5. Idempotencia, resultado incierto y reconciliación
 
-- La clave de deduplicación externa será proveedor + referencia de cuenta + ID estable del evento. No se mezcla con la idempotencia comercial de creación del Payment Intent.
+- La clave de deduplicación externa será tenant + entorno + proveedor + referencia de cuenta + ID estable del evento. No se mezcla con la idempotencia comercial de creación del Payment Intent.
 - El futuro inbox persistirá solo campos normalizados, hash del cuerpo original y metadatos necesarios de auditoría; no guardará payload crudo de proveedor.
 - Un timeout de resultado incierto no habilita un nuevo cobro. Se conserva el intento con `outcome_unknown` y se abre una necesidad durable de reconciliación.
 - La reconciliación consulta al proveedor por una referencia identificable y aplica el resultado dentro de una transacción, con control de versión/duplicado. Si no existe capacidad de consulta confiable, el caso queda en revisión; no se inventa un fallo ni se reintenta el cargo.
@@ -74,7 +74,7 @@ La rama `feat/phase-4-payment-lifecycle-persistence` añade una migración aditi
 
 - `payments.payment_attempts` conserva tenant/entorno/intent, secuencia positiva, proveedor/cuenta, estado, versión del agregado y último timestamp aplicado. Una clave única serializa la secuencia por Payment Intent.
 - `payments.payment_transactions` enlaza intent y attempt mediante claves foráneas compuestas. La relación incluye tenant, entorno, proveedor y cuenta; el importe y moneda se referencian también contra el Payment Intent. Un trigger rechaza crear una transacción cuando el attempt todavía está en `created`.
-- `payments.provider_event_inbox` conserva solo el envelope normalizado, hash SHA-256 y metadatos necesarios; deduplica por proveedor + cuenta + provider_event_id. No almacena el body crudo, firmas ni secretos.
+- `payments.provider_event_inbox` conserva solo el envelope normalizado, hash SHA-256 y metadatos necesarios; deduplica por tenant + entorno + proveedor + cuenta + provider_event_id. No almacena el body crudo, firmas ni secretos.
 - `payments.provider_event_deliveries` conserva la traza por entrega. Las entregas aceptadas/duplicadas se vinculan por tenant/entorno al inbox canónico aunque el event_id de una reentrega difiera; las entregas rechazadas pueden conservarse sin crear un registro de evento confiable.
 - `payments.payment_reconciliation_cases` y `payment_reconciliation_attempts` almacenan casos pendientes/leased/manual review, leases recuperables e historial de consultas/resultados/evidencia.
 - Las seis tablas nuevas aplican ENABLE y FORCE RLS sobre `app.tenant_id`; las relaciones usan tenant y entorno en sus claves. La prueba de integración usa un rol runtime sin BYPASSRLS.
