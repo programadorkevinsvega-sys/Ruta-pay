@@ -65,42 +65,54 @@ La indisponibilidad de un stream/subject se prueba mediante rechazo real de JetS
 
 ## 3. Alcance B — Transacciones e intentos
 
-**Estado:** la base de dominio/contrato fue verificada por CI #942 sobre `c036f0010fa8140b1a8809ffa2d6be3c3e190f71`. En la rama `feat/phase-4-payment-lifecycle-persistence` se añadió la migración `202611040001_payment_lifecycle_storage.sql` y la aceptación PostgreSQL `lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_integrity`. El código de esta ampliación aún está **pendiente de ejecución CI**; no se presenta como verificado ni operativo.
+**Estado:** PR #12 agrega persistencia, repositorios/casos de uso, auditoría/Outbox y API HTTP→BFF→gRPC para el slice inicial de attempts/transactions. Las nuevas pruebas PostgreSQL y HTTP están añadidas; su ejecución sobre el HEAD final aún está pendiente de CI. No se declara cerrada Fase 4.
 
 | Área | Implementación disponible | Estado real |
 |---|---|---|
-| Payment Intent | La migración nueva amplía el CHECK al ciclo canónico (`created`, `processing`, `requires_action`, `authorized`, `succeeded`, `outcome_unknown`), permite `aggregate_version` creciente y añade `updated_at`/`last_event_at`, además de la FK compuesta tenant/entorno/id/importe/moneda. | El schema admite los estados y versiones; todavía no hay servicio que aplique guards y escriba esas transiciones atómicamente. |
-| Payment Attempt | Nueva tabla con tenant, entorno, intent, secuencia positiva, proveedor/cuenta opacos, estado canónico, versión y timestamp del último evento; FK compuesta y unicidad de secuencia por intent. | Schema y RLS añadidos en esta rama; integración CI pendiente; repositorio/use case de escritura/consulta todavía no existe. |
-| Payment Transaction | Nueva tabla con relación compuesta a intent y attempt, proveedor/cuenta, referencia externa, importe/moneda y estados canónicos. El importe/moneda deben coincidir con el intent. Un trigger impide insertar/cambiar la relación hacia un attempt que siga en `created`. | Constraints y RLS añadidos; aceptación CI pendiente. Los guards de transición aún no se aplican desde un reducer PostgreSQL. |
-| Inbox normalizado | Nueva tabla con event_id interno, dedupe por tenant+entorno+proveedor+cuenta+provider_event_id, hash SHA-256, timestamp de proveedor, correlación e identidad declarada del productor; no almacena body crudo ni `outcome_unknown` como estado del proveedor. | Schema y RLS añadidos; todavía no hay RPC/consumer ni código que escriba el inbox. El campo de identidad es dato de auditoría, no autenticación. |
-| Trazabilidad de entregas | Tabla separada para registrar cada entrega vinculada a su evento canónico, con productor y disposición; FK compuesta garantiza que inbox_id y event_id coincidan. | Schema añadido; no hay handler de entregas autenticado. |
-| Reconciliación durable | Caso por attempt con lease/status/next_attempt_at y restricción de un caso abierto; historial de consultas con resultado clasificado, hash de evidencia y error seguro. | Schema añadido; no hay worker, provider client, consulta autoritativa ni resolución de estado implementados. |
-| RLS | Las seis tablas nuevas aplican ENABLE + FORCE RLS con `app.tenant_id`; los FKs incluyen tenant/entorno para impedir relaciones cross-tenant o cross-environment. | Test PostgreSQL real añadido para visibilidad cross-tenant en las seis tablas, sujeto a CI. |
-| API y contratos | Protobuf/RPC y HTTP solo exponen create/get Payment Intent existentes. | Crear/consultar attempts/transactions y actualizar estados persistidos continúan pendientes. |
-| Callback y proveedor | Gateway continúa siendo scaffold sin adapters ni callback ingress. mTLS/grants están asignados a Fase 5. | Fail-closed: no se expone ingestión; no hay integración/sandbox real que certificar. |
+| Payment Intent | La migración amplía el CHECK a estados canónicos, permite aggregate_version creciente y conserva updated_at/last_event_at. El use case aplica guards para created → processing y processing → outcome_unknown, con control optimista de versión. | Intent y attempt se actualizan en una transacción PostgreSQL; estados terminales del proveedor requieren evento verificado. Aceptación pendiente de CI. |
+| Payment Attempt | Tabla con tenant/entorno/intent, secuencia, proveedor/cuenta, estado/version. Create/list conectados al PaymentService; SHA-256 de request + idempotency key por intent; parent row FOR UPDATE para serializar concurrencia. | Primer intento idempotente; una segunda clave se rechaza hasta aprobar política comercial de retries. Lecturas y mutaciones quedan auditadas. Aceptación pendiente de CI. |
+| Payment Transaction | Tabla con FK compuestas a intent/attempt, proveedor/cuenta y consistencia de importe/moneda; trigger impide transacción sobre attempt created. List API filtra por tenant/entorno/intent. | Query conectada. Crear/actualizar transacciones continúa reservado a la frontera de evento de proveedor autenticado; no se simulan respuestas. Aceptación pendiente de CI. |
+| Inbox normalizado | Deduplicación por tenant+entorno+proveedor+cuenta+provider_event_id, hash SHA-256, timestamp, correlación y envelope normalizado; no guarda body crudo. | Persistencia idempotente y constraint único incluidos. No se habilita RPC/consumer de ingreso: producer_identity es dato de auditoría, no autenticación. |
+| Trazabilidad de entregas | provider_event_deliveries registra accepted/duplicate/rejected y vincula reentregas con el evento canónico. | Persistencia y constraints incluidos; sin handler de ingreso autenticado hasta completar callback verification + mTLS/signed grants. |
+| Reconciliación durable | Caso por attempt con estado/lease, restricción de caso abierto e historial de consultas/evidencias. La transición a outcome_unknown crea caso y evento Outbox. | Alta durable inicial implementada; worker, consulta autoritativa y resolución permanecen bloqueados por falta de adapter/capacidad autenticada. |
+| RLS / constraints | ENABLE + FORCE RLS en las seis tablas; FK compuestas de tenant/entorno/intent/attempt/monto/moneda/proveedor/cuenta; secuencia única e inbox idempotente. | Prueba PostgreSQL real con runtime role sin BYPASSRLS para visibilidad cross-tenant y constraints; CI final pendiente. |
+| Auditoría | Creación/replay/lectura de attempts, consulta de transactions y transiciones de intent/attempt con actor API key, recurso, correlación y detalles acotados. | Auditoría escrita dentro de la transacción de negocio; rollback por fallo Outbox evita filas parciales. CI final pendiente. |
+| Outbox | payment_attempt.created, cambios de estado de intent/attempt y payment.reconciliation.requested con aggregate_version y correlation ID. | Escrituras atómicas con estado/auditoría; test induce error real de Outbox y verifica rollback. CI final pendiente. |
+| API / contratos | RPCs CreatePaymentAttempt, ListPaymentAttempts, ListPaymentTransactions y UpdatePaymentIntentStatus; BFF POST/GET attempts, GET transactions, PATCH status y OpenAPI. | Casos de uso, contratos y endpoints añadidos; aceptación HTTP real del HEAD final pendiente de CI. |
+| Scopes | payment_attempts.create, payment_attempts.read, payment_transactions.read y payment_intents.update. | identity_access autoriza cada RPC con su scope; test HTTP incluye scope insuficiente. CI final pendiente. |
+| Gateway / proveedor | No se expone ingestión de NormalizedProviderPaymentEventV1. | Callback verification/anti-replay pertenece al adapter; mTLS/signed grants cross-backend permanecen en Fase 5. |
 
-### 3.1. Trazabilidad de pruebas del modelo de dominio
+### 3.1. Trazabilidad de pruebas
 
-| Requisito técnico | Test | Evidencia/limitación |
+| Requisito | Test | Cobertura / estado |
 |---|---|---|
-| Mapear estados canónicos sin códigos específicos de proveedor | `normalized_status_maps_without_provider_specific_codes` | Unit test verificado en CI #942; no valida mapping en adapter. |
-| Transiciones forward-only y conflictos terminales | `transitions_are_forward_only_and_terminal_conflicts_need_reconciliation`; `transaction_status_is_guarded_and_terminal_state_is_immutable` | Unit tests verificados en CI #942; todavía no hay reducer persistente. |
-| Resolver `outcome_unknown` solo por reconciliación | `outcome_unknown_requires_reconciliation_to_resolve`; `only_platform_timeout_can_enter_outcome_unknown` | Unit tests verificados en CI #942; no consultan a proveedor real. |
-| Rechazar timestamps iguales/anteriores | `provider_event_timestamps_must_be_strictly_monotonic` | Unit test verificado en CI #942; depende de timestamp de un adapter verificado. |
-| Persistir intent, attempt, transaction, inbox, delivery y reconciliation en PostgreSQL | `lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_integrity` | Test de aceptación añadido en esta rama: escritura transaccional en PostgreSQL real, RLS cross-tenant sobre seis tablas, dedupe externo, entregas aceptadas/rechazadas, relación de ownership, rechazo de transacción sobre attempt `created`, unicidad de caso abierto y ausencia de fila tras rollback. **Pendiente de ejecución CI.** |
-| Conservar importe/moneda y ownership | Constraints compuestas y trigger de `payment_transactions` | Implementados en SQL; pendientes de ejecución de migración/aceptación en CI. |
-| Inbox seguro/idempotente | Constraint tenant+environment+provider+account+provider_event_id | La persistencia deduplica claves externas; la autenticación del productor y el procesamiento idempotente aún no existen. No aceptar eventos hasta que exista frontera autenticada. |
+| Ownership, RLS, constraints, inbox duplicado, deliveries, caso único, attempt no enviado y rollback | lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_integrity y concurrent_provider_event_deliveries_create_one_canonical_inbox_row | PostgreSQL real, seis tablas, rol runtime restringido, replay y carrera concurrente sobre la clave externa del inbox; CI del HEAD final pendiente. |
+| Creación de attempt, idempotency key/fingerprint, replay y retry guard | attempt_creation_is_idempotent_under_concurrency_and_disallows_unapproved_retries | 12 llamadas concurrentes, una sola creación, replay estable, conflicto por request distinta y segundo intento bloqueado; CI final pendiente. |
+| Estado concurrente, aggregate_version y caso outcome_unknown | status_transitions_are_guarded_atomic_and_create_durable_reconciliation | Actualización concurrente idempotente, transacción asociada, caso durable y Outbox; CI final pendiente. |
+| Rollback de estado/auditoría/Outbox | failed_outbox_write_rolls_back_attempt_intent_and_audit_changes | Trigger PostgreSQL induce fallo real; verifica que intent, attempt, versiones y auditoría no queden parcialmente modificados; CI final pendiente. |
+| API HTTP→BFF→gRPC→identity_access→payments | payment_attempt_and_transaction_apis_cross_http_bff_grpc_and_payments_module | Create/replay/list attempts, list transactions, PATCH status, scopes, cross-tenant, versión obsoleta y resultado final falsificado; CI final pendiente. |
+| Guards del dominio y timestamps | Unit tests de ADR-0011 | Verificados en CI #942; no prueban adapters/proveedor real. |
+| Relay Outbox/JetStream | payment_intent_outbox_is_published_deduplicated_and_recoverable_in_realtime, outbox_resilience y lifecycle_outbox_event_types_are_acknowledged_by_real_jetstream | Verifica relay/leases/ACK y publica por JetStream real payment_attempt.created, payment_intent.status_changed, payment_attempt.status_changed y payment.reconciliation.requested; CI del HEAD final pendiente. |
 
-### 3.2. Lo que esta ampliación no habilita
+### 3.2. Límites que permanecen cerrados
 
-- No añade endpoints/RPC ni casos de uso de attempts o transactions.
-- No aplica transiciones de estado, auditoría y Outbox de ciclo de vida desde un servicio transaccional; la migración reutiliza las tablas de auditoría/Outbox existentes sin afirmar que el flujo esté conectado.
-- No habilita RPC/consumer de `NormalizedProviderPaymentEventV1`. Callback verification/anti-replay pertenece al adapter real de pasarela; mTLS/grants de productor continúan en Fase 5.
-- No ejecuta consultas al proveedor ni resuelve `outcome_unknown`. El caso durable y el historial de consulta son almacenamiento, no una reconciliación operativa.
-- No habilita cobros, captura, cancelación, expiración, reintentos comerciales, cambio de proveedor ni refunds. B-EC-07..13 siguen sujetos a aprobación.
-- No certifica el alcance A de suscripciones y facturación SaaS.
+- La persistencia del inbox deduplica deliveries, pero no existe RPC/consumer que acepte eventos normalizados. producer_identity no autentica al emisor.
+- No se ejecutan consultas al proveedor ni se resuelve outcome_unknown. El caso durable sí se crea en la misma transacción de la transición a resultado incierto; la consulta y resolución autoritativa quedan pendientes.
+- La API del tenant solo permite created → processing (OperationSubmitted) y processing → outcome_unknown (OperationTimeout), con aggregate_version esperado. No permite afirmar authorized, succeeded o failed con una API key de tenant.
+- No se habilitan captura, cancelación, expiración, reintentos comerciales, cambio de proveedor ni refunds mientras B-EC-07..13 sigan pendientes.
+- El alcance A de suscripciones/facturación SaaS continúa independiente y pendiente.
+- Callback verification/anti-replay corresponde al adapter real de pasarela; mTLS/signed grants cross-backend continúan en Fase 5.
 
-La migración es aditiva: el rollback de una versión de aplicación consiste en volver al binario anterior y conservar las tablas/registros financieros; no se ejecuta un DROP automático de datos de ciclo de pagos. Antes de activar cualquier flujo nuevo se requieren repositorios, casos de uso, API, autenticación y aceptación adicional.
+### 3.3. API, contratos y scopes
+
+| Operación | RPC | Endpoint BFF | Scope |
+|---|---|---|---|
+| Crear Payment Attempt | CreatePaymentAttempt | POST /v1/tenants/{tenant_id}/payment-intents/{payment_intent_id}/attempts | payment_attempts.create |
+| Consultar attempts | ListPaymentAttempts | GET /v1/tenants/{tenant_id}/payment-intents/{payment_intent_id}/attempts | payment_attempts.read |
+| Consultar transactions | ListPaymentTransactions | GET /v1/tenants/{tenant_id}/payment-intents/{payment_intent_id}/transactions | payment_transactions.read |
+| Actualizar estado del intent | UpdatePaymentIntentStatus | PATCH /v1/tenants/{tenant_id}/payment-intents/{payment_intent_id}/status | payment_intents.update |
+
+La prueba payment_attempt_and_transaction_apis_cross_http_bff_grpc_and_payments_module atraviesa HTTP real → BFF → gRPC → identity_access → payments → PostgreSQL. La matriz registra requisito → test → ejecución CI. PR #12 no se considera verificado hasta que los checks pasen sobre su HEAD final.
 
 ## 4. Alcance A — Suscripciones y facturación SaaS de Payvia
 

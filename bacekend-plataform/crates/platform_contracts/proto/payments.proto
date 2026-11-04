@@ -4,6 +4,10 @@ package payvia.platform.payments.v1;
 service Payments {
   rpc CreatePaymentIntent (CreatePaymentIntentRequest) returns (CreatePaymentIntentResponse);
   rpc GetPaymentIntent (GetPaymentIntentRequest) returns (GetPaymentIntentResponse);
+  rpc CreatePaymentAttempt (CreatePaymentAttemptRequest) returns (CreatePaymentAttemptResponse);
+  rpc ListPaymentAttempts (ListPaymentAttemptsRequest) returns (ListPaymentAttemptsResponse);
+  rpc ListPaymentTransactions (ListPaymentTransactionsRequest) returns (ListPaymentTransactionsResponse);
+  rpc UpdatePaymentIntentStatus (UpdatePaymentIntentStatusRequest) returns (UpdatePaymentIntentStatusResponse);
 }
 
 message PaymentIntent {
@@ -45,6 +49,95 @@ message GetPaymentIntentRequest {
 
 message GetPaymentIntentResponse {
   PaymentIntent payment_intent = 1;
+}
+
+message CreatePaymentAttemptRequest {
+  string api_key_secret = 1;
+  string tenant_id = 2;
+  string environment = 3;
+  string payment_intent_id = 4;
+  string provider_code = 5;
+  string provider_account_reference = 6;
+  string idempotency_key = 7;
+  string correlation_id = 8;
+}
+
+message PaymentAttempt {
+  string attempt_id = 1;
+  string tenant_id = 2;
+  string environment = 3;
+  string payment_intent_id = 4;
+  int32 attempt_number = 5;
+  string provider_code = 6;
+  string provider_account_reference = 7;
+  string status = 8;
+  int64 aggregate_version = 9;
+  string created_at = 10;
+  string updated_at = 11;
+}
+
+message CreatePaymentAttemptResponse {
+  PaymentAttempt attempt = 1;
+  bool replayed = 2;
+}
+
+message ListPaymentAttemptsRequest {
+  string api_key_secret = 1;
+  string tenant_id = 2;
+  string environment = 3;
+  string payment_intent_id = 4;
+  int32 limit = 5;
+  string correlation_id = 6;
+}
+
+message ListPaymentAttemptsResponse {
+  repeated PaymentAttempt attempts = 1;
+}
+
+message PaymentTransaction {
+  string transaction_id = 1;
+  string tenant_id = 2;
+  string environment = 3;
+  string payment_intent_id = 4;
+  string payment_attempt_id = 5;
+  string provider_code = 6;
+  string provider_account_reference = 7;
+  string provider_transaction_reference = 8;
+  int64 amount_minor = 9;
+  string currency = 10;
+  string status = 11;
+  int64 aggregate_version = 12;
+  string created_at = 13;
+  string updated_at = 14;
+}
+
+message ListPaymentTransactionsRequest {
+  string api_key_secret = 1;
+  string tenant_id = 2;
+  string environment = 3;
+  string payment_intent_id = 4;
+  int32 limit = 5;
+  string correlation_id = 6;
+}
+
+message ListPaymentTransactionsResponse {
+  repeated PaymentTransaction transactions = 1;
+}
+
+message UpdatePaymentIntentStatusRequest {
+  string api_key_secret = 1;
+  string tenant_id = 2;
+  string environment = 3;
+  string payment_intent_id = 4;
+  string payment_attempt_id = 5;
+  string status = 6;
+  int64 expected_version = 7;
+  string correlation_id = 8;
+}
+
+message UpdatePaymentIntentStatusResponse {
+  PaymentIntent payment_intent = 1;
+  int64 aggregate_version = 2;
 }
 
 // This is a normalized integration contract, not proof of producer authenticity.

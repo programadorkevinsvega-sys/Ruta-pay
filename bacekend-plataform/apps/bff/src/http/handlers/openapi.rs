@@ -25,6 +25,10 @@ use utoipa::OpenApi;
         super::identity::api_keys::revoke_api_key,
         super::payments::create_payment_intent,
         super::payments::get_payment_intent,
+        super::payments::create_payment_attempt,
+        super::payments::list_payment_attempts,
+        super::payments::list_payment_transactions,
+        super::payments::update_payment_intent_status,
         super::tenant::register,
         super::tenant::get,
         super::tenant::list_for_operator,
@@ -54,7 +58,14 @@ use utoipa::OpenApi;
         super::catalog::PriceView,
         super::catalog::EntitlementView,
         super::payments::NewPaymentIntent,
-        super::payments::PaymentIntentView
+        super::payments::PaymentIntentView,
+        super::payments::attempts::NewPaymentAttempt,
+        super::payments::attempts::PaymentAttemptView,
+        super::payments::attempts::PaymentAttemptList,
+        super::payments::transactions::PaymentTransactionView,
+        super::payments::transactions::PaymentTransactionList,
+        super::payments::status::NewPaymentIntentStatus,
+        super::payments::status::PaymentIntentStatusView
     ))
 )]
 pub struct ApiDocument;

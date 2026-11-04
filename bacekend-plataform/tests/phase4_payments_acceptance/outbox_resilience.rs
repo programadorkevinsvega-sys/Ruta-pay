@@ -248,3 +248,47 @@ async fn permanent_outbox_errors_are_quarantined_without_retrying_forever() {
     );
     database.finish().await;
 }
+
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn lifecycle_outbox_event_types_are_acknowledged_by_real_jetstream() {
+    let database = TestDatabase::new().await;
+    let event_types = [
+        "payment_attempt.created",
+        "payment_intent.status_changed",
+        "payment_attempt.status_changed",
+        "payment.reconciliation.requested",
+    ];
+    for event_type in event_types {
+        insert_event(&database.runtime_pool, event_type).await;
+    }
+    let jetstream = connect_jetstream().await;
+    let (namespace, topology) = topology();
+    let stream = topology
+        .ensure_stream(&jetstream)
+        .await
+        .expect("stream accepts the lifecycle event subject namespace");
+
+    let delivered =
+        outbox_relay::relay_batch(&database.runtime_pool, &jetstream, &topology.subject_prefix)
+            .await
+            .expect("relay publishes all lifecycle events to JetStream");
+    assert_eq!(delivered, event_types.len());
+
+    let published: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM payments.outbox_events WHERE event_type = ANY($1) AND published_at IS NOT NULL",
+    )
+    .bind(event_types.iter().map(|event_type| (*event_type).to_owned()).collect::<Vec<_>>())
+    .fetch_one(&database.migration_pool)
+    .await
+    .expect("lifecycle publish ACKs are persisted");
+    assert_eq!(published, event_types.len() as i64);
+
+    let info = stream.info().await.expect("stream info is readable");
+    assert_eq!(info.state.messages, event_types.len() as u64);
+
+    delete_e2e_stream(&jetstream, &namespace)
+        .await
+        .expect("only this isolated lifecycle stream is deleted");
+    database.finish().await;
+}

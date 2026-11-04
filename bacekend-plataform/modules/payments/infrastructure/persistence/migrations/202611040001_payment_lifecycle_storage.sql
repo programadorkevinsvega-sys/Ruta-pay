@@ -377,3 +377,24 @@ CREATE POLICY payment_reconciliation_attempts_tenant_isolation
     ON payments.payment_reconciliation_attempts
     USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
     WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
+
+
+-- API-created attempts use a caller idempotency key scoped to the intent.
+-- Existing rows created by trusted internal lifecycle operations may leave it NULL.
+ALTER TABLE payments.payment_attempts
+    ADD COLUMN idempotency_key TEXT
+        CHECK (
+            idempotency_key IS NULL OR
+            (char_length(idempotency_key) BETWEEN 1 AND 128
+                AND idempotency_key !~ '[[:cntrl:]]')
+        ),
+    ADD COLUMN request_hash BYTEA
+        CHECK (request_hash IS NULL OR octet_length(request_hash) = 32),
+    ADD CONSTRAINT payment_attempt_idempotency_pair_check
+        CHECK ((idempotency_key IS NULL) = (request_hash IS NULL));
+
+CREATE UNIQUE INDEX payment_attempt_idempotency_unique
+    ON payments.payment_attempts (
+        tenant_id, environment, payment_intent_id, idempotency_key
+    )
+    WHERE idempotency_key IS NOT NULL;

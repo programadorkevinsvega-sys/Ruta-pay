@@ -273,3 +273,6 @@ async fn invalid_payment_intents_are_rejected_before_any_business_write() {
 async fn payment_intent_outbox_is_published_deduplicated_and_recoverable_in_realtime() {
     jetstream_acceptance::verify().await;
 }
+
+#[path = "phase4_payments_acceptance/lifecycle_operations.rs"]
+mod lifecycle_operations;
