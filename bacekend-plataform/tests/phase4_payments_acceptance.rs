@@ -1,3 +1,5 @@
+#[path = "phase4_payments_acceptance/lifecycle_persistence.rs"]
+mod lifecycle_persistence;
 #[path = "phase4_payments_acceptance/database.rs"]
 mod database;
 #[path = "phase4_payments_acceptance/jetstream.rs"]
