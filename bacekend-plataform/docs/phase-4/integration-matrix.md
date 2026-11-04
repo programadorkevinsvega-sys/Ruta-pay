@@ -1,6 +1,6 @@
 # Fase 4 — Matriz de integración y evidencia
 
-**Estado:** implementación parcial en PR #11. CI #920 verificó la base de dominio/contrato del lifecycle sobre SHA `dd23a3aabf36fd9cc24e0a90b440a679dce46463`; la matriz distingue esas pruebas unitarias de la persistencia, integración externa y operación que siguen pendientes. No declara aceptación ni cierre de Fase 4.
+**Estado:** implementación parcial en PR #11 (rama `feat/phase-4-payment-lifecycle`). El HEAD `c036f0010fa8140b1a8809ffa2d6be3c3e190f71` pasó [CI #942](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41753921841), incluidos límite de 400 líneas, formato, Clippy, tests del workspace, ambos frontends, E2E y checks documentales. La matriz distingue la base de dominio/contrato verificada de la persistencia, integración externa y operación que siguen pendientes. No declara aceptación ni cierre de Fase 4.
 
 ## 1. Regla de evidencia
 
@@ -65,16 +65,16 @@ La indisponibilidad de un stream/subject se prueba mediante rechazo real de JetS
 
 ## 3. Alcance B — Transacciones e intentos
 
-**Estado:** primera base de dominio Rust y contrato Protobuf neutral implementados y verificados por CI #920 sobre SHA `dd23a3aabf36fd9cc24e0a90b440a679dce46463`. No existe todavía persistencia, caso de uso, API, consumidor ni ingestión confiable de resultados de proveedor. El ciclo operativo sigue abierto.
+**Estado:** primera base de dominio Rust y contrato Protobuf neutral implementados y verificados en el HEAD `c036f0010fa8140b1a8809ffa2d6be3c3e190f71` por [CI #942](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41753921841). No existe todavía persistencia, caso de uso, API, consumidor ni ingestión confiable de resultados de proveedor. El ciclo operativo sigue abierto.
 
 | Área | Diseño/implementación disponible | Estado real |
 |---|---|---|
 | Payment Intent | Continúa persistido únicamente en `created` por el slice ADR-0010. El modelo de lifecycle define estados de proyección, sin ampliar todavía la migración ni mutar la tabla. | Creación/consulta implementada; transiciones persistidas pendientes. |
-| Payment Attempt | `domain/payment_attempt.rs` define identidad interna, tenant, intent, entorno, número secuencial, proveedor/cuenta opacos y estado inicial `created`; valida secuencia y referencias. | Modelo de dominio y test unitario verificados en CI #920; sin tabla, RLS ni use case. |
-| Payment Transaction | `domain/payment_transaction.rs` define identidad interna, vínculo con intent/attempt, proveedor/cuenta/referencia externa, importe entero, moneda y estado inicial `pending`. | Modelo y tests unitarios verificados en CI #920; sin tabla, constraints ni persistencia. |
-| Guards y estados | `domain/payment_lifecycle.rs` separa estados de intent/attempt/transaction, transiciones forward-only, inicio de operación reservado a `OperationSubmitted`, timeout permitido solo sobre operaciones enviadas/en curso y `outcome_unknown` resoluble solo por reconciliación. Fallo de un intento no se proyecta automáticamente a fallo del intent. | Unit tests verificados en CI #920; aún no aplicados dentro de transacciones PostgreSQL. |
-| Orden de eventos tardíos | Exige timestamp del proveedor estrictamente mayor al último timestamp aplicado; timestamps viejos o iguales no se aplican automáticamente. Conflictos terminales requieren reconciliación. | Guard unitario; falta inbox durable, control de versión y test concurrente PostgreSQL. |
-| Estado normalizado proveedor | `NormalizedProviderPaymentEventV1` y enum neutral en `crates/platform_contracts/proto/payments.proto`. `outcome_unknown` es estado interno de plataforma, no un estado del proveedor. | Contrato/schema y codegen verificados en CI #920; no hay traducción de status específico ni adapter en plataforma. Mapping de proveedor pertenece al adapter gateway. |
+| Payment Attempt | `domain/payment_attempt.rs` define identidad interna, tenant, intent, entorno, número secuencial, proveedor/cuenta opacos y estado inicial `created`; valida secuencia y referencias. | Modelo de dominio y test unitario verificados en CI #942; sin tabla, RLS ni use case. |
+| Payment Transaction | `domain/payment_transaction.rs` define identidad interna, vínculo con intent/attempt, proveedor/cuenta/referencia externa, importe entero, moneda y estado inicial `pending`. El constructor rechaza intentos aún en `created` y valida el ownership del vínculo. | Modelo y tests unitarios verificados en CI #942; sin tabla, constraints ni persistencia. |
+| Guards y estados | `domain/payment_lifecycle.rs` separa estados de intent/attempt/transaction, transiciones forward-only, inicio de operación reservado a `OperationSubmitted`, timeout permitido solo sobre operaciones enviadas/en curso, `outcome_unknown` resoluble solo por reconciliación y transición de transacción `Pending → Authorized → Succeeded`. El fallo de un intento no se proyecta automáticamente a fallo del intent. | Unit tests verificados en CI #942; aún no aplicados dentro de transacciones PostgreSQL. |
+| Orden de eventos tardíos | Exige timestamp del proveedor estrictamente mayor al último timestamp aplicado; timestamps viejos o iguales no se aplican automáticamente. Conflictos terminales requieren reconciliación. | Guard unitario verificado en CI #942; falta inbox durable, control de versión y test concurrente PostgreSQL. |
+| Estado normalizado proveedor | `NormalizedProviderPaymentEventV1` y enum neutral en `crates/platform_contracts/proto/payments.proto`. `outcome_unknown` es estado interno de plataforma, no un estado del proveedor. | Contrato/schema y codegen verificados en CI #942; no hay traducción de status específico ni adapter en plataforma. Mapping de proveedor pertenece al adapter gateway. |
 | Callback verificado | El mensaje de Protobuf no prueba identidad ni firma. No se añadió RPC/HTTP o consumer que acepte callbacks. | Bloqueado hasta que gateway verifique firma/anti-replay y exista identidad autenticada del productor. |
 | Deduplicación | La decisión técnica reserva proveedor + cuenta + provider event ID como clave externa, distinta de la idempotencia de create intent. | ADR documentada; no hay event inbox/constraint ni persistencia. |
 | Resultado incierto | El modelo mantiene `outcome_unknown` separado de rechazo/fallo; solo autoridad de reconciliación puede resolverlo. | Guard unitario; no hay timeout de operación de proveedor ni estado persistido. |
@@ -85,14 +85,14 @@ La indisponibilidad de un stream/subject se prueba mediante rechazo real de JetS
 
 | Requisito técnico | Test | Evidencia/limitación |
 |---|---|---|
-| Mapear estados canónicos sin códigos específicos de proveedor | `normalized_status_maps_without_provider_specific_codes` | Unit test de dominio; no valida mapping en adapter. |
-| Transiciones forward-only y conflictos terminales | `transitions_are_forward_only_and_terminal_conflicts_need_reconciliation` | Unit test; no hay reducer persistente. |
-| Resolver `outcome_unknown` solo por reconciliación | `outcome_unknown_requires_reconciliation_to_resolve` | Unit test; no consulta un proveedor real. |
-| Rechazar timestamps iguales/anteriores | `provider_event_timestamps_must_be_strictly_monotonic` | Unit test; asume timestamp fiable proveniente del adapter verificado. |
-| Secuencia de intento y proveedor válido | `attempt_requires_positive_sequence_and_normalized_provider_code` | Unit test de constructor. |
-| Dinero y estado inicial de transacción | `transaction_rejects_invalid_money`, `transaction_starts_pending_with_valid_financial_identity` | Unit tests de constructor/modelo. |
+| Mapear estados canónicos sin códigos específicos de proveedor | `normalized_status_maps_without_provider_specific_codes` | Unit test de dominio verificado en CI #942; no valida mapping en adapter. |
+| Transiciones forward-only y conflictos terminales | `transitions_are_forward_only_and_terminal_conflicts_need_reconciliation`; `transaction_status_is_guarded_and_terminal_state_is_immutable` | Unit tests verificados en CI #942, incluyendo `Pending → Authorized → Succeeded` y rechazo de una transición contradictoria desde estado terminal; no hay reducer persistente. |
+| Resolver `outcome_unknown` solo por reconciliación | `outcome_unknown_requires_reconciliation_to_resolve`; `only_platform_timeout_can_enter_outcome_unknown` | Unit tests verificados en CI #942; no ejecutan consulta a un proveedor real. |
+| Rechazar timestamps iguales/anteriores | `provider_event_timestamps_must_be_strictly_monotonic` | Unit test verificado en CI #942; asume timestamp fiable proveniente del adapter verificado. |
+| Secuencia de intento y proveedor válido | `attempt_requires_positive_sequence_and_normalized_provider_code` | Unit test de constructor verificado en CI #942. |
+| Dinero, referencia y estado inicial de transacción | `transaction_rejects_invalid_provider_reference_and_money`; `transaction_starts_pending_and_inherits_intent_money_and_attempt_identity` | Unit tests de constructor/modelo verificados en CI #942. |
 
-**Evidencia CI #920:** [ejecución](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41724333384) exitosa sobre SHA `dd23a3aabf36fd9cc24e0a90b440a679dce46463`. Pasaron límite de 400 líneas, `cargo fmt --all -- --check`, Clippy con `-D warnings`, `cargo test --locked --workspace`, ambos frontends, E2E tenant/plataforma/multi-réplica y checks documentales. Esta ejecución valida únicamente el código y contrato incluidos en ese SHA.
+**Evidencia vigente:** [CI #942](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41753921841) terminó en success sobre el HEAD `c036f0010fa8140b1a8809ffa2d6be3c3e190f71`. Pasaron límite de 400 líneas, `cargo fmt --all -- --check`, Clippy con `-D warnings`, `cargo test --locked --workspace`, ambos frontends, E2E tenant/plataforma/multi-réplica y checks documentales. Esta ejecución valida el código y contrato incluidos en ese SHA; no acredita persistencia ni integración operativa del lifecycle.
 
 La presencia de modelos y tests unitarios no equivale a persistencia, integración HTTP/gRPC, callback autenticado ni aceptación cross-backend. La siguiente implementación para cerrar el ciclo requiere migraciones/RLS, use cases y pruebas PostgreSQL reales, además de la frontera segura y adapters reales indicados arriba.
 
