@@ -74,7 +74,7 @@ Esta entrega contiene únicamente:
 - modelos Rust `PaymentAttempt` y `PaymentTransaction` con validaciones de identidad/monto;
 - enums de estados normalizados y guards de transición/orden;
 - contrato Protobuf neutral `NormalizedProviderPaymentEventV1` sin método de ingestión;
-- pruebas unitarias de modelos, mapping neutral, transición, estado terminal, resultado incierto y orden de timestamps. **Verificado por [CI #920](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41724333384) sobre SHA `dd23a3aabf36fd9cc24e0a90b440a679dce46463`**, incluyendo límite de archivos, fmt, Clippy, tests del workspace, frontends y E2E.
+- pruebas unitarias de modelos, mapping neutral, transiciones, estado terminal, ownership entre intent/attempt, resultado incierto y orden de timestamps. `transaction_status_is_guarded_and_terminal_state_is_immutable` verifica `Pending → Authorized → Succeeded` y rechaza el cambio contradictorio después del estado terminal. **Verificado en el HEAD `c036f0010fa8140b1a8809ffa2d6be3c3e190f71` por [CI #942](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41753921841)**: límite de 400 líneas, fmt, Clippy, tests del workspace, ambos frontends, E2E tenant/plataforma/multi-réplica y checks documentales.
 
 Continúa pendiente para cerrar el ciclo:
 1. Migraciones/tablas, RLS, constraints, idempotencia y persistencia transaccional de intentos, transacciones, inbox y casos de reconciliación.
