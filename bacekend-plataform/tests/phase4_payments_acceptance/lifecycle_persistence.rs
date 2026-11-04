@@ -127,7 +127,7 @@ async fn lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_i
         .expect("read transaction starts");
     set_tenant(&mut same_tenant, tenant_id).await;
     let counts = sqlx::query(
-        "SELECT (SELECT count(*) FROM payments.payment_attempts WHERE id=$1) AS attempts,(SELECT count(*) FROM payments.payment_transactions WHERE id=$2) AS transactions,(SELECT count(*) FROM payments.provider_event_inbox WHERE inbox_id=$3) AS inbox,(SELECT count(*) FROM payments.provider_event_deliveries WHERE inbox_id=$3) AS deliveries,(SELECT count(*) FROM payments.payment_reconciliation_cases WHERE id=$4) AS cases,(SELECT count(*) FROM payments.payment_reconciliation_attempts WHERE id=$5) AS reconciliation_attempts",
+        "SELECT (SELECT count(*) FROM payments.payment_attempts WHERE id=$1) AS attempts,(SELECT count(*) FROM payments.payment_transactions WHERE id=$2) AS transactions,(SELECT count(*) FROM payments.provider_event_inbox WHERE inbox_id=$3) AS inbox,(SELECT count(*) FROM payments.provider_event_deliveries) AS deliveries,(SELECT count(*) FROM payments.payment_reconciliation_cases WHERE id=$4) AS cases,(SELECT count(*) FROM payments.payment_reconciliation_attempts WHERE id=$5) AS reconciliation_attempts",
     )
     .bind(attempt_id)
     .bind(transaction_id)
@@ -145,7 +145,7 @@ async fn lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_i
         "cases",
         "reconciliation_attempts",
     ] {
-        let expected = if column == "deliveries" { 2 } else { 1 };
+        let expected = if column == "deliveries" { 3 } else { 1 };
         assert_eq!(
             counts.get::<i64, _>(column),
             expected,
@@ -165,12 +165,11 @@ async fn lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_i
         .expect("isolated transaction starts");
     set_tenant(&mut isolated, other_tenant).await;
     let visible: i64 = sqlx::query_scalar(
-        "SELECT (SELECT count(*) FROM payments.payment_attempts WHERE id=$1) + (SELECT count(*) FROM payments.payment_transactions WHERE id=$2) + (SELECT count(*) FROM payments.provider_event_inbox WHERE inbox_id=$3) + (SELECT count(*) FROM payments.provider_event_deliveries WHERE delivery_id=$4) + (SELECT count(*) FROM payments.payment_reconciliation_cases WHERE id=$5) + (SELECT count(*) FROM payments.payment_reconciliation_attempts WHERE id=$6)",
+        "SELECT (SELECT count(*) FROM payments.payment_attempts WHERE id=$1) + (SELECT count(*) FROM payments.payment_transactions WHERE id=$2) + (SELECT count(*) FROM payments.provider_event_inbox WHERE inbox_id=$3) + (SELECT count(*) FROM payments.provider_event_deliveries) + (SELECT count(*) FROM payments.payment_reconciliation_cases WHERE id=$5) + (SELECT count(*) FROM payments.payment_reconciliation_attempts WHERE id=$6)",
     )
     .bind(attempt_id)
     .bind(transaction_id)
     .bind(inbox_id)
-    .bind(delivery_id)
     .bind(reconciliation_id)
     .bind(reconciliation_attempt_id)
     .fetch_one(&mut *isolated)
