@@ -70,7 +70,7 @@ No se agregan estados, comandos ni endpoints para captura, cancelación, expirac
 
 ## 8. Persistencia relacional del lifecycle
 
-La rama `feat/phase-4-payment-lifecycle-persistence` añade una migración aditiva para materializar el ownership ya definido por esta ADR:
+La rama `feat/phase-4-payment-lifecycle-persistence` añade una migración aditiva para materializar el ownership ya definido por esta ADR. También sustituye el CHECK de estado de Payment Intent limitado a `created` por el conjunto canónico de esta ADR, permite incrementar `aggregate_version` y conserva `updated_at`/`last_event_at`; la aplicación de guards y transiciones desde casos de uso sigue pendiente:
 
 - `payments.payment_attempts` conserva tenant/entorno/intent, secuencia positiva, proveedor/cuenta, estado, versión del agregado y último timestamp aplicado. Una clave única serializa la secuencia por Payment Intent.
 - `payments.payment_transactions` enlaza intent y attempt mediante claves foráneas compuestas. La relación incluye tenant, entorno, proveedor y cuenta; el importe y moneda se referencian también contra el Payment Intent. Un trigger rechaza crear una transacción cuando el attempt todavía está en `created`.
