@@ -182,7 +182,10 @@ async fn status_transitions_are_guarded_atomic_and_create_durable_reconciliation
     .fetch_one(&database.migration_pool)
     .await
     .expect("attempt transition audit is queryable");
-    assert_eq!(attempt_audit_count, 2, "attempt audit rows identify the attempt resource");
+    assert_eq!(
+        attempt_audit_count, 2,
+        "attempt audit rows identify the attempt resource"
+    );
 
     let events: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM payments.outbox_events WHERE aggregate_id IN ($1,$2,$3)",
