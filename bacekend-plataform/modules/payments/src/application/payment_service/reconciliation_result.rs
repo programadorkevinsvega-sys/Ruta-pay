@@ -148,14 +148,19 @@ pub(super) async fn apply(
     if current_attempt == PaymentAttemptStatus::Created
         || current_attempt == PaymentAttemptStatus::Authorized && status == "failed"
     {
-        return record_conflict(&mut tx, &mut event, "provider_attempt_state_conflict").await;
+        let disposition =
+            record_conflict(&mut tx, &mut event, "provider_attempt_state_conflict").await?;
+        tx.commit().await?;
+        return Ok(disposition);
     }
     let attempt_effect =
         match current_attempt.transition_to(target_attempt, TransitionAuthority::Reconciliation) {
             Ok(effect) => effect,
             Err(_) => {
-                return record_conflict(&mut tx, &mut event, "provider_attempt_terminal_conflict")
-                    .await;
+                let disposition =
+                    record_conflict(&mut tx, &mut event, "provider_attempt_terminal_conflict").await?;
+                tx.commit().await?;
+                return Ok(disposition);
             }
         };
     let target_intent = if status == "succeeded" {
@@ -165,17 +170,26 @@ pub(super) async fn apply(
     };
     let current_intent = parse_intent_status(&intent_status)?;
     if current_intent == PaymentIntentStatus::Authorized && status == "failed" {
-        return record_conflict(&mut tx, &mut event, "provider_intent_state_conflict").await;
+        let disposition =
+            record_conflict(&mut tx, &mut event, "provider_intent_state_conflict").await?;
+        tx.commit().await?;
+        return Ok(disposition);
     }
     if current_intent == PaymentIntentStatus::Created {
-        return record_conflict(&mut tx, &mut event, "provider_intent_not_submitted").await;
+        let disposition =
+            record_conflict(&mut tx, &mut event, "provider_intent_not_submitted").await?;
+        tx.commit().await?;
+        return Ok(disposition);
     }
     let intent_effect = match current_intent
         .transition_to(target_intent, TransitionAuthority::Reconciliation)
     {
         Ok(effect) => effect,
         Err(_) => {
-            return record_conflict(&mut tx, &mut event, "provider_intent_terminal_conflict").await;
+            let disposition =
+                record_conflict(&mut tx, &mut event, "provider_intent_terminal_conflict").await?;
+            tx.commit().await?;
+            return Ok(disposition);
         }
     };
 
@@ -199,20 +213,24 @@ pub(super) async fn apply(
             let id: Uuid = row.try_get("id")?;
             let current = parse_transaction_status(&row.try_get::<String, _>("status")?)?;
             if current == PaymentTransactionStatus::Authorized && status == "failed" {
-                return record_conflict(&mut tx, &mut event, "provider_transaction_state_conflict")
-                    .await;
+                let disposition =
+                    record_conflict(&mut tx, &mut event, "provider_transaction_state_conflict").await?;
+                tx.commit().await?;
+                return Ok(disposition);
             }
             let effect = match current
                 .transition_to(target_transaction, TransitionAuthority::Reconciliation)
             {
                 Ok(effect) => effect,
                 Err(_) => {
-                    return record_conflict(
-                        &mut tx,
-                        &mut event,
-                        "provider_transaction_terminal_conflict",
-                    )
-                    .await;
+                    let disposition = record_conflict(
+                    &mut tx,
+                    &mut event,
+                    "provider_transaction_terminal_conflict",
+                )
+                .await?;
+                tx.commit().await?;
+                return Ok(disposition);
                 }
             };
             let version: i64 = row.try_get("aggregate_version")?;
