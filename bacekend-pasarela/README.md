@@ -20,16 +20,16 @@ Backend de pasarelas: adapters técnicos independientes para Wompi, Bold y prove
 
 Este backend es el plano de ejecución técnica de las integraciones de pago con proveedores externos. Es un backend desplegable independiente, organizado internamente como monolito modular Rust. Cada proveedor vive en su módulo/crate (`gateway_wompi`, `gateway_bold`, `gateway_<provider>`); el módulo transversal `gateway_credentials` es el único dueño de los secretos de cuentas tenant. Añadir un proveedor requiere implementar su contrato técnico, registrar el módulo y superar la suite común de conformidad, sin editar adapters existentes.
 
-Este backend no es dueño del registro de tenant, usuarios, planes, precios, suscripciones, cobros de Payvia, cuotas ni autorización comercial. La autoridad de esos datos y decisiones es [`bacekend-plataform`](../bacekend-plataform/README.md).
+Este backend no es dueño del registro de tenant, usuarios, planes, precios, suscripciones, cobros SaaS de Payvia, cuotas ni autorización comercial. La autoridad de esos datos y decisiones es [`bacekend-plataform`](../bacekend-plataform/README.md).
 
 ## Responsabilidades
 
 - Implementar APIs de proveedor, autenticación, traducción y normalización de requests/responses.
 - Administrar adaptadores separados y capacidades verificadas; `gateway_credentials` almacena credenciales de cuenta tenant y cada adapter declara su configuración requerida.
 - Crear/consultar/ejecutar acciones financieras técnicas que solicite la plataforma bajo una autorización válida.
-- Recibir callbacks/webhooks públicos de cada proveedor, preservar bytes/headers necesarios, verificar protocolo criptográfico oficial y anti-replay antes de confiar en el evento.
+- Recibir callbacks/webhooks públicos de proveedores; el módulo Wompi implementa la verificación checksum oficial, validación de ambiente/referencia/monto y publicación durable a plataforma. La integración Sandbox sigue pendiente.
 - Aplicar idempotencia técnica al protocolo/callback, registrar intentos y producir eventos versionados verificados.
-- Comunicar resultados por contrato interno autenticado y entrega durable Outbox/JetStream; no decidir planes, cuotas ni estados de cuenta de plataforma.
+- Comunicar eventos de proveedor y resultados de reconciliación mediante envelopes HMAC firmados y JetStream durable; no decidir planes, cuotas ni estados de cuenta de plataforma.
 - Mantener el servicio interno de credenciales con cifrado envelope, rotación, revocación y acceso restringido al adapter del proveedor correspondiente.
 - Exponer health/readiness, métricas de proveedor, logs diagnósticos y trazas sin secretos ni payloads sensibles.
 
@@ -38,8 +38,8 @@ Este backend no es dueño del registro de tenant, usuarios, planes, precios, sus
 - Un crate independiente por proveedor (`gateway_wompi`, `gateway_bold`, `gateway_<provider>`), con capacidades declaradas y verificadas.
 - Clientes HTTP/adapters, autenticación de requests, mapeo de respuestas y errores específicos del proveedor.
 - Gestión cifrada de credenciales por cuenta y entorno bajo autorización de plataforma.
-- Webhooks entrantes públicos: recepción de bytes originales, verificación criptográfica oficial, control anti-replay, persistencia técnica e idempotencia.
-- Contrato gRPC interno para ejecutar comandos autorizados; Outbox/JetStream para entregar resultados verificados a plataforma.
+- Webhook Wompi público: recepción limitada de bytes, checksum oficial con propiedades dinámicas, validación de entorno, normalización e idempotencia durable aguas abajo.
+- Cliente de consulta Wompi por ID de transacción y worker durable de reconciliación que consume órdenes firmadas y entrega resultados firmados por JetStream. La ejecución saliente de cobros aún no está implementada.
 
 ## Arquitectura y flujo técnico
 
@@ -51,11 +51,11 @@ En callbacks, el proveedor llama el endpoint público del adapter correspondient
 
 Stack objetivo: Rust/Tokio, `tonic`/`prost`, clientes HTTP async, PostgreSQL/SQLx, NATS JetStream/Outbox, Redis solo cuando se justifique con TTL, OpenTelemetry y Sentry. Cada integración real requiere cuenta elegible y credenciales del sandbox oficial del proveedor.
 
-El código presente es scaffold: el paquete binario es miembro del workspace Cargo raíz, pero todavía no hay adapters, migraciones ni servicio HTTP/gRPC listo para operar. Por eso no existe aún una instalación o comando de ejecución verificable. Los ejemplos siguientes describen responsabilidades/contratos planeados, no rutas activas.
+El paquete binario ya inicia un servidor HTTP Axum y un worker durable JetStream. El módulo `wompi` verifica callbacks y consulta transacciones; `webhooks` expone `POST /v1/webhooks/wompi/{account_reference}`. Esto es un slice de callback/reconciliación, no un adapter de cobro completo: no crea transacciones/cargos, no incluye aún vault cifrado de credenciales ni aceptación Sandbox.
 
 ## API de servicio y callbacks
 
-No hay API pública de tenant en este backend. Plataforma consume los contratos gRPC internos versionados para ejecutar una operación con concesión. La ruta pública de callback se define de forma independiente por proveedor y solo se publica tras comprobar su documentación oficial; no se inventa un endpoint común ni un algoritmo universal.
+No hay API pública de tenant para iniciar cobros en este backend. Se habilita el callback público Wompi `POST /v1/webhooks/wompi/{account_reference}`; el endpoint verifica el checksum definido por Wompi y solo responde 204 después del ACK durable de JetStream. No expone operaciones de cobro ni acepta eventos normalizados arbitrarios desde plataforma.
 
 La autenticación del webhook entrante depende de la pasarela: se verifica el método oficial sobre el contenido y headers requeridos, ventana de tiempo/anti-replay y cuenta/ambiente. Por ejemplo, no se debe reemplazar un checksum de un proveedor por HMAC-SHA256 solo para uniformar la implementación. Un webhook verificado se entrega por evento durable a plataforma; no constituye por sí mismo el estado comercial final.
 
@@ -69,11 +69,11 @@ Cada protocolo conserva su autenticación propia. Binance Pay documenta una firm
 
 Este backend no abre WebSockets para los usuarios ni envía los webhooks de negocio a los servidores de comercios. Publica el resultado técnico verificado hacia plataforma por Outbox/NATS JetStream; plataforma procesa la transición y su módulo `realtime` notifica a los clientes vía BFF. La entrega de eventos salientes al comercio y la firma `X-Payvia-Signature` pertenecen al backend de plataforma.
 
-La plataforma remite altas, rotaciones y revocaciones de credenciales al contrato gRPC del backend de pasarelas por un canal TLS/mTLS con identidad de servicio rotatable y autorización por método y alcance. El módulo `gateway_credentials` valida y cifra las credenciales; solo el adapter autorizado las obtiene en memoria para ejecutar la operación. No se envían secretos por NATS ni se guardan en el backend de plataforma.
+La arquitectura objetivo requiere que plataforma remita altas, rotaciones y revocaciones al módulo `gateway_credentials` por gRPC mTLS y grants ligados a operación. Ese vault aún no está implementado. El slice actual carga secretos de Wompi desde configuración de entorno al iniciar el gateway; no se envían secretos por NATS ni se escriben en eventos/logs. El transporte NATS admite certificados cliente y puede exigir mTLS con `PAYVIA_REQUIRE_MTLS=true`; la identidad/grants completos por comando siguen pendientes de Fase 5.
 
 ## Instalación
 
-Todavía no hay comandos ejecutables verificados. Para completar una prueba real se necesitan la configuración del workspace Cargo raíz/servicios de desarrollo, migraciones y credenciales sandbox oficiales. No marques un adapter listo hasta ejecutar contrato y flujo con el entorno oficial; mocks o tipos por sí solos no verifican integración.
+El binario puede iniciarse con `cargo run -p bacekend-pasarela` cuando se hayan configurado sus variables obligatorias: `GATEWAY_WOMPI_ACCOUNTS_JSON`, `GATEWAY_EVENT_SIGNING_KEY`, `GATEWAY_EVENT_SIGNING_KEY_ID`, `GATEWAY_PLATFORM_REQUEST_VERIFY_KEY`, `GATEWAY_PLATFORM_REQUEST_VERIFY_KEY_ID`, `GATEWAY_NATS_URL`, `GATEWAY_NATS_USER` y `GATEWAY_NATS_PASSWORD`. El JSON de cada cuenta contiene `account_reference`, `tenant_id`, `environment`, `event_secret` y `private_key`; estos valores deben suministrarse desde el gestor de secretos de despliegue, nunca versionarse ni loguearse. Para producción configura `PAYVIA_REQUIRE_MTLS=true` y `NATS_TLS_ROOT_CA`, `NATS_TLS_CLIENT_CERT`, `NATS_TLS_CLIENT_KEY`. El inicio verificable del proceso no equivale a aceptar cobros en producción: falta operar el adapter saliente y ejecutar aceptación contra Wompi Sandbox con credenciales válidas.
 
 ## Límite de negocio
 
@@ -101,13 +101,13 @@ Agregar una pasarela: crear el crate/módulo dueño, definir su descriptor y esq
 
 Verificar protocolo oficial por proveedor; no asumir HMAC uniforme. Preservar bytes originales, usar comparación segura, tolerar/rechazar replay conforme al contrato, limitar tamaño, validar entorno/cuenta y no procesar payload de negocio antes de autenticar. Credenciales se cifran y rotan; no se devuelven a browser ni aparecen en logs.
 
-Entre plataforma y este backend se exige TLS/mTLS con identidad de servicio verificable, certificados rotables y autorización por método y alcance. Cada RPC valida tenant, entorno, cuenta, operación, concesión firmada y límites del mensaje; aplica deadline, rate limit, idempotencia y reintentos acotados. La recuperación tras desconexión no duplica operaciones. Las solicitudes síncronas gRPC pueden ejecutar persistencia del dominio; Outbox/JetStream se reserva para hechos durables, flujos diferidos y replay. Los eventos contienen referencias opacas, nunca secretos.
+La arquitectura exige TLS/mTLS con identidad de servicio verificable y autorización por método/alcance. El runtime NATS incorpora CA/certificado/clave cliente y permite modo fail-closed con `PAYVIA_REQUIRE_MTLS=true`; HMAC firmado y key ID autentican los sobres del flujo asíncrono. La verificación completa de identidad/grants por comando gRPC aún no está implementada. La recuperación tras desconexión no duplica operaciones. Las solicitudes síncronas gRPC pueden ejecutar persistencia del dominio; Outbox/JetStream se reserva para hechos durables, flujos diferidos y replay. Los eventos contienen referencias opacas, nunca secretos.
 
 Cada frontera HTTP/gRPC/SQL/Redis/NATS/proveedor emite eventos de inicio, dependencia, fallo clasificado y respuesta con `correlation_id`, `trace_id`, categoría/código estable, duración de dependencia/total y retryable solo por política confirmada. Telemetría OpenTelemetry/Sentry/métricas se redacta. Los errores externos se convierten en errores tipados internos y respuestas seguras.
 
 ## Estado
 
-El crate actual es un scaffold Rust (`Cargo.toml`/`src/main.rs`); no implementa adapters, autorización, migraciones, webhooks ni workers. Las pasarelas no se consideran operativas hasta probar adapters reales y sandbox oficial con credenciales válidas.
+**Estado real del slice actual:** runtime HTTP Wompi, verificación checksum de callback, evento interno HMAC/JetStream, lookup de transacción con llave privada y worker durable de reconciliación. Plataforma valida el evento firmado, persiste inbox/delivery y aplica estados o abre/reconcilia casos. **No está implementada la operación saliente que crea un cobro**, el vault `gateway_credentials`, los grants por comando ni la validación con Sandbox oficial. Por eso el backend no se declara listo para cobros productivos.
 
 ## Roadmap y reglas
 
