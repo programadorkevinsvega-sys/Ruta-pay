@@ -94,15 +94,14 @@ pub(super) fn validate_result(
     {
         return Err(PaymentServiceError::ProviderEventInvalid);
     }
-    if let Some(code) = &event.safe_error_code {
-        if code.is_empty()
+    if let Some(code) = &event.safe_error_code
+        && (code.is_empty()
             || code.len() > 64
             || !code
                 .bytes()
-                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
-        {
-            return Err(PaymentServiceError::ProviderEventInvalid);
-        }
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'))
+    {
+        return Err(PaymentServiceError::ProviderEventInvalid);
     }
     DateTime::<Utc>::from_timestamp_millis(event.occurred_at_unix_millis)
         .ok_or(PaymentServiceError::ProviderEventInvalid)

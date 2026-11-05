@@ -104,6 +104,7 @@ mod tests {
     }
 }
 
+#[cfg(test)]
 fn encode_hex(value: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
     let mut output = String::with_capacity(value.len() * 2);

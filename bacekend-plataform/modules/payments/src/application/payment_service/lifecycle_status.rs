@@ -2,6 +2,8 @@ use serde_json::json;
 use sqlx::{Row, postgres::PgRow};
 use uuid::Uuid;
 
+type RelatedTransaction = (String, String, Option<Uuid>, Option<String>, Option<i64>, Option<String>);
+
 use crate::domain::{
     payment_intent::{PaymentIntent, PaymentIntentError, PaymentMethodType},
     payment_lifecycle::PaymentAttemptStatus,
@@ -211,14 +213,7 @@ pub(super) async fn update(
         .fetch_optional(&mut *tx)
         .await?;
         if case_id.is_none() {
-            let related_transaction: Option<(
-                String,
-                String,
-                Option<Uuid>,
-                Option<String>,
-                Option<i64>,
-                Option<String>,
-            )> = sqlx::query_as(
+            let related_transaction: Option<RelatedTransaction> = sqlx::query_as(
                 "SELECT a.provider_code,a.provider_account_reference,t.id,t.provider_transaction_reference,t.amount_minor,t.currency FROM payments.payment_attempts a LEFT JOIN LATERAL (SELECT id,provider_transaction_reference,amount_minor,currency FROM payments.payment_transactions WHERE tenant_id=a.tenant_id AND environment=a.environment AND payment_intent_id=a.payment_intent_id AND payment_attempt_id=a.id ORDER BY created_at DESC LIMIT 1) t ON TRUE WHERE a.id=$1 AND a.tenant_id=$2 AND a.environment=$3 AND a.payment_intent_id=$4 FOR UPDATE OF a",
             )
             .bind(command.payment_attempt_id)

@@ -193,8 +193,9 @@ pub(super) async fn ingest(
     .ok_or(PaymentServiceError::VersionConflict)?;
 
     let mut intent_next_version = intent_version;
-    if let Some(target) = intent_target {
-        if intent_status_text(target) != current_intent {
+    if let Some(target) = intent_target
+        && intent_status_text(target) != current_intent
+    {
             intent_next_version = sqlx::query_scalar(
                 "UPDATE payments.payment_intents SET status=$2,aggregate_version=aggregate_version+1,last_event_at=$3,updated_at=now() WHERE id=$1 AND tenant_id=$4 AND environment=$5 AND aggregate_version=$6 RETURNING aggregate_version",
             )
@@ -207,7 +208,6 @@ pub(super) async fn ingest(
             .fetch_optional(&mut *tx)
             .await?
             .ok_or(PaymentServiceError::VersionConflict)?;
-        }
     }
 
     let transaction_id = match transaction_row {
