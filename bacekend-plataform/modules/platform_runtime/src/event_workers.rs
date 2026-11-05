@@ -5,7 +5,7 @@ mod relays;
 
 use async_nats::{ConnectOptions, jetstream};
 use sqlx::PgPool;
-use std::{env, time::Duration};
+use std::{env, path::PathBuf, time::Duration};
 use tokio::{sync::watch, time};
 
 use self::{
@@ -41,13 +41,25 @@ pub async fn run(
         }
     };
     loop {
-        let client = match ConnectOptions::with_user_and_password(
-            username.clone(),
-            password.clone(),
-        )
-        .connect(url.as_str())
-        .await
-        {
+        let options = match build_nats_options(username.clone(), password.clone()) {
+            Ok(options) => options,
+            Err(error_code) => {
+                tracing::error!(
+                    event.name = "service.configuration.invalid",
+                    component = "platform_event_runtime",
+                    operation = "configure_nats_mtls",
+                    error_code,
+                    error_category = "configuration",
+                    retryable = false
+                );
+                tokio::select! {
+                    result = shutdown.changed() => if result.is_err() || *shutdown.borrow() { return; },
+                    _ = time::sleep(backoff) => {}
+                }
+                continue;
+            }
+        };
+        let client = match options.connect(url.as_str()).await {
             Ok(client) => client,
             Err(_) => {
                 tracing::error!(
@@ -163,5 +175,32 @@ pub async fn run(
             retryable = true
         );
         backoff = Duration::from_secs(1);
+    }
+}
+
+fn build_nats_options(
+    username: String,
+    password: String,
+) -> Result<ConnectOptions, &'static str> {
+    let root = env::var_os("NATS_TLS_ROOT_CA");
+    let certificate = env::var_os("NATS_TLS_CLIENT_CERT");
+    let private_key = env::var_os("NATS_TLS_CLIENT_KEY");
+    let required = env::var("PAYVIA_REQUIRE_MTLS")
+        .is_ok_and(|value| value.eq_ignore_ascii_case("true"));
+    match (root, certificate, private_key) {
+        (Some(root), Some(certificate), Some(private_key)) => Ok(
+            ConnectOptions::with_user_and_password(username, password)
+                .add_root_certificates(PathBuf::from(root))
+                .add_client_certificate(
+                    PathBuf::from(certificate),
+                    PathBuf::from(private_key),
+                )
+                .require_tls(true),
+        ),
+        (None, None, None) if !required => {
+            Ok(ConnectOptions::with_user_and_password(username, password))
+        }
+        (None, None, None) => Err("platform_nats_mtls_required"),
+        _ => Err("platform_nats_mtls_configuration_incomplete"),
     }
 }

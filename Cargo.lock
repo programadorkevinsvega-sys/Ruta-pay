@@ -243,9 +243,22 @@ dependencies = [
 name = "bacekend-pasarela"
 version = "0.1.0"
 dependencies = [
+ "async-nats",
+ "axum",
+ "base64",
+ "chrono",
  "platform-contracts",
+ "reqwest",
+ "ring",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
  "thiserror",
+ "tokio",
  "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -2255,10 +2268,12 @@ name = "platform-payments"
 version = "0.1.0"
 dependencies = [
  "async-nats",
+ "base64",
  "chrono",
  "opentelemetry",
  "platform-contracts",
  "payvia-observability",
+ "ring",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -2298,6 +2313,7 @@ name = "platform-runtime"
 version = "0.1.0"
 dependencies = [
  "async-nats",
+ "base64",
  "metrics",
  "opentelemetry",
  "payvia-observability",

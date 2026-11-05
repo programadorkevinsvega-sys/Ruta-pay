@@ -138,6 +138,9 @@ fn evaluate_transition<S: LifecycleState>(
     if current.is_terminal() {
         return Err(TransitionGuardError::ReconciliationRequired);
     }
+    if authority == TransitionAuthority::Reconciliation && !next.is_outcome_unknown() {
+        return Ok(TransitionEffect::Apply);
+    }
     if current.is_outcome_unknown() {
         return if authority == TransitionAuthority::Reconciliation && !next.is_outcome_unknown() {
             Ok(TransitionEffect::Apply)
@@ -184,6 +187,7 @@ impl LifecycleState for PaymentIntentStatus {
         matches!(
             (self, next),
             (Processing, RequiresAction | Authorized | Succeeded)
+                | (Authorized, Succeeded)
         )
     }
 
@@ -226,6 +230,7 @@ impl LifecycleState for PaymentAttemptStatus {
                 Submitted,
                 Processing | RequiresAction | Authorized | Succeeded | Failed
             ) | (Processing, RequiresAction | Authorized | Succeeded | Failed)
+                | (Authorized, Succeeded)
         )
     }
 

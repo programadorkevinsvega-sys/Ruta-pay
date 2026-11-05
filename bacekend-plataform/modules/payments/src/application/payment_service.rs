@@ -1,7 +1,10 @@
 mod attempts;
 mod create;
 mod get;
+mod gateway_event_auth;
 mod lifecycle_status;
+mod provider_events;
+mod reconciliation_result;
 mod snapshot;
 mod transactions;
 
@@ -54,6 +57,8 @@ pub enum PaymentServiceError {
     InvalidPageSize,
     #[error("the persisted idempotency response is unavailable or corrupt")]
     SnapshotUnavailable,
+    #[error("the authenticated provider event is invalid or inconsistent")]
+    ProviderEventInvalid,
 }
 
 impl PaymentService {
@@ -142,6 +147,24 @@ impl PaymentService {
     ) -> Result<PaymentIntentStatusUpdate, PaymentServiceError> {
         lifecycle_status::update(self, command).await
     }
+
+    pub async fn ingest_signed_provider_event(
+        &self,
+        payload: &[u8],
+        signing_key: &[u8],
+        expected_key_id: &str,
+    ) -> Result<GatewayEventDisposition, PaymentServiceError> {
+        provider_events::ingest(self, payload, signing_key, expected_key_id).await
+    }
+
+    pub async fn apply_signed_reconciliation_result(
+        &self,
+        payload: &[u8],
+        signing_key: &[u8],
+        expected_key_id: &str,
+    ) -> Result<GatewayEventDisposition, PaymentServiceError> {
+        reconciliation_result::apply(self, payload, signing_key, expected_key_id).await
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -205,4 +228,12 @@ pub struct UpdatePaymentIntentStatusCommand {
 pub struct PaymentIntentStatusUpdate {
     pub intent: PaymentIntent,
     pub aggregate_version: i64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GatewayEventDisposition {
+    Applied,
+    Duplicate,
+    ReconciliationRequired,
+    ManualReview,
 }

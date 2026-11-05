@@ -150,3 +150,25 @@ fn only_platform_timeout_can_enter_outcome_unknown() {
         Err(TransitionGuardError::TransitionNotAllowed)
     );
 }
+
+#[test]
+fn authorized_payment_intent_can_advance_to_succeeded_after_provider_confirmation() {
+    assert_eq!(
+        PaymentIntentStatus::Authorized.transition_to(
+            PaymentIntentStatus::Succeeded,
+            TransitionAuthority::ProviderEvent
+        ),
+        Ok(TransitionEffect::Apply)
+    );
+}
+
+#[test]
+fn authorized_attempt_can_advance_to_succeeded_after_provider_confirmation() {
+    assert_eq!(
+        PaymentAttemptStatus::Authorized.transition_to(
+            PaymentAttemptStatus::Succeeded,
+            TransitionAuthority::ProviderEvent
+        ),
+        Ok(TransitionEffect::Apply)
+    );
+}

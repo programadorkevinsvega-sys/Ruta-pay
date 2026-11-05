@@ -2,3 +2,4 @@
 pub mod entitlements;
 pub mod wompi;
 pub mod webhooks;
+pub mod reconciliation_worker;

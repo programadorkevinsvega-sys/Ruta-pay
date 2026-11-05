@@ -3,7 +3,6 @@ use std::time::Duration;
 
 use super::{WompiEnvironment, WompiPaymentStatus};
 
-#[derive(Clone)]
 pub struct WompiClient {
     http: reqwest::Client,
     environment: WompiEnvironment,

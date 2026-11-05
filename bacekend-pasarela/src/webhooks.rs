@@ -21,10 +21,10 @@ const MAX_CALLBACK_BYTES: usize = 65_536;
 
 #[derive(Clone)]
 pub struct GatewayWebhookState {
-    accounts: Arc<HashMap<String, WompiAccountConfig>>,
-    jetstream: jetstream::Context,
-    event_signing_key: Arc<hmac::Key>,
-    signing_key_id: Arc<str>,
+    pub(crate) accounts: Arc<HashMap<String, WompiAccountConfig>>,
+    pub(crate) jetstream: jetstream::Context,
+    pub(crate) event_signing_key: Arc<hmac::Key>,
+    pub(crate) signing_key_id: Arc<str>,
 }
 
 #[derive(Deserialize)]
@@ -33,6 +33,7 @@ pub struct WompiAccountConfig {
     pub tenant_id: Uuid,
     pub environment: String,
     pub event_secret: String,
+    pub private_key: String,
 }
 
 #[derive(Serialize)]
@@ -184,7 +185,9 @@ async fn receive_wompi_event(
         payload_sha256: hex_upper(&verified.payload_sha256),
         event_id: verified.event_id,
     };
-    let unsigned = serde_json::to_vec(&event).map_err(|_| WebhookError::InvalidCallback)?;
+    let unsigned_value = serde_json::to_value(&event).map_err(|_| WebhookError::InvalidCallback)?;
+    let unsigned =
+        serde_json::to_vec(&unsigned_value).map_err(|_| WebhookError::InvalidCallback)?;
     let signature = hex_upper(hmac::sign(&state.event_signing_key, &unsigned).as_ref());
     let envelope = SignedProviderEvent {
         key_id: &state.signing_key_id,
@@ -240,6 +243,13 @@ fn validate_account(account: &WompiAccountConfig) -> Result<(), &'static str> {
     if !account.event_secret.starts_with(expected_prefix) || account.event_secret.len() < 24 {
         return Err("wompi_event_secret_environment_mismatch");
     }
+    let private_prefix = match environment {
+        WompiEnvironment::Test => "prv_test_",
+        WompiEnvironment::Live => "prv_prod_",
+    };
+    if !account.private_key.starts_with(private_prefix) || account.private_key.len() < 24 {
+        return Err("wompi_private_key_environment_mismatch");
+    }
     Ok(())
 }
 
@@ -290,6 +300,7 @@ mod tests {
             tenant_id: Uuid::new_v4(),
             environment: "test".to_owned(),
             event_secret: "prod_events_not_for_test".to_owned(),
+            private_key: "prv_test_account_private_key".to_owned(),
         };
         assert_eq!(
             validate_account(&account),
@@ -304,12 +315,14 @@ mod tests {
             tenant_id: Uuid::new_v4(),
             environment: "test".to_owned(),
             event_secret: "test_events_test_secret_long_enough".to_owned(),
+            private_key: "prv_test_private_key_long_enough".to_owned(),
         };
         let second = WompiAccountConfig {
             account_reference: "merchant_01".to_owned(),
             tenant_id: Uuid::new_v4(),
             environment: "test".to_owned(),
             event_secret: "test_events_second_secret_long_enough".to_owned(),
+            private_key: "prv_test_second_private_key_long".to_owned(),
         };
         let parsed = serde_json::to_string(&vec![
             serde_json::json!({

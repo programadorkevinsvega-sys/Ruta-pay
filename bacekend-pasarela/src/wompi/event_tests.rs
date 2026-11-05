@@ -38,7 +38,15 @@ fn verifies_dynamic_properties_and_normalizes_a_transaction_event() {
         "wompi-transaction-001"
     );
     assert_eq!(verified.occurred_at.timestamp(), 1_730_000_000);
-    assert_eq!(verified.event_id, verified.event_id);
+    let replay = verify_event(
+        raw.as_bytes(),
+        None,
+        EVENT_SECRET,
+        WompiEnvironment::Live,
+    )
+    .expect("same signed delivery remains verifiable for idempotent handling");
+    assert_eq!(verified.event_id, replay.event_id);
+    assert_eq!(verified.provider_event_id, replay.provider_event_id);
 }
 
 #[test]

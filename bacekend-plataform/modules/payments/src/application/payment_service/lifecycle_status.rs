@@ -211,13 +211,20 @@ pub(super) async fn update(
         .fetch_optional(&mut *tx)
         .await?;
         if case_id.is_none() {
-            let related_transaction: Option<Uuid> = sqlx::query_scalar(
-                "SELECT id FROM payments.payment_transactions WHERE tenant_id=$1 AND environment=$2 AND payment_intent_id=$3 AND payment_attempt_id=$4 ORDER BY created_at DESC LIMIT 1 FOR UPDATE",
+            let related_transaction: Option<(
+                String,
+                String,
+                Option<Uuid>,
+                Option<String>,
+                Option<i64>,
+                Option<String>,
+            )> = sqlx::query_as(
+                "SELECT a.provider_code,a.provider_account_reference,t.id,t.provider_transaction_reference,t.amount_minor,t.currency FROM payments.payment_attempts a LEFT JOIN LATERAL (SELECT id,provider_transaction_reference,amount_minor,currency FROM payments.payment_transactions WHERE tenant_id=a.tenant_id AND environment=a.environment AND payment_intent_id=a.payment_intent_id AND payment_attempt_id=a.id ORDER BY created_at DESC LIMIT 1) t ON TRUE WHERE a.id=$1 AND a.tenant_id=$2 AND a.environment=$3 AND a.payment_intent_id=$4 FOR UPDATE OF a",
             )
+            .bind(command.payment_attempt_id)
             .bind(command.tenant_id)
             .bind(&command.environment)
             .bind(command.payment_intent_id)
-            .bind(command.payment_attempt_id)
             .fetch_optional(&mut *tx)
             .await?;
             let case_id = Uuid::new_v4();
@@ -229,7 +236,7 @@ pub(super) async fn update(
             .bind(&command.environment)
             .bind(command.payment_intent_id)
             .bind(command.payment_attempt_id)
-            .bind(related_transaction)
+            .bind(related_transaction.as_ref().and_then(|row| row.2))
             .execute(&mut *tx)
             .await?;
             insert_outbox(
@@ -243,6 +250,11 @@ pub(super) async fn update(
                     "payment_intent_id": command.payment_intent_id,
                     "attempt_id": command.payment_attempt_id,
                     "reconciliation_case_id": case_id,
+                    "provider_code": related_transaction.as_ref().map(|row| &row.0),
+                    "provider_account_reference": related_transaction.as_ref().map(|row| &row.1),
+                    "provider_transaction_reference": related_transaction.as_ref().and_then(|row| row.3.as_deref()),
+                    "amount_minor": related_transaction.as_ref().and_then(|row| row.4),
+                    "currency": related_transaction.as_ref().and_then(|row| row.5.as_deref()),
                     "reason": "outcome_unknown"
                 }),
                 &command.correlation_id,
