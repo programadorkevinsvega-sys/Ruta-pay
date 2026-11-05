@@ -1,4 +1,28 @@
 use super::*;
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+pub(super) struct ReconciliationResult {
+    pub(super) schema_version: u32,
+    pub(super) event_id: Uuid,
+    pub(super) event_type: String,
+    pub(super) provider_code: String,
+    pub(super) provider_account_reference: String,
+    pub(super) tenant_id: Uuid,
+    pub(super) environment: String,
+    pub(super) payment_intent_id: Uuid,
+    pub(super) payment_attempt_id: Uuid,
+    pub(super) reconciliation_case_id: Uuid,
+    pub(super) provider_transaction_reference: Option<String>,
+    pub(super) outcome: String,
+    pub(super) status: Option<String>,
+    pub(super) amount_minor: Option<i64>,
+    pub(super) currency: Option<String>,
+    pub(super) evidence_sha256: Option<String>,
+    pub(super) safe_error_code: Option<String>,
+    pub(super) correlation_id: String,
+    pub(super) occurred_at_unix_millis: i64,
+}
 
 pub(super) async fn record_manual_review(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
