@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
 use serde_json::json;
 use sqlx::Row;
 use uuid::Uuid;
@@ -17,28 +16,6 @@ use super::{
     gateway_event_auth::verify_signed_event,
 };
 
-#[derive(Deserialize)]
-struct ReconciliationResult {
-    schema_version: u32,
-    event_id: Uuid,
-    event_type: String,
-    provider_code: String,
-    provider_account_reference: String,
-    tenant_id: Uuid,
-    environment: String,
-    payment_intent_id: Uuid,
-    payment_attempt_id: Uuid,
-    reconciliation_case_id: Uuid,
-    provider_transaction_reference: Option<String>,
-    outcome: String,
-    status: Option<String>,
-    amount_minor: Option<i64>,
-    currency: Option<String>,
-    evidence_sha256: Option<String>,
-    safe_error_code: Option<String>,
-    correlation_id: String,
-    occurred_at_unix_millis: i64,
-}
 
 pub(super) async fn apply(
     service: &PaymentService,
