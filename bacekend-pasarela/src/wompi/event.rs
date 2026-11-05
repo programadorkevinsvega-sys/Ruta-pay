@@ -280,7 +280,9 @@ fn constant_time_hex_eq(left: &str, right: &str) -> bool {
     left.as_bytes()
         .iter()
         .zip(right.as_bytes())
-        .fold(0_u8, |difference, (left, right)| difference | (left ^ right))
+        .fold(0_u8, |difference, (left, right)| {
+            difference | (left ^ right)
+        })
         == 0
 }
 
