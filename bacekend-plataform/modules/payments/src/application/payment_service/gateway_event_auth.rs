@@ -48,6 +48,18 @@ fn decode_hex(value: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
+
+#[cfg(test)]
+fn encode_hex(value: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut output = String::with_capacity(value.len() * 2);
+    for byte in value {
+        output.push(HEX[(byte >> 4) as usize] as char);
+        output.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,15 +114,4 @@ mod tests {
             Err(PaymentServiceError::ProviderEventInvalid)
         ));
     }
-}
-
-#[cfg(test)]
-fn encode_hex(value: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789ABCDEF";
-    let mut output = String::with_capacity(value.len() * 2);
-    for byte in value {
-        output.push(HEX[(byte >> 4) as usize] as char);
-        output.push(HEX[(byte & 0x0f) as usize] as char);
-    }
-    output
 }
