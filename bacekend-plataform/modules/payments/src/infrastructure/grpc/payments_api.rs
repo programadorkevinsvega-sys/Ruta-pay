@@ -231,6 +231,9 @@ pub(super) fn map_error(error: PaymentServiceError) -> Status {
         PaymentServiceError::AttemptAlreadyExists => {
             Status::failed_precondition("commercial payment retries are not enabled")
         }
+        PaymentServiceError::ProviderEventInvalid => {
+            Status::invalid_argument("authenticated provider event is invalid")
+        }
         PaymentServiceError::Transition(_) | PaymentServiceError::VersionConflict => {
             Status::failed_precondition("payment lifecycle transition cannot be applied")
         }
