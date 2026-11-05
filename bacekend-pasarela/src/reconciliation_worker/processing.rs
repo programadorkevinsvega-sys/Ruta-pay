@@ -11,7 +11,8 @@ pub(super) async fn process_request(
     verify_platform_event(&value, config)?;
     let envelope: PlatformEvent =
         serde_json::from_value(value).map_err(|_| RequestError::InvalidEnvelope)?;
-    if envelope.event_type != "payment.reconciliation.requested"
+    if envelope.event_id.is_nil()
+        || envelope.event_type != "payment.reconciliation.requested"
         || envelope.audience != "gateway"
         || envelope.correlation_id.is_empty()
         || envelope.correlation_id.len() > 128
