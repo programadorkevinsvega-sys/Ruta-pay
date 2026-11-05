@@ -131,17 +131,14 @@ pub(super) async fn ingest(
     let attempt_last_event: Option<DateTime<Utc>> = attempt.try_get("attempt_last_event_at")?;
     let intent_target = intent_target(&event.status)?;
     let attempt_target = attempt_target(&event.status)?;
-    let unknown_outcome = current_attempt == "outcome_unknown"
-        || current_intent == "outcome_unknown";
+    let unknown_outcome =
+        current_attempt == "outcome_unknown" || current_intent == "outcome_unknown";
     let late_event = ensure_provider_event_is_newer(attempt_last_event, occurred_at).is_err();
-    let attempt_transition_conflict =
-        transition_attempt(&current_attempt, attempt_target).is_err();
+    let attempt_transition_conflict = transition_attempt(&current_attempt, attempt_target).is_err();
     let intent_transition_conflict =
         intent_target.is_some_and(|target| transition_intent(&current_intent, target).is_err());
-    let needs_reconciliation = unknown_outcome
-        || late_event
-        || attempt_transition_conflict
-        || intent_transition_conflict;
+    let needs_reconciliation =
+        unknown_outcome || late_event || attempt_transition_conflict || intent_transition_conflict;
 
     if needs_reconciliation {
         let reason = if unknown_outcome {
