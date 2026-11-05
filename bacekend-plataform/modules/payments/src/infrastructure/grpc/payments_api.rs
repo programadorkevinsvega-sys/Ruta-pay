@@ -1,11 +1,17 @@
+mod lifecycle;
+
 use opentelemetry::{global, propagation::Extractor};
 use platform_contracts::{
     identity_access::{
         AuthorizeApiKeyOperationRequest, identity_access_client::IdentityAccessClient,
     },
     payments::{
-        CreatePaymentIntentRequest, CreatePaymentIntentResponse, GetPaymentIntentRequest,
-        GetPaymentIntentResponse, PaymentIntent as PaymentIntentMessage, payments_server::Payments,
+        CreatePaymentAttemptRequest, CreatePaymentAttemptResponse, CreatePaymentIntentRequest,
+        CreatePaymentIntentResponse, GetPaymentIntentRequest, GetPaymentIntentResponse,
+        ListPaymentAttemptsRequest, ListPaymentAttemptsResponse, ListPaymentTransactionsRequest,
+        ListPaymentTransactionsResponse, PaymentIntent as PaymentIntentMessage,
+        UpdatePaymentIntentStatusRequest, UpdatePaymentIntentStatusResponse,
+        payments_server::Payments,
     },
 };
 use tonic::{Request, Response, Status};
@@ -22,8 +28,8 @@ use crate::{
 
 #[derive(Clone)]
 pub struct PaymentsApi {
-    service: PaymentService,
-    identity: IdentityAccessClient<tonic::transport::Channel>,
+    pub(super) service: PaymentService,
+    pub(super) identity: IdentityAccessClient<tonic::transport::Channel>,
 }
 
 impl PaymentsApi {
@@ -34,7 +40,7 @@ impl PaymentsApi {
         Self { service, identity }
     }
 
-    async fn authorize_key(
+    pub(super) async fn authorize_key(
         &self,
         secret: String,
         tenant_id: Uuid,
@@ -143,9 +149,37 @@ impl Payments for PaymentsApi {
         .instrument(span)
         .await
     }
+
+    async fn create_payment_attempt(
+        &self,
+        request: Request<CreatePaymentAttemptRequest>,
+    ) -> Result<Response<CreatePaymentAttemptResponse>, Status> {
+        lifecycle::attempts::create(self, request).await
+    }
+
+    async fn list_payment_attempts(
+        &self,
+        request: Request<ListPaymentAttemptsRequest>,
+    ) -> Result<Response<ListPaymentAttemptsResponse>, Status> {
+        lifecycle::attempts::list(self, request).await
+    }
+
+    async fn list_payment_transactions(
+        &self,
+        request: Request<ListPaymentTransactionsRequest>,
+    ) -> Result<Response<ListPaymentTransactionsResponse>, Status> {
+        lifecycle::transactions::list(self, request).await
+    }
+
+    async fn update_payment_intent_status(
+        &self,
+        request: Request<UpdatePaymentIntentStatusRequest>,
+    ) -> Result<Response<UpdatePaymentIntentStatusResponse>, Status> {
+        lifecycle::status::update(self, request).await
+    }
 }
 
-fn payment_intent_message(intent: PaymentIntent) -> PaymentIntentMessage {
+pub(super) fn payment_intent_message(intent: PaymentIntent) -> PaymentIntentMessage {
     PaymentIntentMessage {
         payment_intent_id: intent.id.to_string(),
         tenant_id: intent.tenant_id.to_string(),
@@ -159,11 +193,11 @@ fn payment_intent_message(intent: PaymentIntent) -> PaymentIntentMessage {
     }
 }
 
-fn parse_uuid(value: &str) -> Result<Uuid, Status> {
+pub(super) fn parse_uuid(value: &str) -> Result<Uuid, Status> {
     Uuid::parse_str(value).map_err(|_| Status::invalid_argument("identifier is invalid"))
 }
 
-fn map_error(error: PaymentServiceError) -> Status {
+pub(super) fn map_error(error: PaymentServiceError) -> Status {
     match error {
         PaymentServiceError::Domain(
             crate::domain::payment_intent::PaymentIntentError::AmountInvalid
@@ -179,6 +213,30 @@ fn map_error(error: PaymentServiceError) -> Status {
         PaymentServiceError::Domain(
             crate::domain::payment_intent::PaymentIntentError::NotFound,
         ) => Status::not_found("payment intent was not found"),
+        PaymentServiceError::Lifecycle(
+            crate::domain::payment_lifecycle::LifecycleModelError::IdentifierInvalid
+            | crate::domain::payment_lifecycle::LifecycleModelError::AttemptNotSubmitted
+            | crate::domain::payment_lifecycle::LifecycleModelError::OwnershipMismatch
+            | crate::domain::payment_lifecycle::LifecycleModelError::EnvironmentInvalid
+            | crate::domain::payment_lifecycle::LifecycleModelError::AttemptNumberInvalid
+            | crate::domain::payment_lifecycle::LifecycleModelError::ProviderCodeInvalid
+            | crate::domain::payment_lifecycle::LifecycleModelError::ProviderReferenceInvalid
+            | crate::domain::payment_lifecycle::LifecycleModelError::AmountInvalid
+            | crate::domain::payment_lifecycle::LifecycleModelError::CurrencyInvalid,
+        )
+        | PaymentServiceError::StatusUpdateNotAllowed
+        | PaymentServiceError::InvalidPageSize => {
+            Status::invalid_argument("payment lifecycle input is invalid")
+        }
+        PaymentServiceError::AttemptAlreadyExists => {
+            Status::failed_precondition("commercial payment retries are not enabled")
+        }
+        PaymentServiceError::ProviderEventInvalid => {
+            Status::invalid_argument("authenticated provider event is invalid")
+        }
+        PaymentServiceError::Transition(_) | PaymentServiceError::VersionConflict => {
+            Status::failed_precondition("payment lifecycle transition cannot be applied")
+        }
         PaymentServiceError::Database(error) => {
             tracing::error!(event.name="payment.persistence.failed",component="payments",error_class=%error);
             Status::internal("payment intent could not be completed")
@@ -194,7 +252,11 @@ fn map_error(error: PaymentServiceError) -> Status {
     }
 }
 
-fn grpc_span<T>(request: &Request<T>, operation: &'static str, correlation: &str) -> tracing::Span {
+pub(super) fn grpc_span<T>(
+    request: &Request<T>,
+    operation: &'static str,
+    correlation: &str,
+) -> tracing::Span {
     let parent = global::get_text_map_propagator(|propagator| {
         propagator.extract(&GrpcMetadataExtractor(request.metadata()))
     });

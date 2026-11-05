@@ -5,8 +5,10 @@ edition.workspace = true
 
 [dependencies]
 async-nats.workspace = true
+base64.workspace = true
 chrono.workspace = true
 opentelemetry.workspace = true
+ring.workspace = true
 platform-contracts = { path = "../../crates/platform_contracts" }
 payvia-observability = { path = "../../../crates/observability" }
 serde.workspace = true
