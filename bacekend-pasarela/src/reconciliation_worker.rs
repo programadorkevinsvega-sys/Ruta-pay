@@ -36,7 +36,6 @@ struct PlatformEvent {
     audience: String,
     correlation_id: String,
     payload: Value,
-    producer_auth: ProducerAuth,
 }
 
 #[derive(Deserialize)]
@@ -194,7 +193,7 @@ pub async fn run(
                             let delivery_attempt = message
                                 .info()
                                 .ok()
-                                .and_then(|info| i64::try_from(info.delivered).ok())
+                                .map(|info| info.delivered)
                                 .unwrap_or(1);
                             match processing::process_request(
                                 &state,
