@@ -150,15 +150,14 @@ pub(super) async fn apply(
     {
         return record_conflict(&mut tx, &mut event, "provider_attempt_state_conflict").await;
     }
-    let attempt_effect = match current_attempt
-        .transition_to(target_attempt, TransitionAuthority::Reconciliation)
-    {
-        Ok(effect) => effect,
-        Err(_) => {
-            return record_conflict(&mut tx, &mut event, "provider_attempt_terminal_conflict")
-                .await;
-        }
-    };
+    let attempt_effect =
+        match current_attempt.transition_to(target_attempt, TransitionAuthority::Reconciliation) {
+            Ok(effect) => effect,
+            Err(_) => {
+                return record_conflict(&mut tx, &mut event, "provider_attempt_terminal_conflict")
+                    .await;
+            }
+        };
     let target_intent = if status == "succeeded" {
         PaymentIntentStatus::Succeeded
     } else {
