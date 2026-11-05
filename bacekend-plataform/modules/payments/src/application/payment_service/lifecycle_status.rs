@@ -2,8 +2,6 @@ use serde_json::json;
 use sqlx::{Row, postgres::PgRow};
 use uuid::Uuid;
 
-type RelatedTransaction = (String, String, Option<Uuid>, Option<String>, Option<i64>, Option<String>);
-
 use crate::domain::{
     payment_intent::{PaymentIntent, PaymentIntentError, PaymentMethodType},
     payment_lifecycle::PaymentAttemptStatus,
@@ -16,6 +14,15 @@ use super::{
     PaymentIntentStatusUpdate, PaymentService, PaymentServiceError,
     UpdatePaymentIntentStatusCommand,
 };
+
+type RelatedTransaction = (
+    String,
+    String,
+    Option<Uuid>,
+    Option<String>,
+    Option<i64>,
+    Option<String>,
+);
 
 pub(super) async fn update(
     service: &PaymentService,
