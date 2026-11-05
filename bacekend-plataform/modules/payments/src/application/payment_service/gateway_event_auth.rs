@@ -55,15 +55,15 @@ mod tests {
 
     const KEY_ID: &str = "gateway-events-v1";
 
-fn encode_hex(value: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789ABCDEF";
-    let mut output = String::with_capacity(value.len() * 2);
-    for byte in value {
-        output.push(HEX[(byte >> 4) as usize] as char);
-        output.push(HEX[(byte & 0x0f) as usize] as char);
+    fn encode_hex(value: &[u8]) -> String {
+        const HEX: &[u8; 16] = b"0123456789ABCDEF";
+        let mut output = String::with_capacity(value.len() * 2);
+        for byte in value {
+            output.push(HEX[(byte >> 4) as usize] as char);
+            output.push(HEX[(byte & 0x0f) as usize] as char);
+        }
+        output
     }
-    output
-}
 
     fn signed_payload(event: Value, key: &[u8]) -> Vec<u8> {
         let canonical = serde_json::to_vec(&event).expect("canonical event");
