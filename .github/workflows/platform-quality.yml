@@ -216,6 +216,13 @@ jobs:
           exit "$failed"
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Diagnose Cargo.lock drift (temporary)
+        shell: bash
+        run: |
+          cp Cargo.lock /tmp/Cargo.lock.committed
+          trap 'cp /tmp/Cargo.lock.committed Cargo.lock' EXIT
+          cargo metadata --format-version 1 > /dev/null
+          git --no-pager diff -- Cargo.lock
       - name: Clippy
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Tests
