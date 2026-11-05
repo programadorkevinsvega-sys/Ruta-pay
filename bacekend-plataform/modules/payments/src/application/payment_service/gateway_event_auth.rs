@@ -48,7 +48,6 @@ fn decode_hex(value: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
