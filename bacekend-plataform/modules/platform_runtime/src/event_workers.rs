@@ -190,7 +190,7 @@ fn build_nats_options(username: String, password: String) -> Result<ConnectOptio
                 .add_root_certificates(PathBuf::from(root))
                 .add_client_certificate(PathBuf::from(certificate), PathBuf::from(private_key))
                 .require_tls(true))
-        },
+        }
         (None, None, None) if !required => {
             Ok(ConnectOptions::with_user_and_password(username, password))
         }
