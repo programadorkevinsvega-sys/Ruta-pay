@@ -245,10 +245,10 @@ version = "0.1.0"
 dependencies = [
  "async-nats",
  "axum",
- "base64",
+ "base64 0.22.1",
  "chrono",
  "platform-contracts",
- "reqwest",
+ "reqwest 0.12.28",
  "ring",
  "serde",
  "serde_json",
@@ -2269,7 +2269,7 @@ name = "platform-payments"
 version = "0.1.0"
 dependencies = [
  "async-nats",
- "base64",
+ "base64 0.22.1",
  "chrono",
  "opentelemetry",
  "platform-contracts",
@@ -2314,7 +2314,7 @@ name = "platform-runtime"
 version = "0.1.0"
 dependencies = [
  "async-nats",
- "base64",
+ "base64 0.22.1",
  "metrics",
  "opentelemetry",
  "payvia-observability",
