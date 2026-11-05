@@ -4,8 +4,8 @@ use platform_payments::application::payment_service::{
 };
 use ring::hmac;
 use serde_json::{Value, json};
-use sqlx::Row;
 use sha2::{Digest, Sha256};
+use sqlx::Row;
 use uuid::Uuid;
 
 use super::super::database::TestDatabase;
@@ -76,8 +76,18 @@ async fn signed_provider_events_apply_once_and_terminal_conflicts_require_reconc
     .fetch_one(&database.migration_pool)
     .await
     .expect("payment states are queryable");
-    assert_eq!(statuses.try_get::<String, _>("intent_status").expect("intent status"), "succeeded");
-    assert_eq!(statuses.try_get::<String, _>("attempt_status").expect("attempt status"), "succeeded");
+    assert_eq!(
+        statuses
+            .try_get::<String, _>("intent_status")
+            .expect("intent status"),
+        "succeeded"
+    );
+    assert_eq!(
+        statuses
+            .try_get::<String, _>("attempt_status")
+            .expect("attempt status"),
+        "succeeded"
+    );
 
     let transaction_status: String = sqlx::query_scalar(
         "SELECT status FROM payments.payment_transactions WHERE tenant_id=$1 AND payment_attempt_id=$2",
@@ -107,7 +117,10 @@ async fn signed_provider_events_apply_once_and_terminal_conflicts_require_reconc
     .fetch_one(&database.migration_pool)
     .await
     .expect("delivery ledger count is queryable");
-    assert_eq!(delivery_count, 2, "first delivery and replay are both retained");
+    assert_eq!(
+        delivery_count, 2,
+        "first delivery and replay are both retained"
+    );
 
     let mut conflicting = provider_event(
         tenant_id,
@@ -119,11 +132,7 @@ async fn signed_provider_events_apply_once_and_terminal_conflicts_require_reconc
     conflicting["provider_transaction_reference"] =
         succeeded["provider_transaction_reference"].clone();
     let conflict_result = service
-        .ingest_signed_provider_event(
-            &sign_event(conflicting),
-            &SIGNING_KEY,
-            KEY_ID,
-        )
+        .ingest_signed_provider_event(&sign_event(conflicting), &SIGNING_KEY, KEY_ID)
         .await
         .expect("a contradictory terminal event is retained for reconciliation");
     assert_eq!(
@@ -139,8 +148,14 @@ async fn signed_provider_events_apply_once_and_terminal_conflicts_require_reconc
     .fetch_one(&database.migration_pool)
     .await
     .expect("terminal conflict creates a durable reconciliation case");
-    assert_eq!(case.try_get::<String, _>("reason").expect("case reason"), "terminal_conflict");
-    assert_eq!(case.try_get::<String, _>("status").expect("case status"), "pending");
+    assert_eq!(
+        case.try_get::<String, _>("reason").expect("case reason"),
+        "terminal_conflict"
+    );
+    assert_eq!(
+        case.try_get::<String, _>("status").expect("case status"),
+        "pending"
+    );
 
     let final_status: String = sqlx::query_scalar(
         "SELECT status FROM payments.payment_attempts WHERE tenant_id=$1 AND id=$2",
@@ -150,7 +165,10 @@ async fn signed_provider_events_apply_once_and_terminal_conflicts_require_reconc
     .fetch_one(&database.migration_pool)
     .await
     .expect("final attempt status is queryable");
-    assert_eq!(final_status, "succeeded", "terminal state is never overwritten");
+    assert_eq!(
+        final_status, "succeeded",
+        "terminal state is never overwritten"
+    );
 
     let invalid = provider_event(
         tenant_id,
@@ -206,10 +224,7 @@ fn provider_event(
 
 fn sign_event(event: Value) -> Vec<u8> {
     let canonical = serde_json::to_vec(&event).expect("event serializes");
-    let signature = hmac::sign(
-        &hmac::Key::new(hmac::HMAC_SHA256, &SIGNING_KEY),
-        &canonical,
-    );
+    let signature = hmac::sign(&hmac::Key::new(hmac::HMAC_SHA256, &SIGNING_KEY), &canonical);
     serde_json::to_vec(&json!({
         "key_id": KEY_ID,
         "event": event,
