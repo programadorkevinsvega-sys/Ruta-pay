@@ -50,6 +50,12 @@ fn decode_hex(value: &str) -> Option<Vec<u8>> {
 
 
 #[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    const KEY_ID: &str = "gateway-events-v1";
+
 fn encode_hex(value: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
     let mut output = String::with_capacity(value.len() * 2);
@@ -59,13 +65,6 @@ fn encode_hex(value: &[u8]) -> String {
     }
     output
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    const KEY_ID: &str = "gateway-events-v1";
 
     fn signed_payload(event: Value, key: &[u8]) -> Vec<u8> {
         let canonical = serde_json::to_vec(&event).expect("canonical event");
