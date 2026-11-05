@@ -286,6 +286,7 @@ dependencies = [
  "platform-tenant-registry",
  "redis",
  "reqwest 0.12.28",
+ "ring",
  "rpassword",
  "serde_json",
  "sha2 0.11.1",
