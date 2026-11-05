@@ -4,6 +4,7 @@ use platform_payments::application::payment_service::{
 };
 use ring::hmac;
 use serde_json::{Value, json};
+use sqlx::Row;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
@@ -102,7 +103,7 @@ async fn signed_provider_events_apply_once_and_terminal_conflicts_require_reconc
         "SELECT count(*) FROM payments.provider_event_deliveries WHERE tenant_id=$1 AND event_id=$2",
     )
     .bind(tenant_id)
-    .bind(succeeded["event_id"].as_str().expect("event id"))
+    .bind(Uuid::parse_str(succeeded["event_id"].as_str().expect("event id")).expect("event UUID"))
     .fetch_one(&database.migration_pool)
     .await
     .expect("delivery ledger count is queryable");
@@ -151,17 +152,15 @@ async fn signed_provider_events_apply_once_and_terminal_conflicts_require_reconc
     .expect("final attempt status is queryable");
     assert_eq!(final_status, "succeeded", "terminal state is never overwritten");
 
-    let mut invalid = provider_event(
+    let invalid = provider_event(
         tenant_id,
         attempt.id,
         "provider-event-tampered",
         "failed",
         Utc::now().timestamp_millis() + 30_000,
     );
-    let mut tampered = serde_json::from_slice::<Value>(
-        &sign_event(invalid.take()),
-    )
-    .expect("signed envelope is JSON");
+    let mut tampered =
+        serde_json::from_slice::<Value>(&sign_event(invalid)).expect("signed envelope is JSON");
     tampered["signature"] = Value::String("00".repeat(32));
     let rejected = service
         .ingest_signed_provider_event(
