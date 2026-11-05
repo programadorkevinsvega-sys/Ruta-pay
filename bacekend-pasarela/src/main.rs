@@ -5,9 +5,7 @@ use tokio::{net::TcpListener, sync::watch};
 
 use bacekend_pasarela::{
     reconciliation_worker::{self, ReconciliationWorkerConfig},
-    webhooks::{
-        GatewayWebhookState, load_account_registry, load_event_signing_key, router,
-    },
+    webhooks::{GatewayWebhookState, load_account_registry, load_event_signing_key, router},
 };
 
 #[tokio::main]
@@ -38,19 +36,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|_| "GATEWAY_PLATFORM_REQUEST_VERIFY_KEY_ID is required")?;
     let nats_url =
         env::var("GATEWAY_NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".to_owned());
-    let nats_user =
-        env::var("GATEWAY_NATS_USER").map_err(|_| "GATEWAY_NATS_USER is required")?;
+    let nats_user = env::var("GATEWAY_NATS_USER").map_err(|_| "GATEWAY_NATS_USER is required")?;
     let nats_password =
         env::var("GATEWAY_NATS_PASSWORD").map_err(|_| "GATEWAY_NATS_PASSWORD is required")?;
     if nats_user.trim().is_empty() || nats_password.len() < 32 {
         return Err("gateway NATS credentials are invalid".into());
     }
 
-    let options = build_nats_options(nats_user, nats_password)
-        .map_err(std::io::Error::other)?;
+    let options = build_nats_options(nats_user, nats_password).map_err(std::io::Error::other)?;
     let nats = options.connect(&nats_url).await?;
     let jetstream = async_nats::jetstream::new(nats);
-    let state = GatewayWebhookState::new(accounts, jetstream.clone(), &signing_key, signing_key_id)?;
+    let state =
+        GatewayWebhookState::new(accounts, jetstream.clone(), &signing_key, signing_key_id)?;
     let worker_config = ReconciliationWorkerConfig {
         platform_request_key: Arc::from(platform_request_key),
         platform_request_key_id: Arc::from(platform_request_key_id),
@@ -82,25 +79,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn build_nats_options(
-    username: String,
-    password: String,
-) -> Result<ConnectOptions, &'static str> {
+fn build_nats_options(username: String, password: String) -> Result<ConnectOptions, &'static str> {
     let root = env::var_os("NATS_TLS_ROOT_CA");
     let certificate = env::var_os("NATS_TLS_CLIENT_CERT");
     let private_key = env::var_os("NATS_TLS_CLIENT_KEY");
-    let required = env::var("PAYVIA_REQUIRE_MTLS")
-        .is_ok_and(|value| value.eq_ignore_ascii_case("true"));
+    let required =
+        env::var("PAYVIA_REQUIRE_MTLS").is_ok_and(|value| value.eq_ignore_ascii_case("true"));
     match (root, certificate, private_key) {
-        (Some(root), Some(certificate), Some(private_key)) => Ok(
-            ConnectOptions::with_user_and_password(username, password)
+        (Some(root), Some(certificate), Some(private_key)) => {
+            Ok(ConnectOptions::with_user_and_password(username, password)
                 .add_root_certificates(PathBuf::from(root))
-                .add_client_certificate(
-                    PathBuf::from(certificate),
-                    PathBuf::from(private_key),
-                )
-                .require_tls(true),
-        ),
+                .add_client_certificate(PathBuf::from(certificate), PathBuf::from(private_key))
+                .require_tls(true))
+        },
         (None, None, None) if !required => {
             Ok(ConnectOptions::with_user_and_password(username, password))
         }

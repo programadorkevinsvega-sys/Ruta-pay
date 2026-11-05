@@ -7,9 +7,10 @@ pub(super) fn validate_event(event: &ProviderEvent) -> Result<DateTime<Utc>, Pay
         || event.payment_attempt_id.is_nil()
         || event.provider_code.is_empty()
         || event.provider_code.len() > 32
-        || !event.provider_code.bytes().all(|byte| {
-            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'
-        })
+        || !event
+            .provider_code
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
         || event.provider_account_reference.is_empty()
         || event.provider_account_reference.len() > 128
         || event.provider_event_id.is_empty()
@@ -22,13 +23,18 @@ pub(super) fn validate_event(event: &ProviderEvent) -> Result<DateTime<Utc>, Pay
         || event.correlation_id.is_empty()
         || event.correlation_id.len() > 128
         || !["test", "live"].contains(&event.environment.as_str())
-        || !["processing", "requires_action", "authorized", "succeeded", "failed"]
-            .contains(&event.status.as_str())
+        || ![
+            "processing",
+            "requires_action",
+            "authorized",
+            "succeeded",
+            "failed",
+        ]
+        .contains(&event.status.as_str())
     {
         return Err(PaymentServiceError::ProviderEventInvalid);
     }
-    decode_sha256(&event.payload_sha256)
-        .ok_or(PaymentServiceError::ProviderEventInvalid)?;
+    decode_sha256(&event.payload_sha256).ok_or(PaymentServiceError::ProviderEventInvalid)?;
     DateTime::from_timestamp_millis(event.occurred_at_unix_millis)
         .ok_or(PaymentServiceError::ProviderEventInvalid)
 }
@@ -128,7 +134,15 @@ pub(super) async fn request_reconciliation(
         "currency":event.currency,
         "reason":reason
     });
-    insert_outbox(tx, case_id, version, "payment.reconciliation.requested", payload, &event.correlation_id).await
+    insert_outbox(
+        tx,
+        case_id,
+        version,
+        "payment.reconciliation.requested",
+        payload,
+        &event.correlation_id,
+    )
+    .await
 }
 
 pub(super) async fn audit_service_event(
@@ -185,7 +199,9 @@ pub(super) fn attempt_target(value: &str) -> Result<PaymentAttemptStatus, Paymen
     }
 }
 
-pub(super) fn intent_target(value: &str) -> Result<Option<PaymentIntentStatus>, PaymentServiceError> {
+pub(super) fn intent_target(
+    value: &str,
+) -> Result<Option<PaymentIntentStatus>, PaymentServiceError> {
     match value {
         "processing" | "failed" => Ok(None),
         "requires_action" => Ok(Some(PaymentIntentStatus::RequiresAction)),
@@ -195,7 +211,9 @@ pub(super) fn intent_target(value: &str) -> Result<Option<PaymentIntentStatus>, 
     }
 }
 
-pub(super) fn transaction_target(value: &str) -> Result<PaymentTransactionStatus, PaymentServiceError> {
+pub(super) fn transaction_target(
+    value: &str,
+) -> Result<PaymentTransactionStatus, PaymentServiceError> {
     match value {
         "processing" | "requires_action" => Ok(PaymentTransactionStatus::Pending),
         "authorized" => Ok(PaymentTransactionStatus::Authorized),

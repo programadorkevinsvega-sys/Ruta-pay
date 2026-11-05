@@ -7,8 +7,7 @@ pub(super) async fn process_request(
     raw: &[u8],
     delivery_attempt: i64,
 ) -> Result<(), RequestError> {
-    let value: Value =
-        serde_json::from_slice(raw).map_err(|_| RequestError::InvalidEnvelope)?;
+    let value: Value = serde_json::from_slice(raw).map_err(|_| RequestError::InvalidEnvelope)?;
     verify_platform_event(&value, config)?;
     let envelope: PlatformEvent =
         serde_json::from_value(value).map_err(|_| RequestError::InvalidEnvelope)?;
@@ -222,9 +221,7 @@ async fn publish_result(
         .publish_with_headers(PLATFORM_RESULT_SUBJECT, headers, payload.into())
         .await
         .map_err(|_| RequestError::Unavailable)?;
-    published
-        .await
-        .map_err(|_| RequestError::Unavailable)?;
+    published.await.map_err(|_| RequestError::Unavailable)?;
     tracing::info!(
         event.name = "gateway.reconciliation.result.published",
         component = "gateway_reconciliation",

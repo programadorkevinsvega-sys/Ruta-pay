@@ -13,11 +13,12 @@ mod processing;
 
 use crate::{
     webhooks::{GatewayWebhookState, WompiAccountConfig},
-    wompi::{WompiClient, WompiClientError, WompiEnvironment, WompiPaymentStatus, reference_for_attempt},
+    wompi::{
+        WompiClient, WompiClientError, WompiEnvironment, WompiPaymentStatus, reference_for_attempt,
+    },
 };
 
-const PLATFORM_REQUEST_SUBJECT: &str =
-    "payvia.platform.events.v1.payment.reconciliation.requested";
+const PLATFORM_REQUEST_SUBJECT: &str = "payvia.platform.events.v1.payment.reconciliation.requested";
 const PLATFORM_RESULT_SUBJECT: &str =
     "payvia.platform.events.v1.payments.provider_reconciliation.result";
 const DURABLE_CONSUMER: &str = "GATEWAY_PAYMENT_RECONCILIATION";
@@ -288,4 +289,3 @@ pub async fn run(
         }
     }
 }
-

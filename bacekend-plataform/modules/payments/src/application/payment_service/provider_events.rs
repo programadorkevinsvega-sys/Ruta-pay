@@ -84,8 +84,8 @@ pub(super) async fn ingest(
         return Err(PaymentServiceError::ProviderEventInvalid);
     }
 
-    let payload_hash = decode_sha256(&event.payload_sha256)
-        .ok_or(PaymentServiceError::ProviderEventInvalid)?;
+    let payload_hash =
+        decode_sha256(&event.payload_sha256).ok_or(PaymentServiceError::ProviderEventInvalid)?;
     let inbox_id = Uuid::new_v4();
     let inserted = sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO payments.provider_event_inbox (inbox_id,event_id,tenant_id,environment,payment_intent_id,payment_attempt_id,provider_code,provider_account_reference,provider_event_id,provider_transaction_reference,normalized_status,schema_version,occurred_at,payload_sha256,correlation_id,producer_identity) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,1,$12,$13,$14,'gateway-pasarela:wompi') ON CONFLICT DO NOTHING RETURNING inbox_id",
@@ -135,8 +135,7 @@ pub(super) async fn ingest(
         || current_intent == "outcome_unknown"
         || ensure_provider_event_is_newer(attempt_last_event, occurred_at).is_err()
         || transition_attempt(&current_attempt, attempt_target).is_err()
-        || intent_target
-            .is_some_and(|target| transition_intent(&current_intent, target).is_err());
+        || intent_target.is_some_and(|target| transition_intent(&current_intent, target).is_err());
 
     if needs_reconciliation {
         mark_inbox(&mut tx, inbox_id, "reconciliation_required").await?;
@@ -295,4 +294,3 @@ pub(super) async fn ingest(
     tx.commit().await?;
     Ok(GatewayEventDisposition::Applied)
 }
-

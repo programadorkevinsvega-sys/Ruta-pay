@@ -1,7 +1,7 @@
 mod attempts;
 mod create;
-mod get;
 mod gateway_event_auth;
+mod get;
 mod lifecycle_status;
 mod provider_events;
 mod reconciliation_result;

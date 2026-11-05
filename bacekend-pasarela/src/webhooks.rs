@@ -2,12 +2,12 @@ use std::{collections::HashMap, sync::Arc};
 
 use async_nats::{HeaderMap, jetstream};
 use axum::{
+    Json, Router,
     body::Bytes,
     extract::{Path, State},
     http::{HeaderMap as HttpHeaders, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use ring::hmac;
@@ -75,14 +75,19 @@ impl IntoResponse for WebhookError {
     fn into_response(self) -> Response {
         let (status, code) = match self {
             Self::UnknownAccount => (StatusCode::NOT_FOUND, "provider_account_not_found"),
-            Self::InvalidConfiguration => {
-                (StatusCode::SERVICE_UNAVAILABLE, "provider_account_unavailable")
-            }
+            Self::InvalidConfiguration => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "provider_account_unavailable",
+            ),
             Self::InvalidCallback => (StatusCode::BAD_REQUEST, "provider_callback_invalid"),
-            Self::Unauthenticated => (StatusCode::UNAUTHORIZED, "provider_callback_unauthenticated"),
-            Self::EventBusUnavailable => {
-                (StatusCode::SERVICE_UNAVAILABLE, "provider_event_delivery_unavailable")
-            }
+            Self::Unauthenticated => (
+                StatusCode::UNAUTHORIZED,
+                "provider_callback_unauthenticated",
+            ),
+            Self::EventBusUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "provider_event_delivery_unavailable",
+            ),
         };
         (status, Json(serde_json::json!({"error":{"code":code}}))).into_response()
     }
@@ -157,16 +162,13 @@ async fn receive_wompi_event(
     let checksum = headers
         .get("x-event-checksum")
         .and_then(|value| value.to_str().ok());
-    let verified = verify_event(
-        &body,
-        checksum,
-        &account.event_secret,
-        environment,
-    )
-    .map_err(|error| match error {
-        crate::wompi::WompiEventError::InvalidSignature => WebhookError::Unauthenticated,
-        _ => WebhookError::InvalidCallback,
-    })?;
+    let verified =
+        verify_event(&body, checksum, &account.event_secret, environment).map_err(|error| {
+            match error {
+                crate::wompi::WompiEventError::InvalidSignature => WebhookError::Unauthenticated,
+                _ => WebhookError::InvalidCallback,
+            }
+        })?;
 
     let event = ProviderEvent {
         schema_version: 1,
@@ -227,10 +229,7 @@ fn validate_account(account: &WompiAccountConfig) -> Result<(), &'static str> {
         || account.account_reference.is_empty()
         || account.account_reference.len() > 128
         || !account.account_reference.bytes().all(|byte| {
-            byte.is_ascii_lowercase()
-                || byte.is_ascii_digit()
-                || byte == b'-'
-                || byte == b'_'
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'_'
         })
     {
         return Err("wompi_account_configuration_invalid");
@@ -336,8 +335,9 @@ mod tests {
                 "tenant_id":second.tenant_id,
                 "environment":second.environment,
                 "event_secret":second.event_secret
-            })
-        ]).expect("serialize");
+            }),
+        ])
+        .expect("serialize");
         assert!(matches!(
             load_account_registry(&parsed),
             Err("wompi_account_reference_duplicate")

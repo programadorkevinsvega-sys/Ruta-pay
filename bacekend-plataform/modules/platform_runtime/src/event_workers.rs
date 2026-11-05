@@ -178,25 +178,19 @@ pub async fn run(
     }
 }
 
-fn build_nats_options(
-    username: String,
-    password: String,
-) -> Result<ConnectOptions, &'static str> {
+fn build_nats_options(username: String, password: String) -> Result<ConnectOptions, &'static str> {
     let root = env::var_os("NATS_TLS_ROOT_CA");
     let certificate = env::var_os("NATS_TLS_CLIENT_CERT");
     let private_key = env::var_os("NATS_TLS_CLIENT_KEY");
-    let required = env::var("PAYVIA_REQUIRE_MTLS")
-        .is_ok_and(|value| value.eq_ignore_ascii_case("true"));
+    let required =
+        env::var("PAYVIA_REQUIRE_MTLS").is_ok_and(|value| value.eq_ignore_ascii_case("true"));
     match (root, certificate, private_key) {
-        (Some(root), Some(certificate), Some(private_key)) => Ok(
-            ConnectOptions::with_user_and_password(username, password)
+        (Some(root), Some(certificate), Some(private_key)) => {
+            Ok(ConnectOptions::with_user_and_password(username, password)
                 .add_root_certificates(PathBuf::from(root))
-                .add_client_certificate(
-                    PathBuf::from(certificate),
-                    PathBuf::from(private_key),
-                )
-                .require_tls(true),
-        ),
+                .add_client_certificate(PathBuf::from(certificate), PathBuf::from(private_key))
+                .require_tls(true))
+        },
         (None, None, None) if !required => {
             Ok(ConnectOptions::with_user_and_password(username, password))
         }

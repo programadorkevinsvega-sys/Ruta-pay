@@ -150,9 +150,8 @@ pub(super) async fn apply(
     {
         return record_conflict(&mut tx, &mut event, "provider_attempt_state_conflict").await;
     }
-    let attempt_effect = match current_attempt
-        .transition_to(target_attempt, TransitionAuthority::Reconciliation)
-    {
+    let attempt_effect =
+        match current_attempt.transition_to(target_attempt, TransitionAuthority::Reconciliation) {
         Ok(effect) => effect,
         Err(_) => {
             return record_conflict(&mut tx, &mut event, "provider_attempt_terminal_conflict")
@@ -176,8 +175,7 @@ pub(super) async fn apply(
     {
         Ok(effect) => effect,
         Err(_) => {
-            return record_conflict(&mut tx, &mut event, "provider_intent_terminal_conflict")
-                .await;
+            return record_conflict(&mut tx, &mut event, "provider_intent_terminal_conflict").await;
         }
     };
 
@@ -201,12 +199,8 @@ pub(super) async fn apply(
             let id: Uuid = row.try_get("id")?;
             let current = parse_transaction_status(&row.try_get::<String, _>("status")?)?;
             if current == PaymentTransactionStatus::Authorized && status == "failed" {
-                return record_conflict(
-                    &mut tx,
-                    &mut event,
-                    "provider_transaction_state_conflict",
-                )
-                .await;
+                return record_conflict(&mut tx, &mut event, "provider_transaction_state_conflict")
+                    .await;
             }
             let effect = match current
                 .transition_to(target_transaction, TransitionAuthority::Reconciliation)

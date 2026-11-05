@@ -186,8 +186,7 @@ impl LifecycleState for PaymentIntentStatus {
         use PaymentIntentStatus::*;
         matches!(
             (self, next),
-            (Processing, RequiresAction | Authorized | Succeeded)
-                | (Authorized, Succeeded)
+            (Processing, RequiresAction | Authorized | Succeeded) | (Authorized, Succeeded)
         )
     }
 

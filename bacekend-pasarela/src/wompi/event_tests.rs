@@ -38,13 +38,8 @@ fn verifies_dynamic_properties_and_normalizes_a_transaction_event() {
         "wompi-transaction-001"
     );
     assert_eq!(verified.occurred_at.timestamp(), 1_730_000_000);
-    let replay = verify_event(
-        raw.as_bytes(),
-        None,
-        EVENT_SECRET,
-        WompiEnvironment::Live,
-    )
-    .expect("same signed delivery remains verifiable for idempotent handling");
+    let replay = verify_event(raw.as_bytes(), None, EVENT_SECRET, WompiEnvironment::Live)
+        .expect("same signed delivery remains verifiable for idempotent handling");
     assert_eq!(verified.event_id, replay.event_id);
     assert_eq!(verified.provider_event_id, replay.provider_event_id);
 }
@@ -67,12 +62,7 @@ fn rejects_header_checksum_mismatch_even_when_body_checksum_is_valid() {
 fn rejects_wrong_account_environment_and_unknown_status() {
     let raw = signed_event(Uuid::new_v4(), "PENDING", "prod", EVENT_SECRET);
     assert_eq!(
-        verify_event(
-            raw.as_bytes(),
-            None,
-            EVENT_SECRET,
-            WompiEnvironment::Test
-        ),
+        verify_event(raw.as_bytes(), None, EVENT_SECRET, WompiEnvironment::Test),
         Err(WompiEventError::EnvironmentMismatch)
     );
 
@@ -133,18 +123,8 @@ fn checksum_from_body(raw: &str) -> String {
         .to_owned()
 }
 
-fn signed_event(
-    attempt_id: Uuid,
-    status: &str,
-    environment: &str,
-    secret: &str,
-) -> String {
-    signed_event_with_reference(
-        &format!("rpay_{attempt_id}"),
-        status,
-        environment,
-        secret,
-    )
+fn signed_event(attempt_id: Uuid, status: &str, environment: &str, secret: &str) -> String {
+    signed_event_with_reference(&format!("rpay_{attempt_id}"), status, environment, secret)
 }
 
 fn signed_event_with_reference(
@@ -178,5 +158,6 @@ fn signed_event_with_reference(
         },
         "timestamp":timestamp,
         "sent_at":"2024-11-13T22:13:20.000Z"
-    }).to_string()
+    })
+    .to_string()
 }

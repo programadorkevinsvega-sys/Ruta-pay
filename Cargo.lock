@@ -255,6 +255,7 @@ dependencies = [
  "sha2 0.11.1",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "tonic",
  "tracing",
  "tracing-subscriber",

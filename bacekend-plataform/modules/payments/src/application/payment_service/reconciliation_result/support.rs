@@ -127,7 +127,9 @@ pub(super) async fn insert_outbox(
     Ok(())
 }
 
-pub(super) fn parse_attempt_target(value: &str) -> Result<PaymentAttemptStatus, PaymentServiceError> {
+pub(super) fn parse_attempt_target(
+    value: &str,
+) -> Result<PaymentAttemptStatus, PaymentServiceError> {
     match value {
         "succeeded" => Ok(PaymentAttemptStatus::Succeeded),
         "failed" => Ok(PaymentAttemptStatus::Failed),
@@ -135,7 +137,9 @@ pub(super) fn parse_attempt_target(value: &str) -> Result<PaymentAttemptStatus, 
     }
 }
 
-pub(super) fn parse_attempt_status(value: &str) -> Result<PaymentAttemptStatus, PaymentServiceError> {
+pub(super) fn parse_attempt_status(
+    value: &str,
+) -> Result<PaymentAttemptStatus, PaymentServiceError> {
     match value {
         "created" => Ok(PaymentAttemptStatus::Created),
         "submitted" => Ok(PaymentAttemptStatus::Submitted),
@@ -161,7 +165,9 @@ pub(super) fn parse_intent_status(value: &str) -> Result<PaymentIntentStatus, Pa
     }
 }
 
-pub(super) fn parse_transaction_target(value: &str) -> Result<PaymentTransactionStatus, PaymentServiceError> {
+pub(super) fn parse_transaction_target(
+    value: &str,
+) -> Result<PaymentTransactionStatus, PaymentServiceError> {
     match value {
         "succeeded" => Ok(PaymentTransactionStatus::Succeeded),
         "failed" => Ok(PaymentTransactionStatus::Failed),
@@ -169,7 +175,9 @@ pub(super) fn parse_transaction_target(value: &str) -> Result<PaymentTransaction
     }
 }
 
-pub(super) fn parse_transaction_status(value: &str) -> Result<PaymentTransactionStatus, PaymentServiceError> {
+pub(super) fn parse_transaction_status(
+    value: &str,
+) -> Result<PaymentTransactionStatus, PaymentServiceError> {
     match value {
         "pending" => Ok(PaymentTransactionStatus::Pending),
         "authorized" => Ok(PaymentTransactionStatus::Authorized),
