@@ -107,10 +107,10 @@ pub fn verify_event(
     if environment != expected_environment.wompi_value() {
         return Err(WompiEventError::EnvironmentMismatch);
     }
-    if let Some(header) = header_checksum {
-        if !constant_time_hex_eq(header, body_checksum) {
-            return Err(WompiEventError::InvalidSignature);
-        }
+    if let Some(header) = header_checksum
+        && !constant_time_hex_eq(header, body_checksum)
+    {
+        return Err(WompiEventError::InvalidSignature);
     }
 
     let mut signature_input = Vec::with_capacity(256);
@@ -170,7 +170,7 @@ pub fn verify_event(
         .ok_or(WompiEventError::InvalidTimestamp)?;
     let payload_sha256: [u8; 32] = Sha256::digest(raw_body).into();
     let provider_event_id = stable_provider_event_id(
-        &transaction_id,
+        transaction_id,
         event_name,
         required_string(transaction, "status")?,
         timestamp,
@@ -277,7 +277,11 @@ fn constant_time_hex_eq(left: &str, right: &str) -> bool {
     }
     let left = left.to_ascii_uppercase();
     let right = right.to_ascii_uppercase();
-    ring::constant_time::verify_slices_are_equal(left.as_bytes(), right.as_bytes()).is_ok()
+    left.as_bytes()
+        .iter()
+        .zip(right.as_bytes())
+        .fold(0_u8, |difference, (left, right)| difference | (left ^ right))
+        == 0
 }
 
 #[cfg(test)]
