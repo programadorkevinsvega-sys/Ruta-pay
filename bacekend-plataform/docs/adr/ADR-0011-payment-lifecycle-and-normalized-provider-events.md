@@ -1,6 +1,6 @@
 # ADR-0011: Modelo de intentos, transacciones y resultados normalizados — Fase 4
 
-- Estado: resolución técnica del dominio adoptada; integración operativa pendiente
+- Estado: resolución técnica adoptada; ingress Wompi firmado y reconciliación cross-backend implementados parcialmente; operación de cobro y sandbox pendientes
 - Fecha: 2026-11-03
 - Alcance: `bacekend-plataform/modules/payments`
 - Relacionada: ADR-0010 (creación/consulta inicial de Payment Intents)
@@ -10,7 +10,7 @@
 
 ADR-0010 dejó el Payment Intent inicial en estado `created` y sin intentos ni transacciones. Fase 4 asigna a plataforma el ownership del ciclo de negocio para cobros de compradores de los tenants, mientras el backend de pasarelas es dueño de la ejecución del protocolo de cada proveedor y de la verificación criptográfica de sus callbacks.
 
-Las decisiones B-EC-07..13 siguen sin aprobación. Además, el backend de pasarelas no implementa todavía adapters ni callback ingress; y la identidad mTLS/grants entre backends sigue asignada a Fase 5. Esta ADR resuelve únicamente decisiones técnicas que pueden fijarse sin inventar esas políticas ni debilitar la frontera de confianza.
+Las decisiones B-EC-07..13 siguen sin aprobación. El backend de pasarelas implementa un ingress Wompi con checksum oficial, publicación HMAC firmada y un worker durable de consulta por ID de transacción; plataforma valida el envelope, aplica eventos o abre reconciliación y consume resultados firmados. No existe todavía operación saliente para crear un cobro, vault/cifrado de credenciales ni aceptación oficial en Sandbox. La exigencia mTLS puede activarse por configuración (`PAYVIA_REQUIRE_MTLS=true`); la identidad/grants por comando de Fase 5 siguen pendientes.
 
 ## Decisiones técnicas
 
@@ -31,7 +31,7 @@ El contrato de plataforma consume estados neutrales; no contiene nombres de esta
 - **Payment Transaction:** `pending`, `authorized`, `succeeded`, `failed`, `outcome_unknown`.
 - `outcome_unknown` no es un estado informado por el proveedor ni una respuesta negativa: representa que plataforma no pudo conocer con certeza el resultado de una operación. Solo una consulta/reconciliación autoritativa puede resolverlo.
 - El fallo de un intento no cierra automáticamente el Payment Intent. La política de reintentos B-EC-10 no está aprobada; por eso el estado `failed` pertenece al intento/transacción y no se proyecta automáticamente como un estado terminal del Payment Intent.
-- PR #11 agrega modelos de dominio, guards y el mensaje Protobuf NormalizedProviderPaymentEventV1. PR #12 agrega migración, persistencia, casos de uso y contratos HTTP/gRPC para el slice inicial; no habilita ingestión de eventos ni integración de proveedor sin una frontera autenticada.
+- PR #11 agrega modelos de dominio, guards y el mensaje Protobuf NormalizedProviderPaymentEventV1. PR #12 agrega persistencia/API inicial, ingress de callback Wompi verificado, envelopes HMAC, consumer de inbox y worker de reconciliación. No habilita la operación saliente de cobro ni reemplaza la autorización/grants por comando de Fase 5.
 
 ### 3. Guards y orden de eventos
 
@@ -47,8 +47,8 @@ El contrato de plataforma consume estados neutrales; no contiene nombres de esta
 - El contrato `NormalizedProviderPaymentEventV1` transporta schema version, UUID estable del sobre (`event_id`), proveedor, referencia de cuenta, ID externo estable del evento (`provider_event_id`), tenant, entorno, intent, attempt, referencia de transacción, estado neutral, timestamp de origen, correlation ID y SHA-256 del cuerpo verificado. `event_id` identifica la entrega interna; `provider_event_id` participa en la deduplicación externa.
 - No transporta body crudo, secretos, firmas, credenciales ni datos de tarjeta sensibles.
 - El schema Protobuf por sí solo **no prueba autenticidad**. Solo puede ser aceptado después de que el adapter del proveedor verifique el callback según el protocolo oficial, anti-replay y asociación de cuenta; además, la identidad del productor debe autenticarse en la frontera entre backends.
-- La verificación criptográfica de callbacks pertenece al backend de pasarelas (su fase de webhooks). La autenticación mTLS/grants plataforma↔pasarelas pertenece a Fase 5. Ninguno de esos trabajos se implementa en esta ADR.
-- Mientras ambas condiciones no existan, la plataforma no expone RPC/HTTP ni consumer que acepte este mensaje desde una fuente no autenticada. El contrato se define, pero la ingestión queda bloqueada.
+- El gateway verifica el checksum oficial del callback Wompi usando las propiedades dinámicas declaradas por el evento, timestamp y secreto de eventos; valida ambiente, referencia del attempt e importe/moneda antes de normalizar. La plataforma acepta únicamente envelopes HMAC firmados por clave/key ID configurados. La configuración NATS puede exigir mTLS; completar identidad de servicio y grants por operación sigue en Fase 5.
+- La ingestión de eventos normalizados no queda expuesta como endpoint público de plataforma. El gateway transforma callback Wompi verificado en un evento interno firmado; plataforma vuelve a verificar firma y ownership antes de aplicar. No confiar en `producer_identity`, headers ni IP como prueba de autenticidad.
 
 ### 5. Idempotencia, resultado incierto y reconciliación
 
@@ -56,7 +56,7 @@ El contrato de plataforma consume estados neutrales; no contiene nombres de esta
 - provider_event_inbox conserva el envelope normalizado, hash del cuerpo original y metadatos necesarios de auditoría; no guarda payload crudo de proveedor.
 - Un timeout de resultado incierto no habilita un nuevo cobro. Se conserva el intento con `outcome_unknown` y se abre una necesidad durable de reconciliación.
 - La reconciliación consulta al proveedor por una referencia identificable y aplica el resultado dentro de una transacción, con control de versión/duplicado. Si no existe capacidad de consulta confiable, el caso queda en revisión; no se inventa un fallo ni se reintenta el cargo.
-- La API/worker de consulta de proveedor no se implementa hasta disponer de adapter/capacidad verificada y la frontera de autorización correspondiente.
+- El worker implementado consume órdenes Outbox firmadas y consulta Wompi por `GET /v1/transactions/{id}` cuando existe un ID externo. Verifica referencia `rpay_<attempt_id>`, importe y moneda; sin ID o con evidencia inconclusa el caso queda en `manual_review`. Esta consulta no ejecuta cargos ni habilita reintentos.
 
 ### 6. Límites comerciales explícitos
 
@@ -66,7 +66,7 @@ No se agregan estados, comandos ni endpoints para captura, cancelación, expirac
 
 - Los pagos de compradores pertenecen a `payments` (plataforma decide y persiste el estado de negocio) y se ejecutan técnicamente en adapters del backend de pasarelas por una operación autorizada.
 - El cobro de suscripciones/facturas SaaS que Payvia realiza a sus tenants pertenece a `platform_billing_wompi`, con cuenta y credenciales propias de Payvia. No utiliza los adapters ni las credenciales tenant del backend de pasarelas.
-- El backend de pasarelas continúa siendo scaffold sin adapters operativos; por tanto, el cobro real a compradores no se declara disponible ni se simula en plataforma.
+- El backend de pasarelas dispone de ingress/lookup Wompi parciales, pero aún no implementa creación de transacción/cobro ni el contrato completo de operación autorizada. El cobro real a compradores no se declara disponible ni se simula en plataforma.
 
 ## 8. Persistencia relacional del lifecycle
 
@@ -79,9 +79,9 @@ La rama feat/phase-4-payment-lifecycle-persistence añade una migración aditiva
 - `payments.payment_reconciliation_cases` y `payment_reconciliation_attempts` almacenan casos pendientes/leased/manual review, leases recuperables e historial de consultas/resultados/evidencia.
 - Las seis tablas nuevas aplican ENABLE y FORCE RLS sobre `app.tenant_id`; las relaciones usan tenant y entorno en sus claves. La prueba de integración usa un rol runtime sin BYPASSRLS.
 
-El esquema y los casos de uso iniciales no autentican productores ni verifican callbacks. La API aplica guards/versionado para el inicio de envío y registra el caso durable de outcome_unknown, pero no acepta eventos normalizados externos ni ejecuta consultas al proveedor. La migración es aditiva; una reversión de aplicación conserva los registros financieros y no ejecuta DROP automático.
+El esquema y los casos de uso iniciales se conectan ahora a un flujo autenticado: el gateway verifica callbacks Wompi y firma el envelope interno; la plataforma verifica HMAC/key ID, valida tenant/entorno/provider/account/monto y aplica el cambio o abre reconciliación dentro de transacciones PostgreSQL. El worker de pasarela consulta por ID de transacción y publica resultados firmados; plataforma los valida y resuelve o conserva el caso en revisión. La migración es aditiva; una reversión de aplicación conserva los registros financieros y no ejecuta DROP automático.
 
-**Estado de persistencia:** migración aditiva y aceptación PostgreSQL incluidas en PR #12. La ejecución del HEAD final debe confirmar el código y las pruebas antes de declararse verificada.
+**Estado de persistencia/eventos:** migraciones aditivas e integración de eventos firmados incluidas en PR #12. El test `signed_provider_events_apply_once_and_terminal_conflicts_require_reconciliation` comprueba aplicación, replay, conflicto terminal e integridad HMAC sobre PostgreSQL; debe pasar el CI del HEAD final para considerarse verificado.
 
 ## Evidencia y trabajo que queda pendiente
 
@@ -93,9 +93,9 @@ El incremento inicial de dominio de PR #11 contiene:
 
 Continúa pendiente para cerrar el ciclo:
 1. Ejecutar CI sobre el HEAD final de PR #12 y corregir cualquier fallo de migración, Rust, contratos, aceptación o documentación.
-2. Callback verification/anti-replay y publicación del evento desde adapters reales del backend de pasarelas.
-3. Consumer autenticado en plataforma para aplicar eventos normalizados al inbox y transiciones, después de completar mTLS/signed grants cross-backend de Fase 5.
-4. Worker de reconciliación con consulta autoritativa al proveedor, leases, reintentos y resolución de outcome_unknown; no repetir cobros por timeout.
+2. Aceptación oficial Wompi Sandbox del callback y reconciliación, con credenciales/cuenta válidas y vectores/respuestas reales; completar anti-replay temporal y observabilidad operacional.
+3. Completar identidad de servicio y grants firmados por comando entre backends (Fase 5); hoy los envelopes de eventos y órdenes usan HMAC/key ID y mTLS configurable sobre JetStream.
+4. Completar adapter saliente de creación/consulta de transacción autorizado por plataforma, políticas de reintento aprobadas y verificación productiva de resolución de outcome_unknown. El worker actual consulta únicamente IDs existentes.
 5. Aprobación de B-EC-07..13 antes de implementar captura, cancelación, expiración, reintentos comerciales, cambio de proveedor o refunds.
 6. Sandbox y credenciales oficiales de proveedor antes de declarar el cobro a compradores operativo.
 7. Completar la matriz requisito→test→CI para el HEAD final y los escenarios de proveedor/inbox que continúan bloqueados.
@@ -136,8 +136,8 @@ La matriz de integración registra las pruebas reales añadidas: concurrencia de
 
 ### Límites que permanecen cerrados
 
-La tabla provider_event_inbox tiene deduplicación PostgreSQL y trazabilidad por entrega, pero aún no existe RPC/consumer que acepte NormalizedProviderPaymentEventV1. La columna producer_identity solo conserva un dato de auditoría: no autentica a su emisor. No se abre una entrada de eventos hasta que el adapter verifique callback/anti-replay y el productor tenga identidad autenticada en la frontera cross-backend (Fase 5).
+La tabla provider_event_inbox ya recibe eventos desde el consumer autenticado por HMAC de plataforma, después de que gateway verifica callback Wompi. La columna producer_identity sigue siendo metadato de auditoría y no prueba identidad. No se acepta un evento normalizado arbitrario desde internet; el trust se basa en verificación del proveedor y firma interna, con mTLS configurable en NATS.
 
-El caso de reconciliación se registra de forma durable, pero no se ejecuta una consulta real al proveedor ni se resuelve el resultado hasta disponer de adapter/capacidad oficial y autorización. El resultado de proveedor no se simula ni se acepta desde una API key del tenant.
+El caso de reconciliación se registra de forma durable y el worker consulta Wompi cuando el case contiene una referencia de transacción identificable. Si no hay ID, se deja en revisión manual; el resultado firmado se valida desde la plataforma y nunca se acepta desde una API key del tenant. Falta validar en Sandbox y completar la operación de cobro saliente.
 
-**Estado de PR #12:** código de schema/repositorios/casos de uso/contratos/BFF/aceptación añadido; falta verificar el HEAD final mediante CI. PR #12 no cierra Fase 4 ni el alcance A de billing SaaS.
+**Estado de PR #12:** código de schema/repositorios/casos de uso/contratos/BFF, ingress Wompi verificado, worker de consulta/reconciliación, consumers firmados y aceptación PostgreSQL añadido. El HEAD final debe pasar CI para confirmar la integración. PR #12 no cierra Fase 4 ni el alcance A de billing SaaS.
