@@ -266,8 +266,15 @@ pub fn load_event_signing_key(encoded: &str) -> Result<Vec<u8>, &'static str> {
 pub fn load_account_registry(encoded: &str) -> Result<Vec<WompiAccountConfig>, &'static str> {
     let accounts: Vec<WompiAccountConfig> =
         serde_json::from_str(encoded).map_err(|_| "wompi_account_registry_invalid")?;
+    if accounts.is_empty() {
+        return Err("wompi_account_registry_empty");
+    }
+    let mut references = std::collections::HashSet::new();
     for account in &accounts {
         validate_account(account)?;
+        if !references.insert(account.account_reference.as_str()) {
+            return Err("wompi_account_reference_duplicate");
+        }
     }
     Ok(accounts)
 }
@@ -304,7 +311,6 @@ mod tests {
             environment: "test".to_owned(),
             event_secret: "test_events_second_secret_long_enough".to_owned(),
         };
-        validate_account(&first).expect("valid account");
         let parsed = serde_json::to_string(&vec![
             serde_json::json!({
                 "account_reference":first.account_reference,
@@ -319,9 +325,10 @@ mod tests {
                 "event_secret":second.event_secret
             })
         ]).expect("serialize");
-        let accounts = load_account_registry(&parsed).expect("syntactically valid registry");
-        let registry = accounts.into_iter().map(|account| (account.account_reference.clone(), account)).collect::<HashMap<_,_>>();
-        assert_eq!(registry.len(), 1);
+        assert!(matches!(
+            load_account_registry(&parsed),
+            Err("wompi_account_reference_duplicate")
+        ));
     }
 
     #[test]

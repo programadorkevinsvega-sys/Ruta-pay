@@ -1,7 +1,6 @@
 use std::{env, net::SocketAddr};
 
 use async_nats::ConnectOptions;
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use tokio::net::TcpListener;
 
 use bacekend_pasarela::webhooks::{

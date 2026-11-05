@@ -1,5 +1,4 @@
 use serde::Deserialize;
-use serde_json::Value;
 use std::time::Duration;
 
 use super::{WompiEnvironment, WompiPaymentStatus};
@@ -132,7 +131,6 @@ impl WompiClient {
             "DECLINED" | "VOIDED" | "ERROR" => WompiPaymentStatus::Failed,
             _ => return Err(WompiClientError::InvalidResponse),
         };
-        let _ = self.environment;
         Ok(WompiTransaction {
             id: envelope.data.id,
             reference: envelope.data.reference,
