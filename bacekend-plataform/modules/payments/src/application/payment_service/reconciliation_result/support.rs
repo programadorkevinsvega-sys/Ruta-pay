@@ -240,7 +240,6 @@ pub(super) async fn record_conflict(
 ) -> Result<GatewayEventDisposition, PaymentServiceError> {
     event.safe_error_code = Some(error_code.to_owned());
     let recorded = record_manual_review(tx, event).await?;
-    tx.commit().await?;
     Ok(if recorded {
         GatewayEventDisposition::ManualReview
     } else {
