@@ -90,13 +90,13 @@ fn rejects_missing_property_invalid_reference_and_corrupted_body() {
     raw["signature"]["properties"][0] = Value::String("transaction.not_present".to_owned());
     let raw = serde_json::to_string(&raw).expect("serialize");
     assert_eq!(
-        verify_event(&raw.as_bytes(), None, EVENT_SECRET, WompiEnvironment::Live),
+        verify_event(raw.as_bytes(), None, EVENT_SECRET, WompiEnvironment::Live),
         Err(WompiEventError::InvalidSignature)
     );
 
     let raw = signed_event_with_reference("not-an-attempt", "PENDING", "prod", EVENT_SECRET);
     assert_eq!(
-        verify_event(&raw.as_bytes(), None, EVENT_SECRET, WompiEnvironment::Live),
+        verify_event(raw.as_bytes(), None, EVENT_SECRET, WompiEnvironment::Live),
         Err(WompiEventError::InvalidReference)
     );
 
