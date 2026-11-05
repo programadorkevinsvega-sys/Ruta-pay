@@ -16,7 +16,6 @@ use super::{
     gateway_event_auth::verify_signed_event,
 };
 
-
 pub(super) async fn apply(
     service: &PaymentService,
     payload: &[u8],
@@ -130,16 +129,17 @@ pub(super) async fn apply(
         tx.commit().await?;
         return Ok(disposition);
     }
-    let attempt_effect =
-        match current_attempt.transition_to(target_attempt, TransitionAuthority::Reconciliation) {
-            Ok(effect) => effect,
-            Err(_) => {
-                let disposition =
-                    record_conflict(&mut tx, &mut event, "provider_attempt_terminal_conflict").await?;
-                tx.commit().await?;
-                return Ok(disposition);
-            }
-        };
+    let attempt_effect = match current_attempt
+        .transition_to(target_attempt, TransitionAuthority::Reconciliation)
+    {
+        Ok(effect) => effect,
+        Err(_) => {
+            let disposition =
+                record_conflict(&mut tx, &mut event, "provider_attempt_terminal_conflict").await?;
+            tx.commit().await?;
+            return Ok(disposition);
+        }
+    };
     let target_intent = if status == "succeeded" {
         PaymentIntentStatus::Succeeded
     } else {
@@ -191,7 +191,8 @@ pub(super) async fn apply(
             let current = parse_transaction_status(&row.try_get::<String, _>("status")?)?;
             if current == PaymentTransactionStatus::Authorized && status == "failed" {
                 let disposition =
-                    record_conflict(&mut tx, &mut event, "provider_transaction_state_conflict").await?;
+                    record_conflict(&mut tx, &mut event, "provider_transaction_state_conflict")
+                        .await?;
                 tx.commit().await?;
                 return Ok(disposition);
             }
@@ -201,13 +202,13 @@ pub(super) async fn apply(
                 Ok(effect) => effect,
                 Err(_) => {
                     let disposition = record_conflict(
-                    &mut tx,
-                    &mut event,
-                    "provider_transaction_terminal_conflict",
-                )
-                .await?;
-                tx.commit().await?;
-                return Ok(disposition);
+                        &mut tx,
+                        &mut event,
+                        "provider_transaction_terminal_conflict",
+                    )
+                    .await?;
+                    tx.commit().await?;
+                    return Ok(disposition);
                 }
             };
             let version: i64 = row.try_get("aggregate_version")?;
