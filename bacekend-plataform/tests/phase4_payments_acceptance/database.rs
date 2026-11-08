@@ -198,7 +198,7 @@ impl TestDatabase {
     pub async fn set_runtime_database_available(&self, available: bool) {
         let statement = if available { "GRANT CONNECT" } else { "REVOKE CONNECT" };
         sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
-            "{statement} ON DATABASE \\"{}\\" FROM \\"{}\\"",
+            "{statement} ON DATABASE \"{}\" FROM \"{}\"",
             self.cleanup.database_name, self.cleanup.runtime_role
         )))
         .execute(&self.cleanup.admin_pool)
