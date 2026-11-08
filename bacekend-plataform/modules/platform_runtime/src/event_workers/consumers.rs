@@ -62,7 +62,7 @@ pub(super) async fn ensure_billing_usage_consumer(
                 ack_policy: AckPolicy::Explicit,
                 ack_wait: Duration::from_secs(120),
                 max_deliver: -1,
-                max_ack_pending: 64,
+                max_ack_pending: 512,
                 ..Default::default()
             },
         )

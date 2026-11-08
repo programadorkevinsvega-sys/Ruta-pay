@@ -1,9 +1,18 @@
 use payvia_platform_core::config::AppConfig;
-use std::time::Duration;
+use std::{env, time::Duration};
 
 pub async fn connect_database(config: &AppConfig) -> Result<sqlx::PgPool, sqlx::Error> {
+    let (min_connections, max_connections) = configured_pool_limits();
+    tracing::info!(
+        event.name = "service.dependency.pool.configured",
+        component = "platform_runtime",
+        dependency = "postgresql",
+        min_connections,
+        max_connections
+    );
     let database_pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(20)
+        .min_connections(min_connections)
+        .max_connections(max_connections)
         .acquire_timeout(Duration::from_secs(3))
         .connect(&config.database_url)
         .await
@@ -23,6 +32,32 @@ pub async fn connect_database(config: &AppConfig) -> Result<sqlx::PgPool, sqlx::
             );
         })?;
     Ok(database_pool)
+}
+
+fn configured_pool_limits() -> (u32, u32) {
+    let max = configured_connection_limit("PLATFORM_DATABASE_MAX_CONNECTIONS", 8, 2, 64);
+    let min = configured_connection_limit("PLATFORM_DATABASE_MIN_CONNECTIONS", 2, 0, max);
+    (min, max)
+}
+
+fn configured_connection_limit(name: &str, default: u32, minimum: u32, maximum: u32) -> u32 {
+    match env::var(name) {
+        Ok(value) => match value.parse::<u32>() {
+            Ok(value) if (minimum..=maximum).contains(&value) => value,
+            _ => {
+                tracing::warn!(
+                    event.name = "service.configuration.invalid",
+                    component = "platform_runtime",
+                    operation = "configure_database_pool",
+                    error_code = "database_pool_connection_limit_invalid",
+                    setting = name,
+                    fallback = default.min(maximum).max(minimum)
+                );
+                default.min(maximum).max(minimum)
+            }
+        },
+        Err(_) => default.min(maximum).max(minimum),
+    }
 }
 
 pub async fn connect_redis(

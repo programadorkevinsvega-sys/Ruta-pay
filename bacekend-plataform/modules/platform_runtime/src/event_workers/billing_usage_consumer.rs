@@ -12,8 +12,8 @@ use tokio_stream::StreamExt;
 mod processing;
 use processing::process_message;
 
-const DEFAULT_MAX_IN_FLIGHT: usize = 16;
-const MAX_IN_FLIGHT_LIMIT: usize = 64;
+const DEFAULT_MAX_IN_FLIGHT: usize = 64;
+const MAX_IN_FLIGHT_LIMIT: usize = 512;
 
 pub(super) async fn run_billing_usage_consumer(
     pool: PgPool,
