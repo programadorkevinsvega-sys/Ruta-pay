@@ -24,7 +24,7 @@ pub async fn receive(
     let mut tx = pool.begin().await?;
     set_tenant_context(&mut tx, tenant).await?;
     let id = Uuid::new_v4();
-    let inserted=sqlx::query("INSERT INTO platform_billing.inbox_events (id,tenant_id,producer_id,event_id,event_type,schema_version,payload_sha256,disposition) VALUES ($1,$2,$3,$4,$5,$6,$7,'received') ON CONFLICT (producer_id,event_id) DO NOTHING")
+    let inserted=sqlx::query("INSERT INTO platform_billing.inbox_events (id,tenant_id,producer_id,event_id,event_type,schema_version,payload_sha256,disposition) VALUES ($1,$2,$3,$4,$5,$6,$7,'received') ON CONFLICT (tenant_id,producer_id,event_id) DO NOTHING")
         .bind(id).bind(tenant).bind(producer).bind(event_id).bind(event_type).bind(schema_version).bind(digest.as_slice()).execute(&mut *tx).await?;
     if inserted.rows_affected() == 1 {
         tx.commit().await?;
