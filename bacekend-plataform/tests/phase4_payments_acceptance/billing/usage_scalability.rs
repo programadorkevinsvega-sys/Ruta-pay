@@ -55,6 +55,8 @@ async fn billing_usage_scales_across_one_four_sixteen_and_sixty_four_tenants() {
         let commits_before = committed_transactions(&database.migration_pool).await;
         let pg_statements_before = statement_time_ms(&database.migration_pool).await;
         let started = Instant::now();
+        let mut peak_pool_size = 0_u32;
+        let mut peak_pool_in_use = 0_u32;
         for batch_start in (0..EVENTS_PER_SCENARIO).step_by(128) {
             let batch_end = (batch_start + 128).min(EVENTS_PER_SCENARIO);
             let mut publishers = tokio::task::JoinSet::new();
@@ -68,6 +70,10 @@ async fn billing_usage_scales_across_one_four_sixteen_and_sixty_four_tenants() {
             while let Some(result) = publishers.join_next().await {
                 result.expect("publisher task completes");
             }
+            peak_pool_size = peak_pool_size.max(database.runtime_pool.size());
+            peak_pool_in_use = peak_pool_in_use.max(
+                database.runtime_pool.size().saturating_sub(database.runtime_pool.num_idle())
+            );
         }
         wait_for_usage_count(&database.migration_pool, baseline + EVENTS_PER_SCENARIO as i64).await;
         let elapsed = started.elapsed();
@@ -106,7 +112,7 @@ async fn billing_usage_scales_across_one_four_sixteen_and_sixty_four_tenants() {
         println!(
             "billing_usage_scalability tenants={} events={} replicas=2 throughput_events_per_second={:.2} latency_p50_seconds={:.6} latency_p95_seconds={:.6} latency_p99_seconds={:.6} postgres_commits_delta={} pg_stat_statements_sql_ms={:?} pool_size={} pool_idle={} tenant_min_events={} tenant_max_events={}",
             tenant_count, EVENTS_PER_SCENARIO, throughput, p50, p95, p99, commits, sql_ms,
-            pool_size, pool_idle,
+            pool_size, pool_idle, peak_pool_size, peak_pool_in_use,
             distribution.values().min().copied().unwrap_or_default(),
             distribution.values().max().copied().unwrap_or_default()
         );
@@ -146,14 +152,6 @@ async fn statement_time_ms(pool: &sqlx::PgPool) -> Option<f64> {
          WHERE query ILIKE '%platform_billing.inbox_events%'
             OR query ILIKE '%platform_billing.usage_events%'"
     ).fetch_one(pool).await.ok()
-}
-
-fn percentile(values: &[f64], quantile: f64) -> f64 {
-    if values.is_empty() { return f64::NAN; }
-    let mut sorted = values.to_vec();
-    sorted.sort_by(f64::total_cmp);
-    let index = ((sorted.len() - 1) as f64 * quantile).round() as usize;
-    sorted[index]
 }
 
 fn usage_envelope(tenant_id: Uuid, event_id: Uuid, usage_id: Uuid) -> Value {
