@@ -59,6 +59,7 @@ impl Drop for AcceptanceDatabaseCleanup {
 pub struct TestDatabase {
     pub migration_pool: sqlx::PgPool,
     pub runtime_pool: sqlx::PgPool,
+    runtime_url: String,
     cleanup: AcceptanceDatabaseCleanup,
 }
 
@@ -163,10 +164,11 @@ impl TestDatabase {
         database_url
             .set_password(Some(&runtime_password))
             .expect("runtime role password is valid");
+        let runtime_url = database_url.to_string();
         let runtime_pool = PgPoolOptions::new()
             .max_connections(12)
             .acquire_timeout(StdDuration::from_secs(5))
-            .connect(database_url.as_str())
+            .connect(&runtime_url)
             .await
             .expect("restricted runtime role connects");
         let bypass_rls: bool =
@@ -179,7 +181,39 @@ impl TestDatabase {
         Self {
             migration_pool,
             runtime_pool,
+            runtime_url,
             cleanup,
+        }
+    }
+
+    pub async fn additional_runtime_pool(&self) -> sqlx::PgPool {
+        PgPoolOptions::new()
+            .max_connections(12)
+            .acquire_timeout(StdDuration::from_secs(5))
+            .connect(&self.runtime_url)
+            .await
+            .expect("additional replica pool connects with the restricted runtime role")
+    }
+
+    pub async fn set_runtime_database_available(&self, available: bool) {
+        let statement = if available { "GRANT CONNECT" } else { "REVOKE CONNECT" };
+        sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+            "{statement} ON DATABASE \\"{}\\" FROM \\"{}\\"",
+            self.cleanup.database_name, self.cleanup.runtime_role
+        )))
+        .execute(&self.cleanup.admin_pool)
+        .await
+        .expect("runtime database connectivity permission changes");
+
+        if !available {
+            sqlx::query(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1 AND usename=$2 AND pid<>pg_backend_pid()",
+            )
+            .bind(&self.cleanup.database_name)
+            .bind(&self.cleanup.runtime_role)
+            .execute(&self.cleanup.admin_pool)
+            .await
+            .expect("existing runtime database sessions are terminated");
         }
     }
 
