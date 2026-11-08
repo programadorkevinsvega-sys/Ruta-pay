@@ -18,6 +18,8 @@ pub async fn set_tenant_context(
 }
 
 pub async fn ping(pool: &PgPool) -> Result<(), sqlx::Error> {
-    sqlx::query_scalar::<_, i32>("SELECT 1").fetch_one(pool).await?;
+    sqlx::query_scalar::<_, i32>("SELECT 1")
+        .fetch_one(pool)
+        .await?;
     Ok(())
 }
