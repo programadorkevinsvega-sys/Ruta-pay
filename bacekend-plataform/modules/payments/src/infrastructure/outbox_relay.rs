@@ -181,8 +181,14 @@ mod tests {
             event_audience(RECONCILIATION_REQUEST_EVENT, "platform"),
             "gateway"
         );
-        assert_eq!(event_audience("payment_attempt.status_changed", "tenant"), "tenant");
-        assert_eq!(event_audience("tenant.suspended", "platform"), "platform_operator");
+        assert_eq!(
+            event_audience("payment_attempt.status_changed", "tenant"),
+            "tenant"
+        );
+        assert_eq!(
+            event_audience("tenant.suspended", "platform"),
+            "platform_operator"
+        );
     }
 
     #[test]
