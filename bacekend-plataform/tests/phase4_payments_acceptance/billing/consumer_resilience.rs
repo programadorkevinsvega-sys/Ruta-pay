@@ -129,6 +129,18 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
         "duplicate event delivery cannot create a second financial usage row"
     );
 
+    let mut conflicting_replay = first_event.clone();
+    conflicting_replay["payload"]["quantity"] = json!(2);
+    publish(&jetstream, &subject, conflicting_replay).await;
+    time::sleep(StdDuration::from_secs(1)).await;
+    assert_eq!(
+        usage_count(&database.migration_pool)
+            .await
+            .expect("usage count is readable after conflicting replay"),
+        LOAD_EVENTS as i64,
+        "same inbox event ID with a different payload must not alter usage"
+    );
+
     let recovery_event = usage_envelope(tenants[1], Uuid::new_v4(), Uuid::new_v4());
     let recovery_started = Instant::now();
     let outage_mode = if let Ok(container_id) = std::env::var("PLATFORM_TEST_POSTGRES_CONTAINER_ID") {

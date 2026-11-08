@@ -72,3 +72,10 @@ La implementación inicial en la rama del PR introduce:
 La antigüedad desde publicación usa el timestamp de JetStream y no debe confundirse con duración SQL. El tiempo de fetch es una métrica distinta de la espera del mensaje en el stream.
 
 La suite de aceptación de carga ya ejercita dos réplicas, distribución entre tenants, duplicados y recuperación tras indisponibilidad de PostgreSQL. Se agregan además pruebas unitarias de rechazo temprano para lotes multi-tenant y tamaños superiores al límite. El cierre de la decisión requiere CI verde sobre el HEAD final y un benchmark en recursos CPU/memoria realmente limitados; no se afirma aún que se haya alcanzado 20.000 eventos/s.
+
+
+## Ajuste de idempotencia para lotes
+
+Las búsquedas de recibos Inbox y de registros de uso existentes se realizan también por conjunto mediante `ANY(...)`, evitando una consulta de lectura por cada evento. Los lotes mantienen un único productor y sistema de origen, además del tenant único, para que esas consultas sean inequívocas.
+
+Si el lote encuentra un conflicto permanente de idempotencia o un comando inválido, el consumidor degrada únicamente ese grupo a transacciones individuales. Esto permite aislar y terminar el mensaje conflictivo sin descartar ni confirmar incorrectamente los demás mensajes del mismo tenant. Los fallos de base de datos siguen provocando NAK del grupo completo, porque su transacción fue revertida.

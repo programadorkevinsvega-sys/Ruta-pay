@@ -1,6 +1,6 @@
 use async_nats::jetstream;
 use metrics::{counter, histogram};
-use platform_billing::application::{BillingError, BillingService, UsageBatchEvent};
+use platform_billing::application::{BillingError, BillingService, RecordUsage, UsageBatchEvent};
 use serde_json::json;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -85,38 +85,40 @@ pub(super) async fn process_batch(messages: Vec<jetstream::Message>, service: &B
                         .record(ack_started.elapsed().as_secs_f64());
                 }
             }
+            Err(BillingError::Database(database_error)) => {
+                let code = database_error.as_database_error().and_then(|cause| cause.code());
+                tracing::error!(
+                    event.name = "billing.usage.batch.failed",
+                    component = "platform_billing",
+                    operation = "persist_billable_usage_batch",
+                    tenant_id = %tenant_id,
+                    batch_size = events.len(),
+                    error_code = code.as_deref().unwrap_or("billing_usage_batch_failed"),
+                    retryable = true
+                );
+                for (message, _) in group {
+                    counter!("platform_billing_usage_events_total", "outcome" => "retry").increment(1);
+                    nak_message(&message).await;
+                }
+            }
             Err(error) => {
-                for (message, event) in group {
-                    match &error {
-                        BillingError::Database(database_error) => {
-                            counter!("platform_billing_usage_events_total", "outcome" => "retry").increment(1);
-                            let code = database_error.as_database_error().and_then(|cause| cause.code());
-                            tracing::error!(
-                                event.name = "billing.usage.batch.failed",
-                                component = "platform_billing",
-                                operation = "persist_billable_usage_batch",
-                                tenant_id = %tenant_id,
-                                batch_size = events.len(),
-                                error_code = code.as_deref().unwrap_or("billing_usage_batch_failed"),
-                                retryable = true
-                            );
-                            if let Err(ack_error) = message.ack_with(
-                                jetstream::AckKind::Nak(Some(Duration::from_secs(5)))
-                            ).await {
-                                tracing::error!(
-                                    event.name = "jetstream.consumer.nak.failed",
-                                    component = "platform_billing",
-                                    operation = "retry_billable_usage_batch",
-                                    error_code = "billing_usage_batch_nak_failed",
-                                    error_class = %ack_error
-                                );
-                            }
-                        }
-                        _ => {
-                            counter!("platform_billing_usage_events_total", "outcome" => "batch_rejected").increment(1);
-                            term_message(&message, Some(event.event_id), None).await;
-                        }
+                // Isolate permanent conflicts so one poison event cannot discard
+                // unrelated valid events from the same tenant fetch.
+                tracing::warn!(
+                    event.name = "billing.usage.batch.fallback",
+                    component = "platform_billing",
+                    operation = "persist_billable_usage_batch",
+                    tenant_id = %tenant_id,
+                    batch_size = events.len(),
+                    error_code = match error {
+                        BillingError::InboxIdempotencyConflict => "inbox_idempotency_conflict",
+                        BillingError::IdempotencyConflict => "usage_idempotency_conflict",
+                        BillingError::InvalidCommand => "usage_batch_invalid",
+                        _ => "usage_batch_rejected"
                     }
+                );
+                for (message, event) in group {
+                    process_single_fallback(message, event, service).await;
                 }
             }
         }
@@ -149,6 +151,80 @@ async fn term_message(
             event_id = ?event_id,
             correlation_id = ?correlation_id,
             error_code = "billing_usage_term_failed",
+            error_class = %error
+        );
+    }
+}
+
+
+async fn process_single_fallback(
+    message: jetstream::Message,
+    event: UsageBatchEvent,
+    service: &BillingService,
+) {
+    let result = service.record_usage_from_event(
+        RecordUsage {
+            tenant_id: event.tenant_id,
+            meter_key: &event.meter_key,
+            source_system: &event.source_system,
+            source_event_id: &event.source_event_id,
+            quantity: event.quantity,
+            unit: &event.unit,
+            occurred_at: event.occurred_at,
+            attributes: event.attributes,
+        },
+        &event.producer,
+        event.event_id,
+        &event.event_type,
+        event.schema_version,
+        &event.payload,
+    ).await;
+    match result {
+        Ok(_) => {
+            counter!("platform_billing_usage_events_total", "outcome" => "fallback_processed").increment(1);
+            let ack_started = Instant::now();
+            if let Err(error) = message.ack().await {
+                counter!("platform_billing_usage_ack_failures_total").increment(1);
+                tracing::warn!(
+                    event.name = "jetstream.consumer.ack.failed",
+                    component = "platform_billing",
+                    operation = "ack_fallback_committed_usage",
+                    event_id = %event.event_id,
+                    error_code = "billing_usage_fallback_ack_failed",
+                    error_class = %error
+                );
+            }
+            histogram!("platform_billing_usage_ack_seconds")
+                .record(ack_started.elapsed().as_secs_f64());
+        }
+        Err(BillingError::Database(error)) => {
+            tracing::error!(
+                event.name = "billing.usage.fallback.failed",
+                component = "platform_billing",
+                operation = "persist_billable_usage_fallback",
+                event_id = %event.event_id,
+                error_code = error.as_database_error().and_then(|cause| cause.code()).as_deref().unwrap_or("billing_usage_fallback_failed"),
+                retryable = true
+            );
+            nak_message(&message).await;
+        }
+        Err(_) => {
+            counter!("platform_billing_usage_events_total", "outcome" => "fallback_rejected").increment(1);
+            term_message(&message, Some(event.event_id), None).await;
+        }
+    }
+}
+
+async fn nak_message(message: &jetstream::Message) {
+    if let Err(error) = message
+        .ack_with(jetstream::AckKind::Nak(Some(Duration::from_secs(5))))
+        .await
+    {
+        tracing::error!(
+            event.name = "jetstream.consumer.nak.failed",
+            component = "platform_billing",
+            operation = "retry_billable_usage_event",
+            error_code = "billing_usage_nak_failed",
             error_class = %error
         );
     }
