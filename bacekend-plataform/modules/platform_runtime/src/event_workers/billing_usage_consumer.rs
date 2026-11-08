@@ -122,30 +122,32 @@ fn adaptive_batch_limit(pool: &PgPool) -> usize {
     let idle_connections = pool.num_idle();
     let mut limit = configured_batch_size().min(idle_connections.saturating_mul(32).max(1));
 
-    if let Ok(cpu_max) = fs::read_to_string("/sys/fs/cgroup/cpu.max") {
-        let mut fields = cpu_max.split_whitespace();
-        if let (Some(quota), Some(period)) = (fields.next(), fields.next()) {
-            if quota != "max" {
-                if let (Ok(quota), Ok(period)) = (quota.parse::<f64>(), period.parse::<f64>()) {
-                    if period > 0.0 && quota / period <= 1.0 {
-                        limit = limit.min(64);
-                    }
-                }
-            }
-        }
+    let single_cpu = fs::read_to_string("/sys/fs/cgroup/cpu.max")
+        .ok()
+        .and_then(|contents| {
+            let mut fields = contents.split_whitespace();
+            let quota = fields.next()?;
+            if quota == "max" { return None; }
+            let quota = quota.parse::<f64>().ok()?;
+            let period = fields.next()?.parse::<f64>().ok()?;
+            Some(period > 0.0 && quota / period <= 1.0)
+        })
+        .unwrap_or(false);
+    if single_cpu {
+        limit = limit.min(64);
     }
 
-    if let (Ok(current), Ok(maximum)) = (
-        fs::read_to_string("/sys/fs/cgroup/memory.current"),
-        fs::read_to_string("/sys/fs/cgroup/memory.max"),
-    ) {
-        if let (Ok(current), Ok(maximum)) =
-            (current.trim().parse::<u64>(), maximum.trim().parse::<u64>())
-        {
-            if maximum > 0 && current.saturating_mul(100) / maximum >= 85 {
-                limit = (limit / 2).max(1);
-            }
-        }
+    let memory_pressure = fs::read_to_string("/sys/fs/cgroup/memory.current")
+        .ok()
+        .zip(fs::read_to_string("/sys/fs/cgroup/memory.max").ok())
+        .and_then(|(current, maximum)| {
+            let current = current.trim().parse::<u64>().ok()?;
+            let maximum = maximum.trim().parse::<u64>().ok()?;
+            Some(maximum > 0 && current.saturating_mul(100) / maximum >= 85)
+        })
+        .unwrap_or(false);
+    if memory_pressure {
+        limit = (limit / 2).max(1);
     }
 
     limit.clamp(1, MAX_BATCH_SIZE)

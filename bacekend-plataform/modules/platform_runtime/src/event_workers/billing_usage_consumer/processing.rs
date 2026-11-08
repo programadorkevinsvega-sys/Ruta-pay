@@ -34,6 +34,13 @@ pub(super) async fn process_batch(messages: Vec<jetstream::Message>, service: &B
             "period_start": event.period_start,
             "period_end": event.period_end
         });
+        tracing::debug!(
+            event.name = "billing.usage.event.grouped",
+            component = "platform_billing",
+            event_id = %event.event_id,
+            correlation_id = %event.correlation_id,
+            tenant_id = %event.tenant_id
+        );
         let batch_event = UsageBatchEvent {
             tenant_id: event.tenant_id,
             producer: PRODUCER.to_owned(),
