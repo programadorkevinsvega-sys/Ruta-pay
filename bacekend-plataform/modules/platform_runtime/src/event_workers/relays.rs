@@ -3,6 +3,7 @@ use sqlx::PgPool;
 use std::time::Duration;
 use tokio::{sync::watch, time};
 
+use platform_billing::infrastructure::outbox_relay as billing_outbox;
 use platform_catalog_pricing::infrastructure::outbox_relay as catalog_outbox;
 use platform_entitlements_quotas::infrastructure::outbox_relay as entitlements_outbox;
 use platform_identity_access::infrastructure::outbox_relay as identity_outbox;
@@ -30,6 +31,9 @@ pub(super) async fn run_relays(
                 }
                 if let Err(error) = entitlements_outbox::relay_batch(&pool, &jetstream, &subject_prefix).await {
                     tracing::error!(event.name = "outbox.relay.failed", component = "entitlements_quotas", operation = "claim_or_mark_outbox", dependency = "postgresql", error_code = error.as_database_error().and_then(|cause| cause.code()).as_deref().unwrap_or("database_error"), error_category = "persistence", correlation_id = "unavailable", retryable = true);
+                }
+                if let Err(error) = billing_outbox::relay_batch(&pool, &jetstream, &subject_prefix).await {
+                    tracing::error!(event.name = "outbox.relay.failed", component = "platform_billing", operation = "claim_or_mark_outbox", dependency = "postgresql", error_code = error.as_database_error().and_then(|cause| cause.code()).as_deref().unwrap_or("database_error"), error_category = "persistence", correlation_id = "unavailable", retryable = true);
                 }
                 if let Err(error) = payments_outbox::relay_batch(&pool, &jetstream, &subject_prefix).await {
                     tracing::error!(event.name = "outbox.relay.failed", component = "payments", operation = "claim_or_mark_outbox", dependency = "postgresql", error_code = error.as_database_error().and_then(|cause| cause.code()).as_deref().unwrap_or("database_error"), error_category = "persistence", correlation_id = "unavailable", retryable = true);
