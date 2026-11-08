@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use super::EVENT_TYPE;
 
-struct UsageEvent {
+pub(super) struct UsageEvent {
     pub(super) event_id: Uuid,
     pub(super) tenant_id: Uuid,
     pub(super) usage_id: Uuid,
