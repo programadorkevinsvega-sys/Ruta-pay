@@ -151,7 +151,7 @@ impl TestDatabase {
         .await
         .expect("runtime role receives table privileges");
         sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
-            "GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA identity_access,tenant_registry,realtime,catalog_pricing,entitlements_quotas,payments TO \"{runtime_role}\""
+            "GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA identity_access,tenant_registry,realtime,catalog_pricing,entitlements_quotas,payments,platform_billing TO \"{runtime_role}\""
         )))
         .execute(&migration_pool)
         .await
