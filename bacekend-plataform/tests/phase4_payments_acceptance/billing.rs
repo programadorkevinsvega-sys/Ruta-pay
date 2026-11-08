@@ -5,5 +5,7 @@ mod rollback;
 #[path = "billing/usage_invoice.rs"]
 mod usage_invoice;
 
+#[path = "billing/usage_concurrency.rs"]
+mod usage_concurrency;
 #[path = "billing/usage_recovery.rs"]
 mod usage_recovery;
