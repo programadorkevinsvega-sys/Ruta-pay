@@ -124,6 +124,7 @@ async fn persist_usage(
     event: &UsageEvent,
     inbox_id: Uuid,
 ) -> Result<(), UsageFailure> {
+    let source_event_id = event.usage_id.to_string();
     let attributes = json!({
         "price_version_id": event.price_version_id,
         "environment": event.environment,
@@ -135,7 +136,7 @@ async fn persist_usage(
             tenant_id: event.tenant_id,
             meter_key: &event.meter_key,
             source_system: PRODUCER,
-            source_event_id: &event.usage_id.to_required_string(),
+            source_event_id: &source_event_id,
             quantity: event.quantity,
             unit: &event.unit,
             occurred_at: event.occurred_at,
@@ -156,7 +157,7 @@ async fn persist_usage(
     Ok(())
 }
 
-fn required_string(value: &Value, key: &str) -> Result<&str, ()> {
+fn required_string<'a>(value: &'a Value, key: &str) -> Result<&'a str, ()> {
     value.get(key).and_then(Value::as_str).ok_or(())
 }
 
@@ -171,32 +172,32 @@ fn parse_event(bytes: &[u8]) -> Result<UsageEvent, ()> {
         .get("payload")
         .filter(|value| value.is_object())
         .ok_or(())?;
-    let event_id = Uuid::parse_str(string(&envelope, "event_id")?).map_err(|_| ())?;
-    let tenant_id = Uuid::parse_str(string(payload, "tenant_id")?).map_err(|_| ())?;
-    let usage_id = Uuid::parse_str(string(payload, "usage_id")?).map_err(|_| ())?;
-    let price_version_id = Uuid::parse_str(string(payload, "price_version_id")?).map_err(|_| ())?;
+    let event_id = Uuid::parse_str(required_string(&envelope, "event_id")?).map_err(|_| ())?;
+    let tenant_id = Uuid::parse_str(required_string(payload, "tenant_id")?).map_err(|_| ())?;
+    let usage_id = Uuid::parse_str(required_string(payload, "usage_id")?).map_err(|_| ())?;
+    let price_version_id = Uuid::parse_str(required_string(payload, "price_version_id")?).map_err(|_| ())?;
     let quantity = payload
         .get("quantity")
         .and_then(Value::as_i64)
         .filter(|v| *v > 0)
         .ok_or(())?;
-    let environment = string(payload, "environment")?.to_owned();
+    let environment = required_string(payload, "environment")?.to_owned();
     if !matches!(environment.as_str(), "test" | "live") {
         return Err(());
     }
-    let occurred_at = DateTime::parse_from_rfc3339(string(payload, "occurred_at")?)
+    let occurred_at = DateTime::parse_from_rfc3339(required_string(payload, "occurred_at")?)
         .map(|value| value.with_timezone(&Utc))
         .map_err(|_| ())?;
-    let period_start = string(payload, "period_start")?.to_owned();
-    let period_end = string(payload, "period_end")?.to_owned();
+    let period_start = required_string(payload, "period_start")?.to_owned();
+    let period_end = required_string(payload, "period_end")?.to_owned();
     let start = DateTime::parse_from_rfc3339(&period_start).map_err(|_| ())?;
     let end = DateTime::parse_from_rfc3339(&period_end).map_err(|_| ())?;
     if end <= start {
         return Err(());
     }
-    let meter_key = string(payload, "meter_key")?.to_owned();
-    let unit = string(payload, "unit")?.to_owned();
-    let correlation_id = string(&envelope, "correlation_id")?.to_owned();
+    let meter_key = required_string(payload, "meter_key")?.to_owned();
+    let unit = required_string(payload, "unit")?.to_owned();
+    let correlation_id = required_string(&envelope, "correlation_id")?.to_owned();
     if meter_key.is_empty()
         || meter_key.len() > 96
         || unit.is_empty()
