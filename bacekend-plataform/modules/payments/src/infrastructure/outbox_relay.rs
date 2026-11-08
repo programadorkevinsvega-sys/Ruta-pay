@@ -19,10 +19,43 @@ enum PublishFailure {
     Permanent(&'static str),
 }
 
+pub struct GatewayRequestSigningConfig {
+    key: Vec<u8>,
+    key_id: String,
+}
+
+impl GatewayRequestSigningConfig {
+    pub fn new(key: Vec<u8>, key_id: String) -> Result<Self, &'static str> {
+        if key.len() < 32
+            || key_id.is_empty()
+            || key_id.len() > 64
+            || !key_id.bytes().all(|byte| {
+                byte.is_ascii_lowercase()
+                    || byte.is_ascii_digit()
+                    || byte == b'-'
+                    || byte == b'_'
+            })
+        {
+            return Err("gateway_request_signing_configuration_invalid");
+        }
+        Ok(Self { key, key_id })
+    }
+}
+
 pub async fn relay_batch(
     pool: &PgPool,
     jetstream: &Context,
     subject_prefix: &str,
+) -> Result<usize, sqlx::Error> {
+    let signing_config = load_signing_config_from_env();
+    relay_batch_with_signing_config(pool, jetstream, subject_prefix, &signing_config).await
+}
+
+pub async fn relay_batch_with_signing_config(
+    pool: &PgPool,
+    jetstream: &Context,
+    subject_prefix: &str,
+    signing_config: &Result<GatewayRequestSigningConfig, &'static str>,
 ) -> Result<usize, sqlx::Error> {
     let events = claim_outbox_events(pool, 32).await?;
     let mut delivered = 0;
@@ -31,7 +64,7 @@ pub async fn relay_batch(
             tracing::warn!(event.name="outbox.lease.lost",component="payments",operation="relay_outbox",event_id=%event.event_id,event_type=%event.event_type,correlation_id=%event.correlation_id);
             continue;
         }
-        match publish_event(jetstream, &event, subject_prefix).await {
+        match publish_event(jetstream, &event, subject_prefix, signing_config).await {
             Ok(()) => {
                 if mark_outbox_published(pool, event.event_id, event.lease_token).await? {
                     delivered += 1;
@@ -65,6 +98,7 @@ async fn publish_event(
     jetstream: &Context,
     event: &PendingOutboxEvent,
     subject_prefix: &str,
+    signing_config: &Result<GatewayRequestSigningConfig, &'static str>,
 ) -> Result<(), PublishFailure> {
     if event.event_type.is_empty()
         || !event.event_type.bytes().all(|byte| {
@@ -88,14 +122,11 @@ async fn publish_event(
         "payload": event.payload
     });
     if event.event_type == RECONCILIATION_REQUEST_EVENT {
-        let key = env::var("PLATFORM_GATEWAY_REQUEST_SIGNING_KEY")
-            .map_err(|_| PublishFailure::Retryable("gateway_request_signing_key_missing"))?;
-        let key = STANDARD
-            .decode(key.trim())
-            .map_err(|_| PublishFailure::Retryable("gateway_request_signing_key_invalid"))?;
-        let key_id = env::var("PLATFORM_GATEWAY_REQUEST_SIGNING_KEY_ID")
-            .map_err(|_| PublishFailure::Retryable("gateway_request_signing_key_id_missing"))?;
-        attach_producer_auth(&mut envelope, &key, &key_id).map_err(PublishFailure::Retryable)?;
+        let config = signing_config
+            .as_ref()
+            .map_err(|error_code| PublishFailure::Retryable(error_code))?;
+        attach_producer_auth(&mut envelope, &config.key, &config.key_id)
+            .map_err(PublishFailure::Retryable)?;
     }
     let payload = serde_json::to_vec(&envelope)
         .map_err(|_| PublishFailure::Permanent("event_serialization_failed"))?;
@@ -114,6 +145,17 @@ async fn publish_event(
         .map_err(|_| PublishFailure::Retryable("jetstream_ack_timeout"))?
         .map(|_| ())
         .map_err(|_| PublishFailure::Retryable("jetstream_ack_unavailable"))
+}
+
+fn load_signing_config_from_env() -> Result<GatewayRequestSigningConfig, &'static str> {
+    let encoded = env::var("PLATFORM_GATEWAY_REQUEST_SIGNING_KEY")
+        .map_err(|_| "gateway_request_signing_key_missing")?;
+    let key = STANDARD
+        .decode(encoded.trim())
+        .map_err(|_| "gateway_request_signing_key_invalid")?;
+    let key_id = env::var("PLATFORM_GATEWAY_REQUEST_SIGNING_KEY_ID")
+        .map_err(|_| "gateway_request_signing_key_id_missing")?;
+    GatewayRequestSigningConfig::new(key, key_id)
 }
 
 fn event_audience(event_type: &str, stored_audience: &str) -> &'static str {
