@@ -72,31 +72,28 @@ async fn billing_usage_scales_across_one_four_sixteen_and_sixty_four_tenants() {
         wait_for_usage_count(&database.migration_pool, baseline + EVENTS_PER_SCENARIO as i64).await;
         let elapsed = started.elapsed();
         let tenant_rows = sqlx::query(
-            "SELECT tenant_id, count(*) AS events,
-             percentile_cont(0.50) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM recorded_at-occurred_at)) AS p50,
-             percentile_cont(0.95) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM recorded_at-occurred_at)) AS p95,
-             percentile_cont(0.99) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM recorded_at-occurred_at)) AS p99
-             FROM platform_billing.usage_events WHERE tenant_id=ANY($1) GROUP BY tenant_id"
-        ).bind(&tenants).fetch_all(&database.migration_pool).await.expect("tenant latency distribution");
+            "SELECT tenant_id, count(*) AS events FROM platform_billing.usage_events
+             WHERE tenant_id=ANY($1) GROUP BY tenant_id"
+        ).bind(&tenants).fetch_all(&database.migration_pool).await.expect("tenant event distribution");
         let mut distribution = HashMap::new();
-        let mut latency_samples = Vec::new();
         let mut tenant_event_total = 0_i64;
         for row in tenant_rows {
             let tenant: Uuid = row.try_get("tenant_id").expect("tenant id");
             let events: i64 = row.try_get("events").expect("event count");
             tenant_event_total += events;
             distribution.insert(tenant, events);
-            latency_samples.push((
-                row.try_get::<f64,_>("p50").expect("p50"),
-                row.try_get::<f64,_>("p95").expect("p95"),
-                row.try_get::<f64,_>("p99").expect("p99")
-            ));
         }
         assert_eq!(tenant_event_total, EVENTS_PER_SCENARIO as i64);
         assert_eq!(distribution.len(), tenant_count, "all configured tenants received events");
-        let p50 = percentile(&latency_samples.iter().map(|x| x.0).collect::<Vec<_>>(), 0.50);
-        let p95 = percentile(&latency_samples.iter().map(|x| x.1).collect::<Vec<_>>(), 0.95);
-        let p99 = percentile(&latency_samples.iter().map(|x| x.2).collect::<Vec<_>>(), 0.99);
+        let latency = sqlx::query(
+            "SELECT percentile_cont(0.50) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM recorded_at-occurred_at)) AS p50,
+             percentile_cont(0.95) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM recorded_at-occurred_at)) AS p95,
+             percentile_cont(0.99) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM recorded_at-occurred_at)) AS p99
+             FROM platform_billing.usage_events WHERE tenant_id=ANY($1)"
+        ).bind(&tenants).fetch_one(&database.migration_pool).await.expect("global event latency percentiles");
+        let p50: f64 = latency.try_get("p50").expect("p50");
+        let p95: f64 = latency.try_get("p95").expect("p95");
+        let p99: f64 = latency.try_get("p99").expect("p99");
         let commits = committed_transactions(&database.migration_pool).await - commits_before;
         let sql_ms = statement_time_ms(&database.migration_pool).await
             .map(|after| pg_statements_before.map(|before| after - before));
