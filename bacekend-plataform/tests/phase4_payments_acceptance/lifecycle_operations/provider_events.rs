@@ -141,7 +141,7 @@ async fn signed_provider_events_apply_once_and_terminal_conflicts_require_reconc
     );
 
     let case = sqlx::query(
-        "SELECT reason,status FROM payments.payment_reconciliation_cases WHERE tenant_id=$1 AND payment_attempt_id=$2",
+        "SELECT id,reason,status FROM payments.payment_reconciliation_cases WHERE tenant_id=$1 AND payment_attempt_id=$2",
     )
     .bind(tenant_id)
     .bind(attempt.id)
@@ -155,6 +155,18 @@ async fn signed_provider_events_apply_once_and_terminal_conflicts_require_reconc
     assert_eq!(
         case.try_get::<String, _>("status").expect("case status"),
         "pending"
+    );
+    let case_id: Uuid = case.try_get("id").expect("reconciliation case id");
+    let request_audience: String = sqlx::query_scalar(
+        "SELECT audience FROM payments.outbox_events WHERE aggregate_id=$1 AND event_type='payment.reconciliation.requested'",
+    )
+    .bind(case_id)
+    .fetch_one(&database.migration_pool)
+    .await
+    .expect("gateway reconciliation request is durable");
+    assert_eq!(
+        request_audience, "gateway",
+        "reconciliation requests target the gateway worker, not tenant consumers"
     );
 
     let final_status: String = sqlx::query_scalar(
