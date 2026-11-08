@@ -99,8 +99,7 @@ async fn publish_event(
             .map_err(|_| PublishFailure::Retryable("gateway_request_signing_key_invalid"))?;
         let key_id = env::var("PLATFORM_GATEWAY_REQUEST_SIGNING_KEY_ID")
             .map_err(|_| PublishFailure::Retryable("gateway_request_signing_key_id_missing"))?;
-        attach_producer_auth(&mut envelope, &key, &key_id)
-            .map_err(PublishFailure::Retryable)?;
+        attach_producer_auth(&mut envelope, &key, &key_id).map_err(PublishFailure::Retryable)?;
     }
     let payload = serde_json::to_vec(&envelope)
         .map_err(|_| PublishFailure::Permanent("event_serialization_failed"))?;
@@ -141,8 +140,7 @@ fn attach_producer_auth(
     if envelope.get("producer_auth").is_some() {
         return Err("gateway_request_envelope_already_signed");
     }
-    let canonical = serde_json::to_vec(envelope)
-        .map_err(|_| "gateway_request_envelope_invalid")?;
+    let canonical = serde_json::to_vec(envelope).map_err(|_| "gateway_request_envelope_invalid")?;
     let signature = hmac::sign(&hmac::Key::new(hmac::HMAC_SHA256, signing_key), &canonical);
     envelope
         .as_object_mut()
