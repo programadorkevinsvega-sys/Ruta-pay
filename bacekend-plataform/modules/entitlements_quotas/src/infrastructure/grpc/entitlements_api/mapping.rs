@@ -17,6 +17,7 @@ pub(super) fn map_capability(value: CapabilityInput) -> Result<Capability, Statu
         overage_policy: value.overage_policy,
         environment: value.environment,
         quota_period: value.quota_period,
+        billable: value.billable,
     };
     capability
         .validate()
