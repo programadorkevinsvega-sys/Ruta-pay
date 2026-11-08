@@ -19,8 +19,8 @@ pub async fn receive(
     let inserted=sqlx::query("INSERT INTO platform_billing.inbox_events (id,tenant_id,producer_id,event_id,event_type,schema_version,payload_sha256,disposition) VALUES ($1,$2,$3,$4,$5,$6,$7,'received') ON CONFLICT (producer_id,event_id) DO NOTHING")
         .bind(id).bind(tenant).bind(producer).bind(event_id).bind(event_type).bind(schema_version).bind(digest.as_slice()).execute(&mut *tx).await?;
     if inserted.rows_affected()==1 { tx.commit().await?; return Ok(InboxDisposition::Inserted(id)); }
-    let row=sqlx::query("SELECT id,tenant_id,event_type,schema_version,payload_sha256 FROM platform_billing.inbox_events WHERE producer_id=$1 AND event_id=$2")
-        .bind(producer).bind(event_id).fetch_one(&mut *tx).await?;
+    let row=sqlx::query("SELECT id,tenant_id,event_type,schema_version,payload_sha256 FROM platform_billing.inbox_events WHERE tenant_id=$1 AND producer_id=$2 AND event_id=$3")
+        .bind(tenant).bind(producer).bind(event_id).fetch_one(&mut *tx).await?;
     let same:bool=row.try_get::<Uuid,_>("tenant_id")?==tenant
         && row.try_get::<String,_>("event_type")?==event_type
         && row.try_get::<i16,_>("schema_version")?==schema_version
