@@ -119,7 +119,9 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
     publish(&jetstream, &subject, first_event).await;
     time::sleep(StdDuration::from_secs(1)).await;
     assert_eq!(
-        usage_count(&database.migration_pool).await,
+        usage_count(&database.migration_pool)
+            .await
+            .expect("usage count remains readable during connection-level outage"),
         LOAD_EVENTS as i64,
         "duplicate event delivery cannot create a second financial usage row"
     );
@@ -149,7 +151,9 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
         LOAD_EVENTS + 1
     );
 
-    let total_usage = usage_count(&database.migration_pool).await;
+    let total_usage = usage_count(&database.migration_pool)
+        .await
+        .expect("usage count is readable after database recovery");
     let total_inbox: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM platform_billing.inbox_events WHERE producer_id='entitlements_quotas'",
     )
@@ -243,19 +247,18 @@ async fn publish(jetstream: &jetstream::Context, subject: &str, envelope: Value)
     acknowledgement.await.expect("JetStream confirms durable publish");
 }
 
-async fn usage_count(pool: &sqlx::PgPool) -> i64 {
+async fn usage_count(pool: &sqlx::PgPool) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT count(*) FROM platform_billing.usage_events WHERE source_system='entitlements_quotas'",
     )
     .fetch_one(pool)
     .await
-    .expect("persisted usage count is readable")
 }
 
 async fn wait_for_usage_count(pool: &sqlx::PgPool, expected: i64) {
     time::timeout(StdDuration::from_secs(45), async {
         loop {
-            if usage_count(pool).await == expected {
+            if matches!(usage_count(pool).await, Ok(count) if count == expected) {
                 return;
             }
             time::sleep(StdDuration::from_millis(50)).await;
