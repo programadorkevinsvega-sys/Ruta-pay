@@ -130,21 +130,26 @@ async fn persist_usage(
         "period_start": event.period_start,
         "period_end": event.period_end
     });
-    service.record_usage(RecordUsage {
-        tenant_id: event.tenant_id,
-        meter_key: &event.meter_key,
-        source_system: PRODUCER,
-        source_event_id: &event.usage_id.to_string(),
-        quantity: event.quantity,
-        unit: &event.unit,
-        occurred_at: event.occurred_at,
-        attributes,
-    }).await.map_err(|error| match error {
-        BillingError::Database(database) => UsageFailure::Retryable(database),
-        BillingError::IdempotencyConflict => UsageFailure::Permanent("usage_idempotency_conflict"),
-        BillingError::InvalidCommand => UsageFailure::Permanent("billable_usage_invalid"),
-        _ => UsageFailure::Permanent("billable_usage_rejected"),
-    })?;
+    service
+        .record_usage(RecordUsage {
+            tenant_id: event.tenant_id,
+            meter_key: &event.meter_key,
+            source_system: PRODUCER,
+            source_event_id: &event.usage_id.to_string(),
+            quantity: event.quantity,
+            unit: &event.unit,
+            occurred_at: event.occurred_at,
+            attributes,
+        })
+        .await
+        .map_err(|error| match error {
+            BillingError::Database(database) => UsageFailure::Retryable(database),
+            BillingError::IdempotencyConflict => {
+                UsageFailure::Permanent("usage_idempotency_conflict")
+            }
+            BillingError::InvalidCommand => UsageFailure::Permanent("billable_usage_invalid"),
+            _ => UsageFailure::Permanent("billable_usage_rejected"),
+        })?;
     inbox::mark_processed(pool, event.tenant_id, inbox_id)
         .await
         .map_err(UsageFailure::Retryable)?;
@@ -158,31 +163,59 @@ fn parse_event(bytes: &[u8]) -> Result<UsageEvent, ()> {
     {
         return Err(());
     }
-    let payload = envelope.get("payload").filter(|value| value.is_object()).ok_or(())?;
+    let payload = envelope
+        .get("payload")
+        .filter(|value| value.is_object())
+        .ok_or(())?;
     let string = |value: &Value, key: &str| value.get(key).and_then(Value::as_str).ok_or(());
     let event_id = Uuid::parse_str(string(&envelope, "event_id")?).map_err(|_| ())?;
     let tenant_id = Uuid::parse_str(string(payload, "tenant_id")?).map_err(|_| ())?;
     let usage_id = Uuid::parse_str(string(payload, "usage_id")?).map_err(|_| ())?;
     let price_version_id = Uuid::parse_str(string(payload, "price_version_id")?).map_err(|_| ())?;
-    let quantity = payload.get("quantity").and_then(Value::as_i64).filter(|v| *v > 0).ok_or(())?;
+    let quantity = payload
+        .get("quantity")
+        .and_then(Value::as_i64)
+        .filter(|v| *v > 0)
+        .ok_or(())?;
     let environment = string(payload, "environment")?.to_owned();
-    if !matches!(environment.as_str(), "test" | "live") { return Err(()); }
+    if !matches!(environment.as_str(), "test" | "live") {
+        return Err(());
+    }
     let occurred_at = DateTime::parse_from_rfc3339(string(payload, "occurred_at")?)
-        .map(|value| value.with_timezone(&Utc)).map_err(|_| ())?;
+        .map(|value| value.with_timezone(&Utc))
+        .map_err(|_| ())?;
     let period_start = string(payload, "period_start")?.to_owned();
     let period_end = string(payload, "period_end")?.to_owned();
     let start = DateTime::parse_from_rfc3339(&period_start).map_err(|_| ())?;
     let end = DateTime::parse_from_rfc3339(&period_end).map_err(|_| ())?;
-    if end <= start { return Err(()); }
+    if end <= start {
+        return Err(());
+    }
     let meter_key = string(payload, "meter_key")?.to_owned();
     let unit = string(payload, "unit")?.to_owned();
     let correlation_id = string(&envelope, "correlation_id")?.to_owned();
-    if meter_key.is_empty() || meter_key.len() > 96 || unit.is_empty() || unit.len() > 32
-        || correlation_id.is_empty() || correlation_id.len() > 128
-    { return Err(()); }
+    if meter_key.is_empty()
+        || meter_key.len() > 96
+        || unit.is_empty()
+        || unit.len() > 32
+        || correlation_id.is_empty()
+        || correlation_id.len() > 128
+    {
+        return Err(());
+    }
     Ok(UsageEvent {
-        event_id, tenant_id, usage_id, meter_key, quantity, unit, occurred_at,
-        price_version_id, environment, period_start, period_end, correlation_id,
+        event_id,
+        tenant_id,
+        usage_id,
+        meter_key,
+        quantity,
+        unit,
+        occurred_at,
+        price_version_id,
+        environment,
+        period_start,
+        period_end,
+        correlation_id,
         envelope,
     })
 }
@@ -200,12 +233,17 @@ async fn retry_message(message: &jetstream::Message, correlation_id: &str, error
         component = "platform_billing",
         operation = "persist_billable_usage",
         dependency = "postgresql",
-        error_code = code.as_deref().unwrap_or("billing_usage_persistence_failed"),
+        error_code = code
+            .as_deref()
+            .unwrap_or("billing_usage_persistence_failed"),
         error_category = "persistence",
         retryable = true,
         correlation_id,
     );
-    if let Err(ack_error) = message.ack_with(jetstream::AckKind::Nak(Some(Duration::from_secs(5)))).await {
+    if let Err(ack_error) = message
+        .ack_with(jetstream::AckKind::Nak(Some(Duration::from_secs(5))))
+        .await
+    {
         tracing::error!(event.name="jetstream.consumer.nak.failed", component="platform_billing", operation="retry_billable_usage", error_class=%ack_error);
     }
 }
