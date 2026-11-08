@@ -125,8 +125,10 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
     );
 
     let recovery_event = usage_envelope(tenants[1], Uuid::new_v4(), Uuid::new_v4());
-    if let Ok(container_id) = std::env::var("PLATFORM_TEST_POSTGRES_CONTAINER_ID") {
+    let recovery_started = Instant::now();
+    let outage_mode = if let Ok(container_id) = std::env::var("PLATFORM_TEST_POSTGRES_CONTAINER_ID") {
         database_outage_with_container(&container_id, &jetstream, &subject, recovery_event).await;
+        "postgres_container_restart"
     } else {
         database.set_runtime_database_available(false).await;
         publish(&jetstream, &subject, recovery_event).await;
@@ -137,8 +139,15 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
             "usage must not be persisted while runtime database access is revoked"
         );
         database.set_runtime_database_available(true).await;
-    }
+        "runtime_connection_revocation"
+    };
     wait_for_usage_count(&database.migration_pool, LOAD_EVENTS as i64 + 1).await;
+    println!(
+        "billing_usage_recovery outage_mode={} replicas=2 recovered_events=1 recovery_seconds={:.3} duplicate_deliveries=1 unique_usage_records={}",
+        outage_mode,
+        recovery_started.elapsed().as_secs_f64(),
+        LOAD_EVENTS + 1
+    );
 
     let total_usage = usage_count(&database.migration_pool).await;
     let total_inbox: i64 = sqlx::query_scalar(
