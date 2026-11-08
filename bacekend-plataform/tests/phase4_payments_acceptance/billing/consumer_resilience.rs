@@ -72,6 +72,7 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
     let tenants = (0..4).map(|_| Uuid::new_v4()).collect::<Vec<_>>();
     let first_event = usage_envelope(tenants[0], Uuid::new_v4(), Uuid::new_v4());
     let started = Instant::now();
+    let mut publishers = tokio::task::JoinSet::new();
     for index in 0..LOAD_EVENTS {
         let tenant = tenants[index % tenants.len()];
         let envelope = if index == 0 {
@@ -79,7 +80,14 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
         } else {
             usage_envelope(tenant, Uuid::new_v4(), Uuid::new_v4())
         };
-        publish(&jetstream, &subject, envelope).await;
+        let jetstream = jetstream.clone();
+        let subject = subject.clone();
+        publishers.spawn(async move {
+            publish(&jetstream, &subject, envelope).await;
+        });
+    }
+    while let Some(result) = publishers.join_next().await {
+        result.expect("concurrent publisher task completes");
     }
     wait_for_usage_count(&database.migration_pool, LOAD_EVENTS as i64).await;
     let distinct_tenants: i64 = sqlx::query_scalar(
