@@ -74,11 +74,7 @@ async fn publish_event(
         return Err(PublishFailure::Permanent("event_type_invalid"));
     }
     let subject = format!("{subject_prefix}.{}", event.event_type);
-    let audience = if event.audience == "platform" {
-        "platform_operator"
-    } else {
-        event.audience.as_str()
-    };
+    let audience = event_audience(&event.event_type, &event.audience);
     let mut envelope = json!({
         "event_id": event.event_id,
         "event_type": event.event_type,
@@ -118,6 +114,16 @@ async fn publish_event(
         .map_err(|_| PublishFailure::Retryable("jetstream_ack_timeout"))?
         .map(|_| ())
         .map_err(|_| PublishFailure::Retryable("jetstream_ack_unavailable"))
+}
+
+fn event_audience(event_type: &str, stored_audience: &str) -> &'static str {
+    if event_type == RECONCILIATION_REQUEST_EVENT {
+        "gateway"
+    } else if stored_audience == "platform" {
+        "platform_operator"
+    } else {
+        "tenant"
+    }
 }
 
 fn attach_producer_auth(
@@ -168,6 +174,16 @@ fn hex_upper(value: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reconciliation_requests_route_to_gateway_without_extending_database_audiences() {
+        assert_eq!(
+            event_audience(RECONCILIATION_REQUEST_EVENT, "platform"),
+            "gateway"
+        );
+        assert_eq!(event_audience("payment_attempt.status_changed", "tenant"), "tenant");
+        assert_eq!(event_audience("tenant.suspended", "platform"), "platform_operator");
+    }
 
     #[test]
     fn reconciliation_requests_are_signed_for_the_gateway_audience() {
