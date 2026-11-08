@@ -129,7 +129,7 @@ mod tests {
     fn rejects_invalid_correlation_id_and_non_positive_quantity() {
         let mut value: serde_json::Value =
             serde_json::from_slice(&valid_envelope()).expect("valid fixture parses");
-        value["correlation_id"] = json!("billing\\nforged");
+        value["correlation_id"] = json!("billing\nforged");
         assert!(parse_event(&serde_json::to_vec(&value).expect("fixture serializes")).is_err());
 
         let mut value: serde_json::Value =
