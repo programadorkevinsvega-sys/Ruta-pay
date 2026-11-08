@@ -1,7 +1,7 @@
 use async_nats::jetstream;
 use metrics::{counter, histogram};
 use platform_billing::{
-    application::{BillingError, BillingService, RecordUsage},
+    application::{BillingError, BillingService, RecordUsage, UsageBatchEvent},
     infrastructure::inbox::{self, InboxDisposition},
 };
 use serde_json::json;
@@ -231,5 +231,106 @@ async fn retry_message(
             error_code = "billing_usage_nak_failed",
             error_class = %ack_error
         );
+    }
+}
+
+
+/// Groups a bounded JetStream fetch by tenant and persists each group atomically.
+/// ACKs are issued only after the corresponding tenant transaction has committed.
+pub(super) async fn process_batch(messages: Vec<jetstream::Message>, service: &BillingService) {
+    use std::collections::HashMap;
+    let mut groups: HashMap<Uuid, Vec<(jetstream::Message, UsageBatchEvent)>> = HashMap::new();
+
+    for message in messages {
+        let event = match parse_event(&message.payload) {
+            Ok(event) => event,
+            Err(()) => {
+                counter!("platform_billing_usage_events_total", "outcome" => "invalid").increment(1);
+                term_message(&message, None, None).await;
+                continue;
+            }
+        };
+        let attributes = json!({
+            "price_version_id": event.price_version_id,
+            "environment": event.environment,
+            "period_start": event.period_start,
+            "period_end": event.period_end
+        });
+        let batch_event = UsageBatchEvent {
+            tenant_id: event.tenant_id,
+            producer: PRODUCER.to_owned(),
+            event_id: event.event_id,
+            event_type: EVENT_TYPE.to_owned(),
+            schema_version: 1,
+            payload: event.envelope,
+            source_system: PRODUCER.to_owned(),
+            source_event_id: event.usage_id.to_string(),
+            meter_key: event.meter_key,
+            quantity: event.quantity,
+            unit: event.unit,
+            occurred_at: event.occurred_at,
+            attributes,
+        };
+        groups.entry(event.tenant_id).or_default().push((message, batch_event));
+    }
+
+    for (tenant_id, group) in groups {
+        let events = group.iter().map(|(_, event)| event.clone()).collect::<Vec<_>>();
+        match service.record_usage_batch_for_tenant(tenant_id, &events).await {
+            Ok(dispositions) => {
+                for ((message, event), disposition) in group.into_iter().zip(dispositions) {
+                    let outcome = match disposition {
+                        platform_billing::application::UsageBatchDisposition::Processed => "processed",
+                        platform_billing::application::UsageBatchDisposition::DuplicateProcessed => "duplicate_processed",
+                        platform_billing::application::UsageBatchDisposition::DuplicateUsage => "duplicate_usage",
+                    };
+                    counter!("platform_billing_usage_events_total", "outcome" => outcome).increment(1);
+                    if let Err(error) = message.ack().await {
+                        tracing::warn!(
+                            event.name = "jetstream.consumer.ack.failed",
+                            component = "platform_billing",
+                            operation = "ack_committed_usage_batch",
+                            event_id = %event.event_id,
+                            error_code = "billing_usage_batch_ack_failed",
+                            error_class = %error
+                        );
+                    }
+                }
+            }
+            Err(error) => {
+                for (message, event) in group {
+                    match &error {
+                        BillingError::Database(database_error) => {
+                            counter!("platform_billing_usage_events_total", "outcome" => "retry").increment(1);
+                            let code = database_error.as_database_error().and_then(|cause| cause.code());
+                            tracing::error!(
+                                event.name = "billing.usage.batch.failed",
+                                component = "platform_billing",
+                                operation = "persist_billable_usage_batch",
+                                tenant_id = %tenant_id,
+                                batch_size = events.len(),
+                                error_code = code.as_deref().unwrap_or("billing_usage_batch_failed"),
+                                retryable = true
+                            );
+                            if let Err(ack_error) = message.ack_with(
+                                jetstream::AckKind::Nak(Some(Duration::from_secs(5)))
+                            ).await {
+                                tracing::error!(
+                                    event.name = "jetstream.consumer.nak.failed",
+                                    component = "platform_billing",
+                                    operation = "retry_billable_usage_batch",
+                                    error_code = "billing_usage_batch_nak_failed",
+                                    error_class = %ack_error
+                                );
+                            }
+                        }
+                        _ => {
+                            counter!("platform_billing_usage_events_total", "outcome" => "batch_rejected").increment(1);
+                            term_message(&message, Some(event.event_id), None).await;
+                        }
+                    }
+                }
+            }
+        }
     }
 }
