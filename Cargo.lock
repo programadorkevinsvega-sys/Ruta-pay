@@ -2335,6 +2335,7 @@ version = "0.1.0"
 dependencies = [
  "async-nats",
  "base64 0.22.1",
+ "chrono",
  "metrics",
  "opentelemetry",
  "payvia-observability",
@@ -2356,6 +2357,7 @@ dependencies = [
  "tonic",
  "tracing",
  "tracing-opentelemetry",
+ "uuid",
 ]
 
 [[package]]
