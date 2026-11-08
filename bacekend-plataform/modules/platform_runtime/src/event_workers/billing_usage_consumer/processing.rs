@@ -151,7 +151,7 @@ async fn reject_event(
         }
         Ok(InboxDisposition::Duplicate { processed: true, .. }) => ack_message(message, event).await,
         Err(error) => {
-            if matches!(error, sqlx::Error::Protocol(_)) {
+            if matches!(&error, sqlx::Error::Protocol(_)) {
                 term_message(message, Some(event.event_id), Some(&event.correlation_id)).await;
             } else {
                 retry_message(message, event, &error).await;
