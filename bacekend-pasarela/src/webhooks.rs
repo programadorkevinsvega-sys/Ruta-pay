@@ -84,10 +84,7 @@ impl IntoResponse for WebhookError {
                 StatusCode::UNAUTHORIZED,
                 "provider_callback_unauthenticated",
             ),
-            Self::EventBusUnavailable => (
-                StatusCode::SERVICE_UNAVAILABLE,
-                "provider_event_delivery_unavailable",
-            ),
+            Self::EventBusUnavailable => (StatusCode::SERVICE_UNAVAILABLE, "provider_event_delivery_unavailable"),
         };
         (status, Json(serde_json::json!({"error":{"code":code}}))).into_response()
     }
@@ -328,13 +325,15 @@ mod tests {
                 "account_reference":first.account_reference,
                 "tenant_id":first.tenant_id,
                 "environment":first.environment,
-                "event_secret":first.event_secret
+                "event_secret":first.event_secret,
+                "private_key":first.private_key
             }),
             serde_json::json!({
                 "account_reference":second.account_reference,
                 "tenant_id":second.tenant_id,
                 "environment":second.environment,
-                "event_secret":second.event_secret
+                "event_secret":second.event_secret,
+                "private_key":second.private_key
             }),
         ])
         .expect("serialize");
