@@ -135,22 +135,25 @@ fn attach_producer_auth(
     {
         return Err("gateway_request_signing_configuration_invalid");
     }
-    let object = envelope
-        .as_object_mut()
-        .ok_or("gateway_request_envelope_invalid")?;
-    if object.contains_key("producer_auth") {
+    if !envelope.is_object() {
+        return Err("gateway_request_envelope_invalid");
+    }
+    if envelope.get("producer_auth").is_some() {
         return Err("gateway_request_envelope_already_signed");
     }
     let canonical = serde_json::to_vec(envelope)
         .map_err(|_| "gateway_request_envelope_invalid")?;
     let signature = hmac::sign(&hmac::Key::new(hmac::HMAC_SHA256, signing_key), &canonical);
-    object.insert(
-        "producer_auth".to_owned(),
-        json!({
-            "key_id": key_id,
-            "signature": hex_upper(signature.as_ref())
-        }),
-    );
+    envelope
+        .as_object_mut()
+        .ok_or("gateway_request_envelope_invalid")?
+        .insert(
+            "producer_auth".to_owned(),
+            json!({
+                "key_id": key_id,
+                "signature": hex_upper(signature.as_ref())
+            }),
+        );
     Ok(())
 }
 
