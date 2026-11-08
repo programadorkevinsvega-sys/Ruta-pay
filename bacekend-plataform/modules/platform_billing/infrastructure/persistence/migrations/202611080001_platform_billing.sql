@@ -228,17 +228,49 @@ CREATE TABLE platform_billing.collection_attempts (
     idempotency_key TEXT NOT NULL CHECK (char_length(idempotency_key) BETWEEN 1 AND 128),
     request_sha256 BYTEA NOT NULL CHECK (octet_length(request_sha256)=32),
     status TEXT NOT NULL CHECK (status IN ('created','submitted','processing','succeeded','failed','outcome_unknown')),
+    aggregate_version BIGINT NOT NULL DEFAULT 1 CHECK (aggregate_version > 0),
     amount_minor BIGINT NOT NULL CHECK (amount_minor > 0),
     currency CHAR(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (tenant_id,id),
-    UNIQUE (tenant_id,invoice_id,attempt_number),
+    UNIQUE (tenant_id,invoice_id),
     UNIQUE (tenant_id,invoice_id,idempotency_key),
     FOREIGN KEY (tenant_id,invoice_id) REFERENCES platform_billing.invoices(tenant_id,id)
 );
 
-DO $$
+CREATE FUNCTION platform_billing.guard_collection_attempt()
+RETURNS trigger LANGUAGE plpgsql AS $
+BEGIN
+    IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id OR
+       NEW.invoice_id IS DISTINCT FROM OLD.invoice_id OR
+       NEW.attempt_number IS DISTINCT FROM OLD.attempt_number OR
+       NEW.provider_code IS DISTINCT FROM OLD.provider_code OR
+       NEW.idempotency_key IS DISTINCT FROM OLD.idempotency_key OR
+       NEW.request_sha256 IS DISTINCT FROM OLD.request_sha256 OR
+       NEW.amount_minor IS DISTINCT FROM OLD.amount_minor OR
+       NEW.currency IS DISTINCT FROM OLD.currency THEN
+        RAISE EXCEPTION 'collection attempt request is immutable'
+            USING ERRCODE='55000';
+    END IF;
+    IF OLD.status IN ('succeeded','failed') OR NOT (
+        (OLD.status='created' AND NEW.status IN ('submitted','failed','outcome_unknown')) OR
+        (OLD.status='submitted' AND NEW.status IN ('processing','succeeded','failed','outcome_unknown')) OR
+        (OLD.status='processing' AND NEW.status IN ('succeeded','failed','outcome_unknown')) OR
+        (OLD.status='outcome_unknown' AND NEW.status IN ('processing','succeeded','failed'))
+    ) THEN
+        RAISE EXCEPTION 'invalid platform collection state transition'
+            USING ERRCODE='23514';
+    END IF;
+    NEW.aggregate_version := OLD.aggregate_version + 1;
+    NEW.updated_at := now();
+    RETURN NEW;
+END $;
+CREATE TRIGGER collection_attempt_state_guard
+    BEFORE UPDATE ON platform_billing.collection_attempts
+    FOR EACH ROW EXECUTE FUNCTION platform_billing.guard_collection_attempt();
+
+DO $
 DECLARE table_name TEXT;
 BEGIN
   FOREACH table_name IN ARRAY ARRAY[
