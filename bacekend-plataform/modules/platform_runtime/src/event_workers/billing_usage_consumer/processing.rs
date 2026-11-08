@@ -34,7 +34,7 @@ pub(super) async fn process_message(
     service: &BillingService,
     pool: &PgPool,
 ) {
-    let started = Instant::now();
+    let _timer = UsageProcessingTimer(Instant::now());
     let event = match parse_event(&message.payload) {
         Ok(event) => event,
         Err(()) => {
@@ -113,8 +113,6 @@ pub(super) async fn process_message(
         Ok(duplicate) => {
             let outcome = if duplicate { "duplicate_usage" } else { "processed" };
             counter!("platform_billing_usage_events_total", "outcome" => outcome).increment(1);
-            histogram!("platform_billing_usage_processing_seconds")
-                .record(started.elapsed().as_secs_f64());
             tracing::info!(
                 event.name = "billing.usage.event.processed",
                 component = "platform_billing",
@@ -141,6 +139,16 @@ pub(super) async fn process_message(
             counter!("platform_billing_usage_events_total", "outcome" => "retry").increment(1);
             retry_message(&message, &event, &error).await;
         }
+    }
+}
+
+
+struct UsageProcessingTimer(Instant);
+
+impl Drop for UsageProcessingTimer {
+    fn drop(&mut self) {
+        histogram!("platform_billing_usage_processing_seconds")
+            .record(self.0.elapsed().as_secs_f64());
     }
 }
 
