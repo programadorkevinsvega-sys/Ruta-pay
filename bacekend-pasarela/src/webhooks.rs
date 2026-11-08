@@ -84,7 +84,10 @@ impl IntoResponse for WebhookError {
                 StatusCode::UNAUTHORIZED,
                 "provider_callback_unauthenticated",
             ),
-            Self::EventBusUnavailable => (StatusCode::SERVICE_UNAVAILABLE, "provider_event_delivery_unavailable"),
+            Self::EventBusUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "provider_event_delivery_unavailable",
+            ),
         };
         (status, Json(serde_json::json!({"error":{"code":code}}))).into_response()
     }
