@@ -245,5 +245,3 @@ async fn retry_message(
         );
     }
 }
-
-
