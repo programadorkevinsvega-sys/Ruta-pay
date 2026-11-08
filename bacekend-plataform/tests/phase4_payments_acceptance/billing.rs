@@ -9,3 +9,6 @@ mod usage_invoice;
 mod usage_concurrency;
 #[path = "billing/usage_recovery.rs"]
 mod usage_recovery;
+
+#[path = "billing/consumer_resilience.rs"]
+mod consumer_resilience;
