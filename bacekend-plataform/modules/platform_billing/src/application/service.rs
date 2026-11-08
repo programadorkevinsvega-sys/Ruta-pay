@@ -79,29 +79,10 @@ impl BillingService {
             .ok_or(BillingError::InvalidCommand)?;
         let mut tx = self.pool.begin().await?;
         set_tenant_context(&mut tx, command.tenant_id).await?;
-        let id = Uuid::new_v4();
-        let inserted = sqlx::query("INSERT INTO platform_billing.usage_events (id,tenant_id,meter_key,source_event_id,source_system,quantity,unit,occurred_at,attributes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (tenant_id,source_system,source_event_id) DO NOTHING")
-            .bind(id).bind(command.tenant_id).bind(command.meter_key).bind(command.source_event_id)
-            .bind(command.source_system).bind(command.quantity).bind(command.unit)
-            .bind(occurred_at).bind(&command.attributes).execute(&mut *tx).await?;
-        if inserted.rows_affected() == 0 {
-            let row=sqlx::query("SELECT id,meter_key,quantity,unit,occurred_at,attributes FROM platform_billing.usage_events WHERE tenant_id=$1 AND source_system=$2 AND source_event_id=$3")
-                .bind(command.tenant_id).bind(command.source_system).bind(command.source_event_id)
-                .fetch_one(&mut *tx).await?;
-            let same: bool = row.try_get::<String, _>("meter_key")? == command.meter_key
-                && row.try_get::<i64, _>("quantity")? == command.quantity
-                && row.try_get::<String, _>("unit")? == command.unit
-                && row.try_get::<DateTime<Utc>, _>("occurred_at")? == occurred_at
-                && row.try_get::<Value, _>("attributes")? == command.attributes;
-            if !same {
-                return Err(BillingError::IdempotencyConflict);
-            }
-            let original: Uuid = row.try_get("id")?;
-            tx.commit().await?;
-            return Ok((original, true));
-        }
+        let (usage_id, duplicate) =
+            super::usage::insert_usage(&mut tx, &command, occurred_at).await?;
         tx.commit().await?;
-        Ok((id, false))
+        Ok((usage_id, duplicate))
     }
 
     pub async fn create_draft(&self, command: CreateInvoice<'_>) -> Result<Uuid, BillingError> {
