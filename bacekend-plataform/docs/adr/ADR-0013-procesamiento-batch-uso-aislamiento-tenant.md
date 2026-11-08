@@ -64,10 +64,10 @@ La implementación inicial en la rama del PR introduce:
 
 - Fetch JetStream finito con límites configurables de mensajes, bytes y expiración; la admisión reduce el tamaño cuando disminuyen las conexiones PostgreSQL ociosas.
 - Lectura de límites cgroup v2 `cpu.max`, `memory.current` y `memory.max` para reducir el tamaño del lote bajo presión. El valor se vuelve a evaluar antes de cada fetch.
-- Agrupación de los mensajes válidos por tenant y una transacción por grupo. La configuración RLS se aplica una sola vez por transacción.
+- Agrupación de los mensajes válidos por tenant y una transacción por grupo. Los grupos de tenants distintos se ejecutan concurrentemente con un límite igual a las conexiones ociosas observadas al iniciar el procesamiento (mínimo uno para el bootstrap); nunca se mezclan tenants en una transacción. La configuración RLS se aplica una sola vez por transacción.
 - Inserción set-based de Inbox y usage, validación de conflictos de idempotencia y actualización de Inbox a `processed` dentro de esa transacción.
 - ACK individual posterior al commit del grupo; ante error de persistencia, NAK con demora para permitir redelivery.
-- Histogramas separados para antigüedad desde publicación hasta procesamiento, espera de fetch, adquisición de conexión, SQL, commit y ACK; contadores de errores de fetch, stream y ACK.
+- Histogramas separados para antigüedad desde publicación hasta procesamiento, espera de fetch, adquisición de conexión, SQL, commit, ACK, tamaño de lote, número de grupos por fetch y límite adaptativo; contadores de errores de fetch, stream, ACK, pausas por pool agotado y presión de CPU/memoria.
 
 La antigüedad desde publicación usa el timestamp de JetStream y no debe confundirse con duración SQL. El tiempo de fetch es una métrica distinta de la espera del mensaje en el stream.
 

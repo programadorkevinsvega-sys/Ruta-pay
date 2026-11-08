@@ -212,7 +212,7 @@ pub(super) async fn run_billing_usage_consumer(
         histogram!("platform_billing_usage_batch_size").record(batch.len() as f64);
         counter!("platform_billing_usage_batches_total").increment(1);
         let process_started = Instant::now();
-        process_batch(batch, &service).await;
+        process_batch(batch, &service, pool.num_idle().max(1)).await;
         histogram!("platform_billing_usage_batch_processing_seconds")
             .record(process_started.elapsed().as_secs_f64());
     }

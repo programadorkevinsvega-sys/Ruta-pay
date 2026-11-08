@@ -1,11 +1,16 @@
 use async_nats::jetstream;
-use metrics::{counter, histogram};
-use platform_billing::application::{BillingError, BillingService, RecordUsage, UsageBatchEvent};
-use serde_json::json;
-use std::collections::HashMap;
-use std::time::{Duration, Instant};
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
+use metrics::{counter, histogram};
+use platform_billing::application::{
+    BillingError, BillingService, RecordUsage, UsageBatchDisposition, UsageBatchEvent,
+};
+use serde_json::json;
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
+use tokio::task::JoinSet;
+use uuid::Uuid;
 
 const EVENT_TYPE: &str = "billing.usage.recorded";
 const PRODUCER: &str = "entitlements_quotas";
@@ -13,9 +18,13 @@ const PRODUCER: &str = "entitlements_quotas";
 mod parser;
 use parser::parse_event;
 
-/// Groups a bounded JetStream fetch by tenant and persists each group atomically.
-/// ACKs are issued only after the corresponding tenant transaction has committed.
-pub(super) async fn process_batch(messages: Vec<jetstream::Message>, service: &BillingService) {
+/// Groups a bounded fetch by tenant and runs tenant transactions concurrently
+/// with a strict limit derived from currently idle PostgreSQL connections.
+pub(super) async fn process_batch(
+    messages: Vec<jetstream::Message>,
+    service: &BillingService,
+    max_concurrency: usize,
+) {
     let mut groups: HashMap<Uuid, Vec<(jetstream::Message, UsageBatchEvent)>> = HashMap::new();
 
     for message in messages {
@@ -34,15 +43,9 @@ pub(super) async fn process_batch(messages: Vec<jetstream::Message>, service: &B
             "period_start": event.period_start,
             "period_end": event.period_end
         });
-        tracing::debug!(
-            event.name = "billing.usage.event.grouped",
-            component = "platform_billing",
-            event_id = %event.event_id,
-            correlation_id = %event.correlation_id,
-            tenant_id = %event.tenant_id
-        );
+        let tenant_id = event.tenant_id;
         let batch_event = UsageBatchEvent {
-            tenant_id: event.tenant_id,
+            tenant_id,
             producer: PRODUCER.to_owned(),
             event_id: event.event_id,
             event_type: EVENT_TYPE.to_owned(),
@@ -56,75 +59,109 @@ pub(super) async fn process_batch(messages: Vec<jetstream::Message>, service: &B
             occurred_at: event.occurred_at,
             attributes,
         };
-        groups.entry(event.tenant_id).or_default().push((message, batch_event));
+        groups.entry(tenant_id).or_default().push((message, batch_event));
     }
 
-    for (tenant_id, group) in groups {
-        let events = group.iter().map(|(_, event)| event.clone()).collect::<Vec<_>>();
-        match service.record_usage_batch_for_tenant(tenant_id, &events).await {
-            Ok(dispositions) => {
-                for ((message, event), disposition) in group.into_iter().zip(dispositions) {
-                    let outcome = match disposition {
-                        platform_billing::application::UsageBatchDisposition::Processed => "processed",
-                        platform_billing::application::UsageBatchDisposition::DuplicateProcessed => "duplicate_processed",
-                    };
-                    counter!("platform_billing_usage_events_total", "outcome" => outcome).increment(1);
-                    let ack_started = Instant::now();
-                    if let Err(error) = message.ack().await {
-                        counter!("platform_billing_usage_ack_failures_total").increment(1);
-                        tracing::warn!(
-                            event.name = "jetstream.consumer.ack.failed",
-                            component = "platform_billing",
-                            operation = "ack_committed_usage_batch",
-                            event_id = %event.event_id,
-                            error_code = "billing_usage_batch_ack_failed",
-                            error_class = %error
-                        );
-                    }
-                    histogram!("platform_billing_usage_ack_seconds")
-                        .record(ack_started.elapsed().as_secs_f64());
-                }
-            }
-            Err(BillingError::Database(database_error)) => {
-                let code = database_error.as_database_error().and_then(|cause| cause.code());
-                tracing::error!(
-                    event.name = "billing.usage.batch.failed",
-                    component = "platform_billing",
-                    operation = "persist_billable_usage_batch",
-                    tenant_id = %tenant_id,
-                    batch_size = events.len(),
-                    error_code = code.as_deref().unwrap_or("billing_usage_batch_failed"),
-                    retryable = true
-                );
-                for (message, _) in group {
-                    counter!("platform_billing_usage_events_total", "outcome" => "retry").increment(1);
-                    nak_message(&message).await;
-                }
-            }
-            Err(error) => {
-                // Isolate permanent conflicts so one poison event cannot discard
-                // unrelated valid events from the same tenant fetch.
-                tracing::warn!(
-                    event.name = "billing.usage.batch.fallback",
-                    component = "platform_billing",
-                    operation = "persist_billable_usage_batch",
-                    tenant_id = %tenant_id,
-                    batch_size = events.len(),
-                    error_code = match error {
-                        BillingError::InboxIdempotencyConflict => "inbox_idempotency_conflict",
-                        BillingError::IdempotencyConflict => "usage_idempotency_conflict",
-                        BillingError::InvalidCommand => "usage_batch_invalid",
-                        _ => "usage_batch_rejected"
-                    }
-                );
-                for (message, event) in group {
-                    process_single_fallback(message, event, service).await;
-                }
-            }
+    histogram!("platform_billing_usage_tenant_groups_per_fetch").record(groups.len() as f64);
+    let mut pending = groups.into_iter();
+    let concurrency = max_concurrency.max(1).min(pending.len());
+    let mut tasks = JoinSet::new();
+
+    for _ in 0..concurrency {
+        if let Some((tenant_id, group)) = pending.next() {
+            let service = service.clone();
+            tasks.spawn(async move {
+                process_tenant_group(tenant_id, group, &service).await;
+            });
+        }
+    }
+
+    while let Some(result) = tasks.join_next().await {
+        if let Err(error) = result {
+            counter!("platform_billing_usage_tenant_task_failures_total").increment(1);
+            tracing::error!(
+                event.name = "billing.usage.tenant_task.failed",
+                component = "platform_billing",
+                operation = "process_tenant_usage_group",
+                error_code = "billing_usage_tenant_task_failed",
+                error_class = %error
+            );
+        }
+        if let Some((tenant_id, group)) = pending.next() {
+            let service = service.clone();
+            tasks.spawn(async move {
+                process_tenant_group(tenant_id, group, &service).await;
+            });
         }
     }
 }
 
+async fn process_tenant_group(
+    tenant_id: Uuid,
+    group: Vec<(jetstream::Message, UsageBatchEvent)>,
+    service: &BillingService,
+) {
+    let events = group.iter().map(|(_, event)| event.clone()).collect::<Vec<_>>();
+    match service.record_usage_batch_for_tenant(tenant_id, &events).await {
+        Ok(dispositions) => {
+            for ((message, event), disposition) in group.into_iter().zip(dispositions) {
+                let outcome = match disposition {
+                    UsageBatchDisposition::Processed => "processed",
+                    UsageBatchDisposition::DuplicateProcessed => "duplicate_processed",
+                };
+                counter!("platform_billing_usage_events_total", "outcome" => outcome).increment(1);
+                let ack_started = Instant::now();
+                if let Err(error) = message.ack().await {
+                    counter!("platform_billing_usage_ack_failures_total").increment(1);
+                    tracing::warn!(
+                        event.name = "jetstream.consumer.ack.failed",
+                        component = "platform_billing",
+                        operation = "ack_committed_usage_batch",
+                        event_id = %event.event_id,
+                        error_code = "billing_usage_batch_ack_failed",
+                        error_class = %error
+                    );
+                }
+                histogram!("platform_billing_usage_ack_seconds")
+                    .record(ack_started.elapsed().as_secs_f64());
+            }
+        }
+        Err(BillingError::Database(database_error)) => {
+            let code = database_error.as_database_error().and_then(|cause| cause.code());
+            tracing::error!(
+                event.name = "billing.usage.batch.failed",
+                component = "platform_billing",
+                operation = "persist_billable_usage_batch",
+                tenant_id = %tenant_id,
+                batch_size = events.len(),
+                error_code = code.as_deref().unwrap_or("billing_usage_batch_failed"),
+                retryable = true
+            );
+            for (message, _) in group {
+                counter!("platform_billing_usage_events_total", "outcome" => "retry").increment(1);
+                nak_message(&message).await;
+            }
+        }
+        Err(error) => {
+            tracing::warn!(
+                event.name = "billing.usage.batch.fallback",
+                component = "platform_billing",
+                operation = "persist_billable_usage_batch",
+                tenant_id = %tenant_id,
+                batch_size = events.len(),
+                error_code = match error {
+                    BillingError::InboxIdempotencyConflict => "inbox_idempotency_conflict",
+                    BillingError::IdempotencyConflict => "usage_idempotency_conflict",
+                    BillingError::InvalidCommand => "usage_batch_invalid",
+                    _ => "usage_batch_rejected"
+                }
+            );
+            for (message, event) in group {
+                process_single_fallback(message, event, service).await;
+            }
+        }
+    }
+}
 
 fn record_queue_wait(message: &jetstream::Message) {
     if let Ok(info) = message.info()
@@ -155,7 +192,6 @@ async fn term_message(
         );
     }
 }
-
 
 async fn process_single_fallback(
     message: jetstream::Message,
