@@ -66,7 +66,7 @@ pub(super) async fn run_billing_usage_consumer(
                                     EVENT_TYPE, 1, &event.envelope,
                                 ).await {
                                     Ok(InboxDisposition::Inserted(id)) => Some(id),
-                                    Ok(InboxDisposition::Duplicate { id, processed: true }) => {
+                                    Ok(InboxDisposition::Duplicate { id: _, processed: true }) => {
                                         if let Err(error) = message.ack().await {
                                             tracing::warn!(event.name="jetstream.consumer.ack.failed", component="platform_billing", operation="ack_processed_usage_duplicate", error_class=%error);
                                         }
@@ -135,7 +135,7 @@ async fn persist_usage(
             tenant_id: event.tenant_id,
             meter_key: &event.meter_key,
             source_system: PRODUCER,
-            source_event_id: &event.usage_id.to_string(),
+            source_event_id: &event.usage_id.to_required_string(),
             quantity: event.quantity,
             unit: &event.unit,
             occurred_at: event.occurred_at,
@@ -156,6 +156,10 @@ async fn persist_usage(
     Ok(())
 }
 
+fn required_string(value: &Value, key: &str) -> Result<&str, ()> {
+    value.get(key).and_then(Value::as_str).ok_or(())
+}
+
 fn parse_event(bytes: &[u8]) -> Result<UsageEvent, ()> {
     let envelope: Value = serde_json::from_slice(bytes).map_err(|_| ())?;
     if envelope.get("event_type").and_then(Value::as_str) != Some(EVENT_TYPE)
@@ -167,7 +171,6 @@ fn parse_event(bytes: &[u8]) -> Result<UsageEvent, ()> {
         .get("payload")
         .filter(|value| value.is_object())
         .ok_or(())?;
-    let string = |value: &Value, key: &str| value.get(key).and_then(Value::as_str).ok_or(());
     let event_id = Uuid::parse_str(string(&envelope, "event_id")?).map_err(|_| ())?;
     let tenant_id = Uuid::parse_str(string(payload, "tenant_id")?).map_err(|_| ())?;
     let usage_id = Uuid::parse_str(string(payload, "usage_id")?).map_err(|_| ())?;
