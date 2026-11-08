@@ -248,6 +248,7 @@ BEGIN
        NEW.provider_code IS DISTINCT FROM OLD.provider_code OR
        NEW.idempotency_key IS DISTINCT FROM OLD.idempotency_key OR
        NEW.request_sha256 IS DISTINCT FROM OLD.request_sha256 OR
+       (OLD.provider_reference IS NOT NULL AND NEW.provider_reference IS DISTINCT FROM OLD.provider_reference) OR
        NEW.amount_minor IS DISTINCT FROM OLD.amount_minor OR
        NEW.currency IS DISTINCT FROM OLD.currency THEN
         RAISE EXCEPTION 'collection attempt request is immutable'
