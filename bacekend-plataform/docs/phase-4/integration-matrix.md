@@ -137,7 +137,7 @@ La prueba `payment_attempt_and_transaction_apis_cross_http_bff_grpc_and_payments
 - El gateway valida el callback Wompi antes de publicar. Plataforma solo consume envelopes HMAC firmados; JetStream entrega durablemente y ambos lados soportan mTLS configurable. No se aceptan callbacks arbitrarios ni se confía en headers/IP como identidad del productor.
 - No se comparten schemas ni se hacen joins/escrituras SQL entre dominios.
 - PostgreSQL es fuente de verdad; Redis no decide importes, autorización ni idempotencia comercial.
-- No se afirman adaptadores Wompi, Factus o Resend operativos sin credenciales y pruebas oficiales de sandbox.
+- No se afirman adapters propios de Wompi o Resend operativos sin credenciales y pruebas oficiales de sandbox. La emisión fiscal es externa y no se declara integrada ni operativa por la existencia del contrato.
 - Despliegue/ejecución en producción queda fuera de esta evidencia de construcción.
 
 ## 6. Criterio de salida
