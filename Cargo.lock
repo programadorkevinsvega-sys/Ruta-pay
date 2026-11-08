@@ -2271,6 +2271,8 @@ dependencies = [
 name = "platform-billing"
 version = "0.1.0"
 dependencies = [
+ "tokio",
+ "async-nats",
  "base64 0.22.1",
  "chrono",
  "serde",
