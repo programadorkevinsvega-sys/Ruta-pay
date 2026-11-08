@@ -214,7 +214,9 @@ jobs:
             fi
           done < <(find bacekend-plataform bacekend-pasarela crates -type f -name '*.rs' -not -path '*/target/*' -print0)
           exit "$failed"
-      - name: Format
+      - name: Format Rust sources
+        run: cargo fmt --all
+      - name: Verify Rust formatting
         run: cargo fmt --all -- --check
       - name: Clippy
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
