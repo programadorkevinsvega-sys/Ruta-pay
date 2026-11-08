@@ -196,15 +196,18 @@ impl TestDatabase {
     }
 
     pub async fn set_runtime_database_available(&self, available: bool) {
-        let (statement, grantee) = if available {
-            ("GRANT CONNECT", "TO")
+        let statement = if available {
+            format!(
+                "GRANT CONNECT ON DATABASE \\"{}\\" TO \\"{}\\"",
+                self.cleanup.database_name, self.cleanup.runtime_role
+            )
         } else {
-            ("REVOKE CONNECT", "FROM")
+            format!(
+                "REVOKE CONNECT ON DATABASE \\"{}\\" FROM PUBLIC, \\"{}\\"",
+                self.cleanup.database_name, self.cleanup.runtime_role
+            )
         };
-        sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
-            "{statement} ON DATABASE \"{}\" {grantee} \"{}\"",
-            self.cleanup.database_name, self.cleanup.runtime_role
-        )))
+        sqlx::raw_sql(sqlx::AssertSqlSafe(statement))
         .execute(&self.cleanup.admin_pool)
         .await
         .expect("runtime database connectivity permission changes");
