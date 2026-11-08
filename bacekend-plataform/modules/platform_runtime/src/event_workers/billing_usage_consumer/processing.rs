@@ -169,49 +169,6 @@ impl Drop for UsageProcessingTimer {
     }
 }
 
-enum UsageFailure {
-    Permanent(&'static str),
-    Retryable(sqlx::Error),
-}
-
-async fn persist_usage(
-    service: &BillingService,
-    event: &UsageEvent,
-    inbox_id: Uuid,
-) -> Result<bool, UsageFailure> {
-    let source_event_id = event.usage_id.to_string();
-    let attributes = json!({
-        "price_version_id": event.price_version_id,
-        "environment": event.environment,
-        "period_start": event.period_start,
-        "period_end": event.period_end
-    });
-    service
-        .record_usage_with_inbox(
-            RecordUsage {
-                tenant_id: event.tenant_id,
-                meter_key: &event.meter_key,
-                source_system: PRODUCER,
-                source_event_id: &source_event_id,
-                quantity: event.quantity,
-                unit: &event.unit,
-                occurred_at: event.occurred_at,
-                attributes,
-            },
-            inbox_id,
-        )
-        .await
-        .map(|(_, duplicate)| duplicate)
-        .map_err(|error| match error {
-            BillingError::Database(database) => UsageFailure::Retryable(database),
-            BillingError::IdempotencyConflict => {
-                UsageFailure::Permanent("usage_idempotency_conflict")
-            }
-            BillingError::InvalidCommand => UsageFailure::Permanent("billable_usage_invalid"),
-            _ => UsageFailure::Permanent("billable_usage_rejected"),
-        })
-}
-
 async fn ack_message(message: &jetstream::Message, event: &UsageEvent) {
     if let Err(error) = message.ack().await {
         tracing::warn!(
