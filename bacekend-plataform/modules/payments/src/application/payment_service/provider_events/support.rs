@@ -174,13 +174,19 @@ pub(super) async fn insert_outbox(
     payload: serde_json::Value,
     correlation_id: &str,
 ) -> Result<(), sqlx::Error> {
+    let audience = if event_type == "payment.reconciliation.requested" {
+        "gateway"
+    } else {
+        "tenant"
+    };
     sqlx::query(
-        "INSERT INTO payments.outbox_events (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,correlation_id) VALUES ($1,$2,$3,$4,1,'tenant',$5,$6)",
+        "INSERT INTO payments.outbox_events (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,correlation_id) VALUES ($1,$2,$3,$4,1,$5,$6,$7)",
     )
     .bind(Uuid::new_v4())
     .bind(aggregate_id)
     .bind(version)
     .bind(event_type)
+    .bind(audience)
     .bind(payload)
     .bind(correlation_id)
     .execute(&mut **tx)
