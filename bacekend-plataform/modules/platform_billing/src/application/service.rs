@@ -52,6 +52,8 @@ pub enum BillingError {
     InvoiceNotDraft,
     #[error("idempotency key conflicts with a different usage event")]
     IdempotencyConflict,
+    #[error("inbox event ID conflicts with a different event payload")]
+    InboxIdempotencyConflict,
     #[error("invoice snapshot could not be reproduced")]
     SnapshotInvalid,
 }

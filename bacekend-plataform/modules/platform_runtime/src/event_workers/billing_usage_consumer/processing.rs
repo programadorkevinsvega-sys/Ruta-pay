@@ -1,53 +1,3 @@
-use async_nats::jetstream;
-use metrics::{counter, histogram};
-use platform_billing::{
-    application::{BillingError, BillingService, RecordUsage},
-    infrastructure::inbox::{self, InboxDisposition},
-};
-use serde_json::json;
-use sqlx::PgPool;
-use std::time::{Duration, Instant};
-use uuid::Uuid;
-use tracing::Instrument;
-
-const EVENT_TYPE: &str = "billing.usage.recorded";
-const PRODUCER: &str = "entitlements_quotas";
-
-mod parser;
-use parser::{parse_event, UsageEvent};
-
-pub(super) async fn process_message(
-    message: jetstream::Message,
-    service: &BillingService,
-    pool: &PgPool,
-) {
-    let _timer = UsageProcessingTimer(Instant::now());
-    let event = match parse_event(&message.payload) {
-        Ok(event) => event,
-        Err(()) => {
-            counter!("platform_billing_usage_events_total", "outcome" => "invalid").increment(1);
-            tracing::warn!(
-                event.name = "billing.usage.event.rejected",
-                component = "platform_billing",
-                operation = "parse_billable_usage",
-                error_code = "billing_usage_event_invalid",
-                error_category = "contract",
-                retryable = false
-            );
-            term_message(&message, None, None).await;
-            return;
-        }
-    };
-    let span = tracing::info_span!(
-        "billing_usage.process",
-        event_id = %event.event_id,
-        correlation_id = %event.correlation_id
-    );
-    process_valid_message(message, service, pool, event)
-        .instrument(span)
-        .await;
-}
-
 async fn process_valid_message(
     message: jetstream::Message,
     service: &BillingService,
@@ -62,58 +12,34 @@ async fn process_valid_message(
         correlation_id = %event.correlation_id
     );
 
-    let inbox_id = match inbox::receive(
-        pool,
-        event.tenant_id,
+    let source_event_id = event.usage_id.to_string();
+    let attributes = json!({
+        "price_version_id": event.price_version_id,
+        "environment": event.environment,
+        "period_start": event.period_start,
+        "period_end": event.period_end
+    });
+    let result = service.record_usage_from_event(
+        RecordUsage {
+            tenant_id: event.tenant_id,
+            meter_key: &event.meter_key,
+            source_system: PRODUCER,
+            source_event_id: &source_event_id,
+            quantity: event.quantity,
+            unit: &event.unit,
+            occurred_at: event.occurred_at,
+            attributes,
+        },
         PRODUCER,
         event.event_id,
         EVENT_TYPE,
         1,
         &event.envelope,
-    )
-    .await
-    {
-        Ok(InboxDisposition::Inserted(id)) => id,
-        Ok(InboxDisposition::Duplicate { processed: true, .. }) => {
-            counter!("platform_billing_usage_events_total", "outcome" => "duplicate_processed")
-                .increment(1);
-            tracing::info!(
-                event.name = "billing.usage.event.duplicate",
-                component = "platform_billing",
-                operation = "ack_processed_usage_duplicate",
-                event_id = %event.event_id,
-                correlation_id = %event.correlation_id
-            );
-            ack_message(&message, &event).await;
-            return;
-        }
-        Ok(InboxDisposition::Duplicate { id, processed: false }) => id,
-        Err(sqlx::Error::Protocol(_)) => {
-            counter!("platform_billing_usage_events_total", "outcome" => "idempotency_conflict")
-                .increment(1);
-            tracing::error!(
-                event.name = "billing.usage.event.conflict",
-                component = "platform_billing",
-                operation = "receive_billable_usage",
-                event_id = %event.event_id,
-                correlation_id = %event.correlation_id,
-                error_code = "billing_inbox_idempotency_conflict",
-                error_category = "integrity",
-                retryable = false
-            );
-            term_message(&message, Some(event.event_id), Some(&event.correlation_id)).await;
-            return;
-        }
-        Err(error) => {
-            counter!("platform_billing_usage_events_total", "outcome" => "inbox_retry").increment(1);
-            retry_message(&message, &event, &error).await;
-            return;
-        }
-    };
+    ).await;
 
-    match persist_usage(service, &event, inbox_id).await {
-        Ok(duplicate) => {
-            let outcome = if duplicate { "duplicate_usage" } else { "processed" };
+    match result {
+        Ok(platform_billing::application::UsageInboxResult::Processed { duplicate_usage }) => {
+            let outcome = if duplicate_usage { "duplicate_usage" } else { "processed" };
             counter!("platform_billing_usage_events_total", "outcome" => outcome).increment(1);
             tracing::info!(
                 event.name = "billing.usage.event.processed",
@@ -121,30 +47,68 @@ async fn process_valid_message(
                 operation = "persist_billable_usage",
                 event_id = %event.event_id,
                 correlation_id = %event.correlation_id,
-                duplicate_usage = duplicate
+                duplicate_usage
             );
             ack_message(&message, &event).await;
         }
-        Err(UsageFailure::Permanent(code)) => {
-            counter!("platform_billing_usage_events_total", "outcome" => "rejected").increment(1);
-            match inbox::mark_rejected(pool, event.tenant_id, inbox_id, code).await {
-                Ok(_) => term_message(
-                    &message,
-                    Some(event.event_id),
-                    Some(&event.correlation_id),
-                )
-                .await,
-                Err(error) => retry_message(&message, &event, &error).await,
-            }
+        Ok(platform_billing::application::UsageInboxResult::DuplicateProcessed) => {
+            counter!("platform_billing_usage_events_total", "outcome" => "duplicate_processed").increment(1);
+            ack_message(&message, &event).await;
         }
-        Err(UsageFailure::Retryable(error)) => {
+        Err(BillingError::Database(error)) => {
             counter!("platform_billing_usage_events_total", "outcome" => "retry").increment(1);
             retry_message(&message, &event, &error).await;
+        }
+        Err(BillingError::InboxIdempotencyConflict) => {
+            counter!("platform_billing_usage_events_total", "outcome" => "idempotency_conflict").increment(1);
+            term_message(&message, Some(event.event_id), Some(&event.correlation_id)).await;
+        }
+        Err(BillingError::IdempotencyConflict) => {
+            counter!("platform_billing_usage_events_total", "outcome" => "usage_idempotency_conflict").increment(1);
+            reject_event(pool, &message, &event, "usage_idempotency_conflict").await;
+        }
+        Err(BillingError::InvalidCommand) => {
+            counter!("platform_billing_usage_events_total", "outcome" => "rejected").increment(1);
+            reject_event(pool, &message, &event, "billable_usage_invalid").await;
+        }
+        Err(_) => {
+            counter!("platform_billing_usage_events_total", "outcome" => "rejected").increment(1);
+            reject_event(pool, &message, &event, "billable_usage_rejected").await;
         }
     }
 }
 
-
+async fn reject_event(
+    pool: &PgPool,
+    message: &jetstream::Message,
+    event: &UsageEvent,
+    code: &'static str,
+) {
+    match inbox::receive(
+        pool,
+        event.tenant_id,
+        PRODUCER,
+        event.event_id,
+        EVENT_TYPE,
+        1,
+        &event.envelope,
+    ).await {
+        Ok(InboxDisposition::Inserted(id)) | Ok(InboxDisposition::Duplicate { id, processed: false }) => {
+            match inbox::mark_rejected(pool, event.tenant_id, id, code).await {
+                Ok(_) => term_message(message, Some(event.event_id), Some(&event.correlation_id)).await,
+                Err(error) => retry_message(message, event, &error).await,
+            }
+        }
+        Ok(InboxDisposition::Duplicate { processed: true, .. }) => ack_message(message, event).await,
+        Err(error) => {
+            if matches!(error, sqlx::Error::Protocol(_)) {
+                term_message(message, Some(event.event_id), Some(&event.correlation_id)).await;
+            } else {
+                retry_message(message, event, &error).await;
+            }
+        }
+    }
+}
 
 struct UsageProcessingTimer(Instant);
 
