@@ -86,7 +86,7 @@ async fn billing_collection_inbox_outbox_concurrency_and_recovery_are_isolated()
     assert_eq!(created, 1);
     let attempt = attempt_id.expect("one SaaS collection attempt exists");
     assert!(
-        !transition_attempt(
+        transition_attempt(
             &db.runtime_pool,
             tenant,
             attempt,
@@ -97,12 +97,12 @@ async fn billing_collection_inbox_outbox_concurrency_and_recovery_are_isolated()
         .expect("submission transition")
     );
     assert!(
-        !transition_attempt(&db.runtime_pool, tenant, attempt, "processing", None)
+        transition_attempt(&db.runtime_pool, tenant, attempt, "processing", None)
             .await
             .expect("processing transition")
     );
     assert!(
-        !transition_attempt(&db.runtime_pool, tenant, attempt, "succeeded", None)
+        transition_attempt(&db.runtime_pool, tenant, attempt, "succeeded", None)
             .await
             .expect("success transition")
     );
