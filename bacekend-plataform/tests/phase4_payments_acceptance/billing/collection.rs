@@ -175,7 +175,7 @@ async fn billing_collection_inbox_outbox_concurrency_and_recovery_are_isolated()
     .await
     .expect("duplicate delivery is recognized");
     assert!(matches!(first, InboxDisposition::Inserted(_)));
-    assert!(matches!(duplicate, InboxDisposition::Duplicate(_)));
+    assert!(matches!(duplicate, InboxDisposition::Duplicate { .. }));
     let conflicting = receive(
         &db.runtime_pool,
         tenant,
