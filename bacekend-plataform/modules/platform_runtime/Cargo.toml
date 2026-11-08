@@ -15,6 +15,7 @@ platform-realtime = { path = "../realtime" }
 platform-catalog-pricing = { path = "../catalog_pricing" }
 platform-entitlements-quotas = { path = "../entitlements_quotas" }
 platform-payments = { path = "../payments" }
+platform-billing = { path = "../platform_billing" }
 opentelemetry.workspace = true
 thiserror.workspace = true
 metrics.workspace = true
