@@ -1,3 +1,4 @@
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -138,17 +139,7 @@ impl BillingService {
         set_tenant_context(&mut tx, tenant_id).await?;
         let invoice=sqlx::query("SELECT currency,status FROM platform_billing.invoices WHERE tenant_id=$1 AND id=$2 FOR UPDATE")
             .bind(tenant_id).bind(invoice_id).fetch_optional(&mut *tx).await?.ok_or(BillingError::InvoiceNotDraft)?;
-        let current_status: String = invoice.try_get("status")?;
-        if current_status == "issued" {
-            let stored:Vec<u8>=sqlx::query_scalar("SELECT snapshot_sha256 FROM platform_billing.invoices WHERE tenant_id=$1 AND id=$2")
-                .bind(tenant_id).bind(invoice_id).fetch_one(&mut *tx).await?;
-            let hash: [u8; 32] = stored
-                .try_into()
-                .map_err(|_| BillingError::SnapshotInvalid)?;
-            tx.commit().await?;
-            return Ok(hash);
-        }
-        if current_status != "draft" {
+        if invoice.try_get::<String, _>("status")? != "draft" {
             return Err(BillingError::InvoiceNotDraft);
         }
         let currency: String = invoice.try_get("currency")?;
@@ -182,7 +173,15 @@ impl BillingService {
         set_tenant_context(&mut tx, tenant_id).await?;
         let invoice=sqlx::query("SELECT invoice_number,currency,period_start,period_end,due_at,total_minor,subtotal_minor,status FROM platform_billing.invoices WHERE tenant_id=$1 AND id=$2 FOR UPDATE")
             .bind(tenant_id).bind(invoice_id).fetch_optional(&mut *tx).await?.ok_or(BillingError::InvoiceNotDraft)?;
-        if invoice.try_get::<String, _>("status")? != "draft" {
+        let current_status: String = invoice.try_get("status")?;
+        if current_status == "issued" {
+            let stored: Vec<u8> = sqlx::query_scalar("SELECT snapshot_sha256 FROM platform_billing.invoices WHERE tenant_id=$1 AND id=$2")
+                .bind(tenant_id).bind(invoice_id).fetch_one(&mut *tx).await?;
+            let hash: [u8; 32] = stored.try_into().map_err(|_| BillingError::SnapshotInvalid)?;
+            tx.commit().await?;
+            return Ok(hash);
+        }
+        if current_status != "draft" {
             return Err(BillingError::InvoiceNotDraft);
         }
         let lines=sqlx::query("SELECT line_number,description,meter_key,quantity,unit,unit_price_minor,line_total_minor,currency,source_usage_event_id FROM platform_billing.invoice_lines WHERE tenant_id=$1 AND invoice_id=$2 ORDER BY line_number")
@@ -218,10 +217,11 @@ impl BillingService {
             "lines":line_values
         });
         let canonical = serde_json::to_vec(&snapshot).map_err(|_| BillingError::SnapshotInvalid)?;
-        let hash: [u8; 32] = Sha256::digest(canonical).into();
+        let encoded_snapshot = STANDARD.encode(&canonical);
+        let hash: [u8; 32] = Sha256::digest(&canonical).into();
         let total: i64 = invoice.try_get("total_minor")?;
-        sqlx::query("UPDATE platform_billing.invoices SET status='issued',issued_at=now(),snapshot_version=1,snapshot=$3,snapshot_sha256=$4,aggregate_version=aggregate_version+1,updated_at=now() WHERE tenant_id=$1 AND id=$2")
-            .bind(tenant_id).bind(invoice_id).bind(&snapshot).bind(hash.as_slice()).execute(&mut *tx).await?;
+        let issued_at: DateTime<Utc> = sqlx::query_scalar("UPDATE platform_billing.invoices SET status='issued',issued_at=now(),snapshot_version=1,snapshot=$3,snapshot_sha256=$4,aggregate_version=aggregate_version+1,updated_at=now() WHERE tenant_id=$1 AND id=$2 RETURNING issued_at")
+            .bind(tenant_id).bind(invoice_id).bind(&snapshot).bind(hash.as_slice()).fetch_one(&mut *tx).await?;
         if total > 0 {
             let journal_id = Uuid::new_v4();
             sqlx::query("INSERT INTO platform_billing.ledger_journals (id,tenant_id,invoice_id,journal_key,currency) VALUES ($1,$2,$3,$4,$5)")
@@ -236,21 +236,25 @@ impl BillingService {
                     .bind(invoice.try_get::<String,_>("currency")?).execute(&mut *tx).await?;
             }
         }
+        let event_id = Uuid::new_v4();
         sqlx::query("INSERT INTO platform_billing.outbox_events (event_id,tenant_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,correlation_id) VALUES ($1,$2,$3,2,'billing.invoice.issued',1,'fiscal_integration',$4,$5)")
-            .bind(Uuid::new_v4()).bind(tenant_id).bind(invoice_id)
-            .bind(json!({"invoice_id":invoice_id,"tenant_id":tenant_id,"snapshot_version":1,"snapshot":snapshot,"snapshot_sha256":hex(&hash)}))
+            .bind(event_id).bind(tenant_id).bind(invoice_id)
+            .bind(json!({
+                "schema_version": 1,
+                "event_id": event_id,
+                "internal_invoice_id": invoice_id,
+                "tenant_id": tenant_id,
+                "internal_issued_at": issued_at,
+                "snapshot_schema_version": 1,
+                "snapshot_media_type": "application/json",
+                "immutable_invoice_snapshot": encoded_snapshot,
+                "snapshot_sha256": STANDARD.encode(hash),
+                "correlation_id": correlation_id,
+                "occurred_at": issued_at
+            }))
             .bind(correlation_id).execute(&mut *tx).await?;
         tx.commit().await?;
         Ok(hash)
     }
 }
 
-fn hex(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        out.push(HEX[(byte >> 4) as usize] as char);
-        out.push(HEX[(byte & 15) as usize] as char);
-    }
-    out
-}
