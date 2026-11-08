@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use serde_json::Value;
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -14,11 +15,10 @@ pub struct UsageSummary {
     pub event_count: i64,
     pub period_start: DateTime<Utc>,
     pub period_end: DateTime<Utc>,
+}
 
-    /// Records a usage event and completes its inbox receipt atomically.
-    ///
-    /// This prevents a committed usage row from being separated from its
-    /// processed inbox disposition, or vice versa, during retries/restarts.
+impl BillingService {
+    /// Records usage and completes its inbox receipt in one PostgreSQL transaction.
     pub async fn record_usage_with_inbox(
         &self,
         command: RecordUsage<'_>,
@@ -64,7 +64,7 @@ pub struct UsageSummary {
                 && row.try_get::<i64, _>("quantity")? == command.quantity
                 && row.try_get::<String, _>("unit")? == command.unit
                 && row.try_get::<DateTime<Utc>, _>("occurred_at")? == command.occurred_at
-                && row.try_get::<serde_json::Value, _>("attributes")? == command.attributes;
+                && row.try_get::<Value, _>("attributes")? == command.attributes;
             if !same {
                 return Err(BillingError::IdempotencyConflict);
             }
@@ -88,13 +88,11 @@ pub struct UsageSummary {
                 return Err(BillingError::InvalidCommand);
             }
         }
+
         tx.commit().await?;
         Ok((usage_id, duplicate))
     }
 
-}
-
-impl BillingService {
     pub async fn summarize_usage(
         &self,
         tenant_id: Uuid,
