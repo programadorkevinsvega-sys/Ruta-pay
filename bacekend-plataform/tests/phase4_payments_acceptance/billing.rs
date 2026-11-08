@@ -1,7 +1,7 @@
 use chrono::{Duration, Utc};
 use platform_billing::{
     application::{BillingService, CreateInvoice, InvoiceLine, RecordUsage},
-    infrastructure::{collection::{create_attempt, CreateCollectionAttempt}, inbox::{receive, InboxDisposition}, outbox},
+    infrastructure::{collection::{create_attempt, transition_attempt, CreateCollectionAttempt}, inbox::{receive, InboxDisposition}, outbox},
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -89,6 +89,18 @@ async fn billing_collection_inbox_outbox_concurrency_and_recovery_are_isolated()
         if let Some(expected)=attempt_id { assert_eq!(attempt.id,expected); } else { attempt_id=Some(attempt.id); }
     }
     assert_eq!(created,1);
+    let attempt=attempt_id.expect("one SaaS collection attempt exists");
+    assert!(!transition_attempt(&db.runtime_pool,tenant,attempt,"submitted",Some("wompi-ref-1")).await.expect("submission transition"));
+    assert!(!transition_attempt(&db.runtime_pool,tenant,attempt,"processing",None).await.expect("processing transition"));
+    assert!(!transition_attempt(&db.runtime_pool,tenant,attempt,"succeeded",None).await.expect("success transition"));
+    assert!(!transition_attempt(&db.runtime_pool,tenant,attempt,"succeeded",None).await.expect("terminal replay is idempotent"));
+    assert!(transition_attempt(&db.runtime_pool,tenant,attempt,"failed",None).await.is_err(),"terminal collection state cannot be reversed");
+    let retry= create_attempt(&db.runtime_pool,CreateCollectionAttempt{tenant_id:tenant,invoice_id:invoice,
+        provider_code:"wompi",idempotency_key:"collect-0002",amount_minor:50000,currency:"COP"}).await;
+    assert!(retry.is_err(),"new commercial retry key stays blocked until policy approval");
+    let collection_journal:i64=sqlx::query_scalar("SELECT count(*) FROM platform_billing.ledger_journals WHERE tenant_id=$1 AND journal_key=$2")
+        .bind(tenant).bind(format!("collection-succeeded:{attempt}")).fetch_one(&db.migration_pool).await.expect("collection journal is queryable");
+    assert_eq!(collection_journal,1,"successful collection posts one balanced accounting journal");
     let buyer_payments:i64=sqlx::query_scalar("SELECT count(*) FROM payments.payment_intents WHERE tenant_id=$1")
         .bind(tenant).fetch_one(&db.migration_pool).await.expect("buyer payment table is readable");
     assert_eq!(buyer_payments,0,"SaaS collection never creates a tenant buyer payment intent");
@@ -105,7 +117,7 @@ async fn billing_collection_inbox_outbox_concurrency_and_recovery_are_isolated()
     assert!(conflicting.is_err(),"same event ID with a different payload is rejected");
 
     let claimed=outbox::claim(&db.runtime_pool,16).await.expect("billing outbox claims pending event");
-    assert_eq!(claimed.len(),1);
+    assert_eq!(claimed.len(),5);
     let old=claimed[0].clone();
     sqlx::query("UPDATE platform_billing.outbox_events SET lease_until=now()-interval '1 second' WHERE event_id=$1")
         .bind(old.event_id).execute(&db.migration_pool).await.expect("simulate worker crash after lease");
