@@ -44,7 +44,10 @@ pub async fn receive(
     let original = row.try_get("id")?;
     let processed = row.try_get::<String, _>("disposition")? == "processed";
     tx.commit().await?;
-    Ok(InboxDisposition::Duplicate { id: original, processed })
+    Ok(InboxDisposition::Duplicate {
+        id: original,
+        processed,
+    })
 }
 
 pub async fn mark_processed(pool: &PgPool, tenant: Uuid, id: Uuid) -> Result<bool, sqlx::Error> {
