@@ -241,6 +241,12 @@ fn verify_platform_event(
     value: &Value,
     config: &ReconciliationWorkerConfig,
 ) -> Result<(), RequestError> {
+    if config.platform_request_key.len() < 32
+        || config.platform_request_key_id.is_empty()
+        || config.platform_request_key_id.len() > 64
+    {
+        return Err(RequestError::Unauthenticated);
+    }
     let mut unsigned = value.clone();
     let auth = unsigned
         .as_object_mut()
@@ -348,12 +354,23 @@ mod tests {
             verify_platform_event(&envelope, &config),
             Err(RequestError::Unauthenticated)
         ));
+
+        let short_key = [31_u8; 16];
         let short_config = ReconciliationWorkerConfig {
-            platform_request_key: Arc::from([31_u8; 16].to_vec()),
+            platform_request_key: Arc::from(short_key.to_vec()),
             platform_request_key_id: Arc::from("expected-key"),
         };
+        let mut short_envelope = json!({"event_id":"short-key-event"});
+        let canonical = serde_json::to_vec(&short_envelope).expect("canonical event");
+        let signature = hex_upper(
+            hmac::sign(&hmac::Key::new(hmac::HMAC_SHA256, &short_key), &canonical).as_ref(),
+        );
+        short_envelope["producer_auth"] = json!({
+            "key_id": "expected-key",
+            "signature": signature
+        });
         assert!(matches!(
-            verify_platform_event(&envelope, &short_config),
+            verify_platform_event(&short_envelope, &short_config),
             Err(RequestError::Unauthenticated)
         ));
     }
