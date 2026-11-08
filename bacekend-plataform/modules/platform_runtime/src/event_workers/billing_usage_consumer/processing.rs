@@ -8,6 +8,7 @@ use serde_json::json;
 use sqlx::PgPool;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
+use tracing::Instrument;
 
 const EVENT_TYPE: &str = "billing.usage.recorded";
 const PRODUCER: &str = "entitlements_quotas";
@@ -37,7 +38,22 @@ pub(super) async fn process_message(
             return;
         }
     };
+    let span = tracing::info_span!(
+        "billing_usage.process",
+        event_id = %event.event_id,
+        correlation_id = %event.correlation_id
+    );
+    process_valid_message(message, service, pool, event)
+        .instrument(span)
+        .await;
+}
 
+async fn process_valid_message(
+    message: jetstream::Message,
+    service: &BillingService,
+    pool: &PgPool,
+    event: UsageEvent,
+) {
     tracing::debug!(
         event.name = "billing.usage.event.received",
         component = "platform_billing",
@@ -127,6 +143,7 @@ pub(super) async fn process_message(
         }
     }
 }
+
 
 
 struct UsageProcessingTimer(Instant);
