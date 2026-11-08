@@ -20,7 +20,7 @@ message BillingInvoiceIssuedV1 {
   string event_id = 2;
   string internal_invoice_id = 3;
   string tenant_id = 4;
-  string internal_invoice_number = 5;
+  reserved 5;
   string internal_issued_at = 6;
   uint32 snapshot_schema_version = 7;
   string snapshot_media_type = 8;
