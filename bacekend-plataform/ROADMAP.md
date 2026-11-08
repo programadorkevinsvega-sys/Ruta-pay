@@ -4,7 +4,7 @@
 
 `main` debe mantenerse funcional y verificable. Desarrolla funcionalidades, cambios arquitectónicos, correcciones complejas y modificaciones de seguridad en ramas descriptivas; presenta los cambios importantes en Pull Request con resumen, decisiones, verificaciones ejecutadas y riesgos conocidos. Los cambios triviales de documentación pueden hacerse en `main` cuando las protecciones lo permitan. No se permite force push ni reescribir historial compartido. No integres si fallan verificaciones obligatorias; los cambios sensibles requieren revisión manual.
 
-> Este roadmap cubre únicamente el backend que gobierna tenants, planes, precios, límites, cuotas, suscripciones, facturación de Payvia, identidad, autorización y sus adapters propios de Wompi, Factus y Resend. El backend de pasarelas tiene su propio [README](../bacekend-pasarela/README.md) y [roadmap](../bacekend-pasarela/ROADMAP.md) para los pagos que los comercios procesan a sus compradores.
+> Este roadmap cubre únicamente el backend que gobierna tenants, planes, precios, límites, cuotas, suscripciones, facturación interna de Payvia, identidad, autorización y sus adapters propios de recaudo/notificaciones. La emisión fiscal electrónica pertenece a un microservicio o proyecto independiente y se conecta mediante contratos neutrales. El backend de pasarelas tiene su propio [README](../bacekend-pasarela/README.md) y [roadmap](../bacekend-pasarela/ROADMAP.md) para los pagos que los comercios procesan a sus compradores.
 >
 > Los backends comparten el workspace Cargo raíz solo para resolución/build. Cada uno tiene binario, imagen, configuración, secretos, red, artefactos operativos y despliegue independiente en su propia VM/VPS; los dos frontends también tienen despliegues separados. Los artefactos de esta aplicación pertenecen a `bacekend-plataform/deploy/`.
 >
@@ -38,7 +38,7 @@ Auditoría de pruebas: [`docs/phase-0/test-audit.md`](docs/phase-0/test-audit.md
 - [x] Diseñar bounded contexts: identity/access, tenant registry, catalog/pricing, entitlements/quotas, subscription billing, authorization, audit, BFF y realtime. Evidencia: [`docs/phase-0/bounded-contexts.md`](docs/phase-0/bounded-contexts.md).
 - [x] Fijar el acuerdo de `gateway_credentials`: plataforma autoriza y reenvía altas/rotaciones por gRPC/mTLS; pasarelas persiste ciphertext en su módulo dueño. Se prohíbe persistencia duplicada/eventos con secretos en plataforma. Evidencia: ADR-0002.
 - [x] Versionar el contrato conceptual `payment_method` como unión `card|pse|crypto`, incluyendo settlement cripto decimal string separado del importe comercial entero. Evidencia: ADR-0005.
-- [x] Separar el recaudo de Payvia a sus tenants de los pagos de compradores procesados por pasarelas; asignar adapters propios de plataforma: Wompi para recaudo, Factus para facturación electrónica y Resend para correo. Evidencia: ADR-0006.
+- [x] Separar el recaudo SaaS de Payvia de los pagos de compradores procesados por pasarelas; asignar Wompi al recaudo de Payvia y Resend a notificaciones. La emisión fiscal se delega a un servicio/proyecto independiente, integrado mediante contrato neutral; la referencia histórica a Factus no implica que plataforma sea dueña de la emisión. Evidencia: ADR-0006 y ADR-0012.
 - [x] Definir threat model cross-backend: identidad/scopes y mTLS con rotación, grants ligados al request, replay, tamaño/rate limits, deadlines, retries y telemetría redactada. Evidencia: [`docs/phase-0/threat-model.md`](docs/phase-0/threat-model.md).
 - [x] Auditar la composición real del workspace raíz y confirmar que ambos backends son miembros independientes sin workspaces anidados.
 - [x] Definir los bounded contexts, ownership, contratos y fases de creación de crates/apps funcionales sin generar paquetes vacíos.
@@ -117,6 +117,8 @@ Acta: docs/phase-3/acceptance.md. Matriz específica: docs/phase-3/integration-m
 
 **Registro de decisiones pendientes:** [docs/phase-4/decision-register.md](docs/phase-4/decision-register.md). Separa las decisiones económicas que requieren aprobación de las resoluciones técnicas. No aprueba precios, impuestos, políticas comerciales ni capacidades de proveedores.
 
+**Separación de facturación interna y fiscal:** [ADR-0012](docs/adr/ADR-0012-separacion-billing-interno-integracion-fiscal.md) y el contrato [billing_fiscal_integration.proto](crates/platform_contracts/proto/billing_fiscal_integration.proto) establecen que una invoice interna emitida por Payvia no es una factura electrónica válida ante DIAN. El contrato versionado prepara la futura integración por eventos/webhook/API con un servicio fiscal independiente. La emisión fiscal no está implementada ni se marca como entregable completado de Fase 4.
+
 **Matriz de integración y evidencia:** [docs/phase-4/integration-matrix.md](docs/phase-4/integration-matrix.md). La matriz conserva los límites de cada prueba y los componentes que aún no cuentan con implementación o evidencia.
 
 **Pruebas obligatorias de esta fase:** cada caso de uso y cada acción debe tener escenarios positivos/negativos, límites y tipos inválidos, duplicados/concurrencia, permisos/aislamiento, estados, fallos/reintentos, integridad y redacción aplicables. Registrar requisito → test → ejecución CI; no se aplaza a Fase 8.
@@ -157,7 +159,7 @@ El código de esta rama introduce la base de dominio y el contrato neutral docum
 - [ ] Implementar el ciclo de suscripción, periodos, medición facturable, prorrateo si se aprueba, invoices y partidas inmutables.
 - [ ] Implementar cálculo de cobros de Payvia independiente de montos y fees de transacciones procesadas para el tenant, con snapshot económico reproducible y ledger financiero.
 - [ ] Implementar cobro de invoices de Payvia por `platform_billing_wompi`, con cuenta/credenciales de Payvia, callbacks propios verificados y reconciliación; no atraviesa `bacekend-pasarela` ni comparte credenciales tenant.
-- [ ] Implementar `invoice_factus` para emisión/consulta de documentos electrónicos de Payvia, manteniendo `platform_billing` como dueño de invoices, ledger y estados financieros.
+- [ ] Implementar la integración runtime con un servicio fiscal externo mediante eventos, webhook autenticado o API, usando el contrato versionado de ADR-0012. La emisión/consulta del documento fiscal y sus artefactos pertenecen al microservicio/proyecto fiscal; no crear `invoice_factus` ni implementar DIAN dentro de plataforma.
 - [ ] Implementar `notification_resend` para correo transaccional/operativo, despachado desde Outbox con idempotencia, reintentos clasificados y trazabilidad.
 - [ ] Completar estados de pago/reintentos y conciliación de la factura, sin duplicar efectos financieros.
 - [ ] Completar eventos Outbox de invoice, pago, mora, suspensión y cambios de suscripción.
@@ -165,15 +167,15 @@ El código de esta rama introduce la base de dominio y el contrato neutral docum
 - [ ] Completar pruebas de caída/reinicio físico del proceso NATS, reconexión de socket, restart del consumidor, WebSocket autenticado y recuperación de cliente; la recuperación ante stream ausente/restaurado ya probada no demuestra estos escenarios.
 - [ ] Completar pruebas de fallo/rollback total de PostgreSQL y los demás escenarios de fallos aún señalados en la matriz.
 
-**Bloqueos y dependencias:** las decisiones económicas A-EC/B-EC que correspondan deben aprobarse antes de implementar cálculos o políticas comerciales; las cuentas, credenciales y sandboxes oficiales de Wompi, Factus y Resend deben validarse antes de certificar sus adapters. mTLS, signed grants y enforcement cross-backend permanecen asignados a Fase 5 y no se implementan ni se sustituyen en esta fase.
+**Bloqueos y dependencias:** las decisiones económicas A-EC/B-EC que correspondan deben aprobarse antes de implementar cálculos o políticas comerciales; la cuenta, credenciales y sandbox oficial de Wompi y la configuración de Resend deben validarse antes de certificar sus adapters. La integración fiscal externa requiere seleccionar/definir el servicio dueño, acordar su contrato operativo y probar su sandbox; no es un adapter fiscal de este backend. mTLS, signed grants y enforcement cross-backend permanecen asignados a Fase 5 y no se implementan ni se sustituyen en esta fase.
 
 **Salida de Fase 4:** solo podrá declararse cerrada cuando ambos alcances tengan decisiones aprobadas, implementación completa, pruebas reales positivas/negativas/límites/concurrencia/permisos/aislamiento/estados/fallos/reintentos/integridad/redacción, integraciones externas verificadas y trazabilidad requisito → test → ejecución CI sobre el SHA final. Los checks completados arriba no eliminan los pendientes de esta sección.
 
 ### Extensibilidad de proveedores propios
 
-Los módulos de dominio invocan contratos neutrales al proveedor y el composition root registra adapters por identidad y capacidades. `platform_billing_wompi`, `invoice_factus` y `notification_resend` son adapters iniciales separados. Incorporar o retirar un proveedor modifica su adapter y su registro/configuración, no las reglas generales de billing, facturación electrónica, notificaciones, ni adapters existentes. La baja conserva historial financiero, auditoría y referencias externas; solo bloquea nuevas operaciones según política de transición y reconciliación.
+Los módulos de dominio invocan contratos neutrales al proveedor y el composition root registra adapters por identidad y capacidades. `platform_billing_wompi` y `notification_resend` son adapters de plataforma separados. La emisión fiscal no se implementa como adapter dentro de este backend: `platform_billing` publica una invoice interna inmutable mediante el contrato de ADR-0012 y recibe el estado de integración fiscal desde un servicio independiente. Incorporar o retirar ese servicio modifica el adapter/registro de integración, no las reglas de billing ni el bounded context `payments`. La baja conserva historial financiero, auditoría y referencias externas; solo bloquea nuevas solicitudes según política de transición y reconciliación.
 
-Referencias oficiales para la implementación: [Wompi — ambientes y llaves](https://docs.wompi.co/docs/colombia/ambientes-y-llaves/), [Factus API](https://developers.factus.com.co/), [Resend — envío de correo](https://resend.com/docs/api-reference/emails/send-email). Revalidar contratos y capacidades durante cada adapter; no asumir una forma común de autenticación, firma o reintento.
+Referencias oficiales para adapters propios: [Wompi — ambientes y llaves](https://docs.wompi.co/docs/colombia/ambientes-y-llaves/) y [Resend — envío de correo](https://resend.com/docs/api-reference/emails/send-email). La documentación de cualquier servicio fiscal se incorporará cuando se seleccione el sistema externo responsable. Revalidar contratos y capacidades durante cada integración; no asumir una forma común de autenticación, firma o reintento.
 
 ## Fase 5 — Decisión de autorización y concesiones para el backend de pasarelas
 
