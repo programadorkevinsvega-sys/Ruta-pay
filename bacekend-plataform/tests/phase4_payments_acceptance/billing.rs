@@ -12,3 +12,6 @@ mod usage_recovery;
 
 #[path = "billing/consumer_resilience.rs"]
 mod consumer_resilience;
+
+#[path = "billing/usage_scalability.rs"]
+mod usage_scalability;
