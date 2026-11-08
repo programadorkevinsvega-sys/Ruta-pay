@@ -177,7 +177,9 @@ impl BillingService {
         if current_status == "issued" {
             let stored: Vec<u8> = sqlx::query_scalar("SELECT snapshot_sha256 FROM platform_billing.invoices WHERE tenant_id=$1 AND id=$2")
                 .bind(tenant_id).bind(invoice_id).fetch_one(&mut *tx).await?;
-            let hash: [u8; 32] = stored.try_into().map_err(|_| BillingError::SnapshotInvalid)?;
+            let hash: [u8; 32] = stored
+                .try_into()
+                .map_err(|_| BillingError::SnapshotInvalid)?;
             tx.commit().await?;
             return Ok(hash);
         }
