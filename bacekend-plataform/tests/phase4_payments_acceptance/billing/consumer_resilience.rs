@@ -119,7 +119,7 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
         LOAD_EVENTS, throughput, p50, p95, p99
     );
 
-    publish(&jetstream, &subject, first_event).await;
+    publish(&jetstream, &subject, first_event.clone()).await;
     time::sleep(StdDuration::from_secs(1)).await;
     assert_eq!(
         usage_count(&database.migration_pool)
