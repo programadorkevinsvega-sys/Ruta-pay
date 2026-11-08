@@ -1,4 +1,7 @@
-use async_nats::jetstream::{self, consumer::{AckPolicy, DeliverPolicy}};
+use async_nats::jetstream::{
+    self,
+    consumer::{AckPolicy, DeliverPolicy},
+};
 use chrono::{Duration, Utc};
 use platform_billing::{
     application::{BillingService, CreateInvoice, InvoiceLine},
@@ -68,15 +71,37 @@ async fn billing_outbox_publishes_versioned_fiscal_event_and_recovers_ack_window
 
     sqlx::query("UPDATE platform_billing.outbox_events SET published_at=NULL,available_at=now(),lease_token=NULL,lease_until=NULL WHERE event_id=$1")
         .bind(event_id).execute(&database.migration_pool).await.expect("simulate ACK-before-DB-ack crash window");
-    assert_eq!(outbox_relay::relay_batch(&database.runtime_pool,&jetstream,&topology.subject_prefix)
-        .await.expect("same event can be safely redelivered"),1);
-    let state=sqlx::query("SELECT attempts,published_at FROM platform_billing.outbox_events WHERE event_id=$1")
-        .bind(event_id).fetch_one(&database.migration_pool).await.expect("delivery state");
-    assert_eq!(state.try_get::<i32,_>("attempts").expect("attempts"),2);
-    assert!(state.try_get::<Option<chrono::DateTime<Utc>>,_>("published_at").expect("published at").is_some());
-    assert_eq!(stream.info().await.expect("stream info").state.messages,1,"Nats-Msg-Id deduplicates retry");
+    assert_eq!(
+        outbox_relay::relay_batch(&database.runtime_pool, &jetstream, &topology.subject_prefix)
+            .await
+            .expect("same event can be safely redelivered"),
+        1
+    );
+    let state = sqlx::query(
+        "SELECT attempts,published_at FROM platform_billing.outbox_events WHERE event_id=$1",
+    )
+    .bind(event_id)
+    .fetch_one(&database.migration_pool)
+    .await
+    .expect("delivery state");
+    assert_eq!(state.try_get::<i32, _>("attempts").expect("attempts"), 2);
+    assert!(
+        state
+            .try_get::<Option<chrono::DateTime<Utc>>, _>("published_at")
+            .expect("published at")
+            .is_some()
+    );
+    assert_eq!(
+        stream.info().await.expect("stream info").state.messages,
+        1,
+        "Nats-Msg-Id deduplicates retry"
+    );
 
-    drop(message);drop(messages);drop(consumer);
-    delete_e2e_stream(&jetstream,&namespace).await.expect("isolated billing stream removed");
+    drop(message);
+    drop(messages);
+    drop(consumer);
+    delete_e2e_stream(&jetstream, &namespace)
+        .await
+        .expect("isolated billing stream removed");
     database.finish().await;
 }
