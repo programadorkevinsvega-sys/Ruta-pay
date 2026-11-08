@@ -165,8 +165,8 @@ async fn signed_provider_events_apply_once_and_terminal_conflicts_require_reconc
     .await
     .expect("gateway reconciliation request is durable");
     assert_eq!(
-        request_audience, "gateway",
-        "reconciliation requests target the gateway worker, not tenant consumers"
+        request_audience, "platform",
+        "reconciliation requests use the platform audience in the constrained outbox schema"
     );
 
     let final_status: String = sqlx::query_scalar(
