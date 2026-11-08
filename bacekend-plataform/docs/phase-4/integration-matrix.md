@@ -169,3 +169,19 @@ Fase 4 solo puede declararse cerrada cuando ambos alcances tengan decisiones apr
 
 **Fuera de alcance de este backend:** emisión DIAN, habilitación como facturador, numeración/resolución fiscal, firma, XML, CUFE/QR, notas crédito/débito fiscales y credenciales del proveedor fiscal. No crear `invoice_factus` ni marcar facturación electrónica como implementada en Fase 4.
 
+## 5. Alcance A — Billing SaaS Payvia (implementación parcial en PR #12)
+
+| Requisito | Implementación añadida | Evidencia / límite actual |
+|---|---|---|
+| Ownership y persistencia | Nuevo crate `platform-billing`, schema propio, migración coordinada y RLS forzada. No depende del schema `payments`. | Migración `modules/platform_billing/infrastructure/persistence/migrations/202611080001_platform_billing.sql`; conectado al binario `migrate-platform`. |
+| Medición facturable | Registro append-only de eventos de consumo por tenant, deduplicación por sistema/evento de origen y agregación por meter/unidad/periodo. | `BillingService::record_usage` y `summarize_usage`. La ingesta desde el evento `quota.consumed` aún requiere un consumer runtime; no se asume que toda cuota sea facturable. |
+| Facturas internas | Draft, partidas con importe en unidades menores, moneda y vínculo opcional a evento de uso. Una invoice emitida conserva partidas, periodo, importes y snapshot. | `BillingService::create_draft`, `add_line`, `issue_invoice`. No se implementa todavía el ciclo de suscripciones, generación periódica ni reglas de pricing/prorrateo sin aprobación. |
+| Snapshot reproducible | JSON versionado, hash SHA-256 y replay idempotente de emisión. | Test `usage_invoice_snapshot_ledger_and_financial_immutability_are_enforced`; se compara hash recalculado y almacenado. |
+| Ledger | Journal con líneas de débito/crédito, cuentas explícitas, moneda y constraint diferido que rechaza asientos no balanceados. Emisión registra CxC/ingreso; recaudo exitoso registra clearing/CxC. | Test de balance y rollback de journal incompleto. El modelo contable requiere validación funcional/contable antes de contabilizar impuestos u otras partidas no definidas. |
+| Outbox | Evento `billing.invoice.issued` en la misma transacción de emisión; eventos de creación y cambio de estado de recaudo; claim con `SKIP LOCKED`, lease/token, ACK y retry con backoff. | Prueba de lease vencido/recuperación y ACK de propietario vigente. Relay JetStream runtime para este nuevo módulo aún no está conectado. |
+| Inbox | Dedupe durable por tenant + productor + event ID; compara tipo, versión y hash de payload para detectar replay conflictivo. | Pruebas de primera recepción, duplicado exacto y mismo event ID con payload alterado. La autenticación criptográfica del productor/webhook debe realizarse antes de llamar a `receive`; no está implementado el endpoint/consumer externo. |
+| Recaudo SaaS | `collection_attempts` dentro de `platform_billing`, una única solicitud por invoice hasta aprobación de política de reintentos, importe/moneda exactos de la invoice, idempotencia y estados forward-only. No FK ni reutilización de Payment Intents de compradores. | Pruebas de concurrencia, replay, bloqueo de nueva clave, transición terminal y journal de recaudo. Adapter Wompi de Payvia, callbacks autenticados y reconciliación siguen pendientes. |
+| Aislamiento / recuperación | RLS por tenant y worker scope explícito; transacciones para consumo, invoice, ledger, Outbox/Inbox y collection. | Test PostgreSQL aislado con rol runtime sin BYPASSRLS, aislamiento cross-tenant, concurrencia y rollback de journal desequilibrado. Pendiente ejecución CI sobre HEAD final. |
+
+**Límites deliberados:** no hay precios, tarifas, impuestos, unidades facturables, vencimientos ni prorrateos por defecto. El caller debe suministrar el precio explícito aprobado para cada línea. La facturación fiscal sigue fuera de este backend y se rige por ADR-0012. No se marca el Alcance A como terminado.
+
