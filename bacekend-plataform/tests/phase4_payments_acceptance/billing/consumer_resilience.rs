@@ -82,6 +82,14 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
         publish(&jetstream, &subject, envelope).await;
     }
     wait_for_usage_count(&database.migration_pool, LOAD_EVENTS as i64).await;
+    let distinct_tenants: i64 = sqlx::query_scalar(
+        "SELECT count(DISTINCT tenant_id) FROM platform_billing.usage_events",
+    )
+    .fetch_one(&database.migration_pool)
+    .await
+    .expect("tenant distribution is measurable");
+    assert_eq!(distinct_tenants, tenants.len() as i64, "load is persisted across all tenants");
+
     let elapsed = started.elapsed();
     let throughput = LOAD_EVENTS as f64 / elapsed.as_secs_f64();
     let latency = sqlx::query(
