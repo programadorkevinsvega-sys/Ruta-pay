@@ -7,7 +7,7 @@ use platform_billing::{
     application::{BillingService, CreateInvoice, InvoiceLine},
     infrastructure::outbox_relay,
 };
-use platform_runtime::event_topology::{delete_e2e_stream, EventTopology};
+use platform_runtime::event_topology::{EventTopology, delete_e2e_stream};
 use serde_json::Value;
 use sqlx::Row;
 use std::time::Duration as StdDuration;
@@ -74,19 +74,15 @@ async fn billing_outbox_publishes_versioned_fiscal_event_and_recovers_ack_window
         .expect("authenticated NATS connection");
     let jetstream = jetstream::new(client);
     let namespace = format!("e2e_billing_{}", Uuid::new_v4().simple());
-    let topology =
-        EventTopology::from_namespace(Some(&namespace)).expect("isolated namespace");
+    let topology = EventTopology::from_namespace(Some(&namespace)).expect("isolated namespace");
     let mut stream = topology
         .ensure_stream(&jetstream)
         .await
         .expect("billing stream created");
-    let count = outbox_relay::relay_batch(
-        &database.runtime_pool,
-        &jetstream,
-        &topology.subject_prefix,
-    )
-    .await
-    .expect("billing relay publishes invoice event");
+    let count =
+        outbox_relay::relay_batch(&database.runtime_pool, &jetstream, &topology.subject_prefix)
+            .await
+            .expect("billing relay publishes invoice event");
     assert_eq!(count, 1);
     let consumer_name = format!("BILLING_ACCEPTANCE_{}", Uuid::new_v4().simple());
     let consumer = stream
@@ -108,8 +104,7 @@ async fn billing_outbox_publishes_versioned_fiscal_event_and_recovers_ack_window
         .expect("event arrives")
         .expect("consumer stays open")
         .expect("valid event");
-    let envelope: Value =
-        serde_json::from_slice(&message.payload).expect("event envelope JSON");
+    let envelope: Value = serde_json::from_slice(&message.payload).expect("event envelope JSON");
     assert_eq!(envelope["event_id"], event_id.to_string());
     assert_eq!(envelope["event_type"], "billing.invoice.issued");
     assert_eq!(envelope["audience"], "fiscal_integration");
@@ -130,7 +125,10 @@ async fn billing_outbox_publishes_versioned_fiscal_event_and_recovers_ack_window
             .is_some()
     );
     assert!(envelope["payload"]["snapshot_sha256"].as_str().is_some());
-    message.ack().await.expect("consumer acknowledges durable event");
+    message
+        .ack()
+        .await
+        .expect("consumer acknowledges durable event");
 
     sqlx::query(
         "UPDATE platform_billing.outbox_events SET published_at=NULL,available_at=now(),lease_token=NULL,lease_until=NULL WHERE event_id=$1",
