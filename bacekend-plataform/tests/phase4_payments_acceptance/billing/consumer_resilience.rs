@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use super::super::database::TestDatabase;
 
-const LOAD_EVENTS: usize = 512;
+const LOAD_EVENTS: usize = 20_000;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
 async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_database_outage() {
@@ -48,7 +48,7 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
                 ack_policy: AckPolicy::Explicit,
                 ack_wait: StdDuration::from_secs(120),
                 max_deliver: -1,
-                max_ack_pending: 64,
+                max_ack_pending: 512,
                 ..Default::default()
             },
         )
@@ -72,22 +72,25 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
     let tenants = (0..4).map(|_| Uuid::new_v4()).collect::<Vec<_>>();
     let first_event = usage_envelope(tenants[0], Uuid::new_v4(), Uuid::new_v4());
     let started = Instant::now();
-    let mut publishers = tokio::task::JoinSet::new();
-    for index in 0..LOAD_EVENTS {
-        let tenant = tenants[index % tenants.len()];
-        let envelope = if index == 0 {
-            first_event.clone()
-        } else {
-            usage_envelope(tenant, Uuid::new_v4(), Uuid::new_v4())
-        };
-        let jetstream = jetstream.clone();
-        let subject = subject.clone();
-        publishers.spawn(async move {
-            publish(&jetstream, &subject, envelope).await;
-        });
-    }
-    while let Some(result) = publishers.join_next().await {
-        result.expect("concurrent publisher task completes");
+    for batch_start in (0..LOAD_EVENTS).step_by(256) {
+        let batch_end = (batch_start + 256).min(LOAD_EVENTS);
+        let mut publishers = tokio::task::JoinSet::new();
+        for index in batch_start..batch_end {
+            let tenant = tenants[index % tenants.len()];
+            let envelope = if index == 0 {
+                first_event.clone()
+            } else {
+                usage_envelope(tenant, Uuid::new_v4(), Uuid::new_v4())
+            };
+            let jetstream = jetstream.clone();
+            let subject = subject.clone();
+            publishers.spawn(async move {
+                publish(&jetstream, &subject, envelope).await;
+            });
+        }
+        while let Some(result) = publishers.join_next().await {
+            result.expect("bounded concurrent publisher task completes");
+        }
     }
     wait_for_usage_count(&database.migration_pool, LOAD_EVENTS as i64).await;
     let distinct_tenants: i64 = sqlx::query_scalar(
@@ -258,7 +261,7 @@ async fn usage_count(pool: &sqlx::PgPool) -> Result<i64, sqlx::Error> {
 }
 
 async fn wait_for_usage_count(pool: &sqlx::PgPool, expected: i64) {
-    time::timeout(StdDuration::from_secs(45), async {
+    time::timeout(StdDuration::from_secs(180), async {
         loop {
             if matches!(usage_count(pool).await, Ok(count) if count == expected) {
                 return;
