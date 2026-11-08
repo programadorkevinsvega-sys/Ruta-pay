@@ -123,7 +123,7 @@ La prueba `payment_attempt_and_transaction_apis_cross_http_bff_grpc_and_payments
 | Subscription aggregate | No existe módulo de suscripciones ni ciclo de vida persistido. | Modelo técnico, relación con asignaciones y reglas de ciclo de vida aprobadas. |
 | Billing invoices / invoice lines | No existe módulo financiero de facturación SaaS. | Modelo de obligación inmutable, snapshot reproducible, ledger financiero y reglas comerciales/fiscales aprobadas. |
 | Platform Wompi | No existe adapter propio `platform_billing_wompi`. | Cuenta/credenciales Payvia, sandbox, métodos, moneda, autenticación, callbacks oficiales y validación de idempotencia/resultado incierto. |
-| Factus | No existe módulo `electronic_invoicing` ni adapter `invoice_factus`. | Contrato fiscal, autenticación, ambiente, tipos de documento, ciclo de estados y credenciales/sandbox. |
+| Integración fiscal externa | No existe emisor fiscal ni integración runtime en este backend. ADR-0012 y `billing_fiscal_integration.proto` definen la frontera versionada para una invoice interna y el retorno de estado fiscal. | Seleccionar el microservicio/proyecto fiscal; acordar contrato operativo, autenticación, transporte (Outbox/eventos, webhook o API), idempotencia, sandbox y pruebas contractuales. La emisión y los artefactos fiscales pertenecen al sistema externo, no a `platform_billing`. |
 | Resend | No existe módulo `notifications` ni adapter `notification_resend`. | Política de notificación, destinatarios, Outbox/delivery state, clave de deduplicación y credenciales. |
 | Recaudo / ledger | No hay intentos ni resultados de cobro de invoices SaaS. | Flujo Wompi de Payvia, callback verificado, ledger y reconciliación con PostgreSQL como fuente de verdad. |
 
@@ -143,3 +143,29 @@ La prueba `payment_attempt_and_transaction_apis_cross_http_bff_grpc_and_payments
 ## 6. Criterio de salida
 
 Fase 4 solo puede declararse cerrada cuando ambos alcances tengan decisiones aprobadas, implementación completa, pruebas reales positivas/negativas/límites/concurrencia/permiso/aislamiento/estados/fallos/reintentos/integridad/redacción, integraciones externas verificadas y trazabilidad requisito → test → ejecución CI sobre el SHA final. Esta matriz deja explícitamente pendientes los puntos que aún no tienen implementación o evidencia.
+
+## 4.1. Frontera entre invoice interna y documento fiscal externo
+
+**Decisión:** una invoice interna emitida por Payvia no es una factura electrónica válida ante DIAN. Son dos ciclos independientes con ownership, estados y fuentes de verdad separados. Ver [ADR-0012](../adr/ADR-0012-separacion-billing-interno-integracion-fiscal.md).
+
+| Requisito | Contrato / responsabilidad | Estado real |
+|---|---|---|
+| Invoice interna | `platform_billing` será dueño de invoice, partidas inmutables, snapshot, ledger y estado financiero. | Alcance A pendiente de implementación y decisiones económicas. No existe aún módulo de billing SaaS completo. |
+| Evento de salida | `BillingInvoiceIssuedV1`: ID interno estable, tenant, versión/formato del snapshot inmutable, hash y correlación. | Contrato Protobuf creado en `billing_fiscal_integration.proto` y agregado a `platform-contracts/build.rs`. No existe publisher runtime ni Outbox de invoices. |
+| Resultado fiscal externo | `FiscalDocumentStatusChangedV1`: ID interno, ID fiscal externo, estado de integración, referencia de autoridad, código/detalle seguro y correlación. | Contrato Protobuf creado. No existe Inbox, endpoint webhook ni consumer runtime para esta frontera. |
+| Transporte futuro | Outbox/JetStream, webhook autenticado o API, sin acoplar el dominio al proveedor. | Preparación contractual solamente. Transporte y autenticación deberán implementarse y probarse al seleccionar el servicio externo. |
+| Idempotencia y correlación | Deduplicar por event ID y por invoice interna + operación/versionado; conservar correlación con documento externo. | Requisito arquitectónico definido; no hay implementación runtime ni evidencia de sandbox. |
+| Separación de estados | Estado interno de invoice, estado de pago y estado fiscal externo permanecen independientes. | Decisión documentada. Debe probarse que una respuesta fiscal no modifica ledger, partidas ni estado de pago cuando se implemente el runtime. |
+
+### Criterios de aceptación de esta frontera
+
+- La emisión de la invoice interna no requiere que el servicio fiscal esté disponible.
+- Un evento fiscal duplicado o reentregado no crea dos documentos externos ni duplica cambios internos.
+- Timeout o falta de respuesta se conserva como resultado desconocido/pendiente; nunca se interpreta automáticamente como aceptación o rechazo.
+- Webhooks/resultados externos requieren autenticación criptográfica y autorización de productor; `producer_identity`, headers o IP no son prueba de autenticidad.
+- La recepción se persiste de forma durable e idempotente antes de confirmar el ACK.
+- La aceptación/rechazo fiscal no altera por sí sola los importes, partidas, ledger ni estado de cobro de la invoice interna.
+- La integración se prueba con el servicio fiscal real o su sandbox antes de declararse operativa.
+
+**Fuera de alcance de este backend:** emisión DIAN, habilitación como facturador, numeración/resolución fiscal, firma, XML, CUFE/QR, notas crédito/débito fiscales y credenciales del proveedor fiscal. No crear `invoice_factus` ni marcar facturación electrónica como implementada en Fase 4.
+
