@@ -56,4 +56,3 @@ El módulo aplica Row Level Security (RLS) mediante el contexto transaccional `a
 - Backpressure cuando el pool está ocupado, CPU está limitada o memoria se aproxima al límite.
 - Medición separada de queue wait, pool acquire, SQL, commit y ACK.
 - Benchmark reproducible con límites de CPU/memoria documentados, varias réplicas y PostgreSQL/NATS reales.
-
