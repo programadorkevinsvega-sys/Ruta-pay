@@ -145,7 +145,7 @@ impl TestDatabase {
         .await
         .expect("runtime role receives schema usage");
         sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
-            "GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA identity_access,tenant_registry,realtime,catalog_pricing,entitlements_quotas,payments TO \"{runtime_role}\""
+            "GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA identity_access,tenant_registry,realtime,catalog_pricing,entitlements_quotas,payments,platform_billing TO \"{runtime_role}\""
         )))
         .execute(&migration_pool)
         .await
