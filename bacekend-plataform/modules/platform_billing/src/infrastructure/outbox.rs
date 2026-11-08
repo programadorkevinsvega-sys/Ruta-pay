@@ -11,6 +11,8 @@ pub struct PendingBillingEvent {
     pub schema_version: i16,
     pub audience: String,
     pub payload: serde_json::Value,
+    pub traceparent: Option<String>,
+    pub occurred_at: chrono::DateTime<chrono::Utc>,
     pub correlation_id: String,
     pub lease_token: Uuid,
 }
@@ -24,7 +26,7 @@ pub async fn claim(pool: &PgPool, limit: i64) -> Result<Vec<PendingBillingEvent>
         .execute(&mut *tx)
         .await?;
     let token = Uuid::new_v4();
-    let rows=sqlx::query("WITH candidates AS (SELECT event_id FROM platform_billing.outbox_events WHERE published_at IS NULL AND failed_at IS NULL AND available_at<=now() AND (lease_until IS NULL OR lease_until<now()) ORDER BY occurred_at,event_id FOR UPDATE SKIP LOCKED LIMIT $1) UPDATE platform_billing.outbox_events e SET lease_token=$2,lease_until=now()+interval '30 seconds',attempts=attempts+1 FROM candidates c WHERE e.event_id=c.event_id RETURNING e.event_id,e.tenant_id,e.aggregate_id,e.aggregate_version,e.event_type,e.schema_version,e.audience,e.payload,e.correlation_id,e.lease_token")
+    let rows=sqlx::query("WITH candidates AS (SELECT event_id FROM platform_billing.outbox_events WHERE published_at IS NULL AND failed_at IS NULL AND available_at<=now() AND (lease_until IS NULL OR lease_until<now()) ORDER BY occurred_at,event_id FOR UPDATE SKIP LOCKED LIMIT $1) UPDATE platform_billing.outbox_events e SET lease_token=$2,lease_until=now()+interval '30 seconds',attempts=attempts+1 FROM candidates c WHERE e.event_id=c.event_id RETURNING e.event_id,e.tenant_id,e.aggregate_id,e.aggregate_version,e.event_type,e.schema_version,e.audience,e.payload,e.traceparent,e.occurred_at,e.correlation_id,e.lease_token")
         .bind(limit).bind(token).fetch_all(&mut *tx).await?;
     let events = rows
         .iter()
@@ -38,6 +40,8 @@ pub async fn claim(pool: &PgPool, limit: i64) -> Result<Vec<PendingBillingEvent>
                 schema_version: r.try_get("schema_version")?,
                 audience: r.try_get("audience")?,
                 payload: r.try_get("payload")?,
+                traceparent: r.try_get("traceparent")?,
+                occurred_at: r.try_get("occurred_at")?,
                 correlation_id: r.try_get("correlation_id")?,
                 lease_token: r.try_get("lease_token")?,
             })
