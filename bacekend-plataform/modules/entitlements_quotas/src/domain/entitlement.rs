@@ -10,6 +10,7 @@ pub struct Capability {
     pub overage_policy: String,
     pub environment: String,
     pub quota_period: String,
+    pub billable: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -99,6 +100,7 @@ mod tests {
             overage_policy: "deny".into(),
             environment: "live".into(),
             quota_period: "month".into(),
+            billable: false,
         }
     }
 
