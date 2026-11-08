@@ -2340,6 +2340,7 @@ dependencies = [
  "platform-entitlements-quotas",
  "platform-identity-access",
  "platform-payments",
+ "platform-billing",
  "platform-realtime",
  "platform-tenant-registry",
  "redis",
