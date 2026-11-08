@@ -1,11 +1,11 @@
+#[path = "phase4_payments_acceptance/billing.rs"]
+mod billing_acceptance;
 #[path = "phase4_payments_acceptance/database.rs"]
 mod database;
 #[path = "phase4_payments_acceptance/jetstream.rs"]
 mod jetstream_acceptance;
 #[path = "phase4_payments_acceptance/lifecycle_persistence.rs"]
 mod lifecycle_persistence;
-#[path = "phase4_payments_acceptance/billing.rs"]
-mod billing_acceptance;
 #[path = "phase4_payments_acceptance/outbox_resilience.rs"]
 mod outbox_resilience_acceptance;
 
