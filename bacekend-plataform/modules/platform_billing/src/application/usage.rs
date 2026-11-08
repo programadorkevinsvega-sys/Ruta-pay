@@ -35,6 +35,8 @@ impl BillingService {
             return Err(BillingError::InvalidCommand);
         }
 
+        let occurred_at = DateTime::<Utc>::from_timestamp_micros(command.occurred_at.timestamp_micros())
+            .ok_or(BillingError::InvalidCommand)?;
         let mut tx = self.pool.begin().await?;
         set_tenant_context(&mut tx, command.tenant_id).await?;
         let id = Uuid::new_v4();
@@ -46,7 +48,7 @@ impl BillingService {
             .bind(command.source_system)
             .bind(command.quantity)
             .bind(command.unit)
-            .bind(command.occurred_at)
+            .bind(occurred_at)
             .bind(&command.attributes)
             .execute(&mut *tx)
             .await?;
@@ -63,7 +65,7 @@ impl BillingService {
             let same = row.try_get::<String, _>("meter_key")? == command.meter_key
                 && row.try_get::<i64, _>("quantity")? == command.quantity
                 && row.try_get::<String, _>("unit")? == command.unit
-                && row.try_get::<DateTime<Utc>, _>("occurred_at")? == command.occurred_at
+                && row.try_get::<DateTime<Utc>, _>("occurred_at")? == occurred_at
                 && row.try_get::<Value, _>("attributes")? == command.attributes;
             if !same {
                 return Err(BillingError::IdempotencyConflict);
