@@ -3,7 +3,7 @@ use metrics::{counter, histogram};
 use platform_billing::application::BillingService;
 use sqlx::PgPool;
 use std::{env, fs, time::{Duration, Instant}};
-use tokio::{sync::watch, time};
+use tokio::{sync::watch, task::JoinSet, time};
 use tokio_stream::StreamExt;
 
 mod processing;
@@ -13,6 +13,8 @@ const DEFAULT_BATCH_SIZE: usize = 128;
 const MAX_BATCH_SIZE: usize = 512;
 const MAX_BATCH_BYTES: usize = 8 * 1024 * 1024;
 const BACKPRESSURE_POLL: Duration = Duration::from_millis(100);
+const MAX_IN_FLIGHT_BATCHES: usize = 4;
+const MAX_ACK_PENDING: usize = 512;
 
 #[derive(Default)]
 struct AdaptiveBackpressure {
@@ -132,6 +134,7 @@ pub(super) async fn run_billing_usage_consumer(
 ) {
     let service = BillingService::new(pool.clone());
     let mut backpressure = AdaptiveBackpressure::default();
+    let mut in_flight = JoinSet::new();
     tracing::info!(
         event.name = "jetstream.consumer.configured",
         component = "platform_billing",
@@ -143,14 +146,45 @@ pub(super) async fn run_billing_usage_consumer(
     loop {
         if *shutdown.borrow() { return; }
         let Some(batch_limit) = backpressure.batch_limit(&pool) else {
+            if in_flight.is_empty() {
+                tokio::select! {
+                    result = shutdown.changed() => {
+                        if result.is_err() || *shutdown.borrow() { return; }
+                    }
+                    _ = time::sleep(BACKPRESSURE_POLL) => {}
+                }
+            } else {
+                tokio::select! {
+                    result = shutdown.changed() => {
+                        if result.is_err() || *shutdown.borrow() { return; }
+                    }
+                    result = in_flight.join_next() => {
+                        if let Some(Err(error)) = result {
+                            record_batch_task_failure(error);
+                        }
+                    }
+                }
+            }
+            continue;
+        };
+
+        // JetStream's configured max_ack_pending is 512. Keep all batches
+        // in flight within that acknowledgement window while allowing the
+        // next fetch to overlap persistence of earlier batches.
+        let max_in_flight = max_in_flight_batches(batch_limit);
+        if in_flight.len() >= max_in_flight {
             tokio::select! {
                 result = shutdown.changed() => {
                     if result.is_err() || *shutdown.borrow() { return; }
                 }
-                _ = time::sleep(BACKPRESSURE_POLL) => {}
+                result = in_flight.join_next() => {
+                    if let Some(Err(error)) = result {
+                        record_batch_task_failure(error);
+                    }
+                }
             }
             continue;
-        };
+        }
         let fetch_started = Instant::now();
         let fetch = consumer.fetch()
             .max_messages(batch_limit)
@@ -211,11 +245,32 @@ pub(super) async fn run_billing_usage_consumer(
 
         histogram!("platform_billing_usage_batch_size").record(batch.len() as f64);
         counter!("platform_billing_usage_batches_total").increment(1);
-        let process_started = Instant::now();
-        process_batch(batch, &service, pool.num_idle().max(1)).await;
-        histogram!("platform_billing_usage_batch_processing_seconds")
-            .record(process_started.elapsed().as_secs_f64());
+        let max_concurrency = (pool.num_idle() / max_in_flight).max(1);
+        let service = service.clone();
+        in_flight.spawn(async move {
+            let process_started = Instant::now();
+            process_batch(batch, &service, max_concurrency).await;
+            histogram!("platform_billing_usage_batch_processing_seconds")
+                .record(process_started.elapsed().as_secs_f64());
+        });
+        histogram!("platform_billing_usage_batches_in_flight")
+            .record(in_flight.len() as f64);
     }
+}
+
+fn max_in_flight_batches(batch_limit: usize) -> usize {
+    (MAX_ACK_PENDING / batch_limit.max(1)).clamp(1, MAX_IN_FLIGHT_BATCHES)
+}
+
+fn record_batch_task_failure(error: tokio::task::JoinError) {
+    counter!("platform_billing_usage_batch_task_failures_total").increment(1);
+    tracing::error!(
+        event.name = "billing.usage.batch_task.failed",
+        component = "platform_billing",
+        operation = "process_billable_usage_batch",
+        error_code = "billing_usage_batch_task_failed",
+        error_class = %error
+    );
 }
 
 fn configured_batch_size() -> usize {
@@ -239,7 +294,15 @@ fn configured_batch_size() -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::pressure_limited_batch;
+    use super::{max_in_flight_batches, pressure_limited_batch};
+
+    #[test]
+    fn overlaps_batches_without_exceeding_the_jetstream_ack_window() {
+        assert_eq!(max_in_flight_batches(128), 4);
+        assert_eq!(max_in_flight_batches(256), 2);
+        assert_eq!(max_in_flight_batches(512), 1);
+        assert_eq!(max_in_flight_batches(0), 4);
+    }
 
     #[test]
     fn pauses_fetch_when_database_pool_has_no_idle_connection() {

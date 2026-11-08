@@ -63,6 +63,7 @@ El módulo aplica Row Level Security (RLS) mediante el contexto transaccional `a
 La implementación inicial en la rama del PR introduce:
 
 - Fetch JetStream finito con límites configurables de mensajes, bytes y expiración; la admisión reduce el tamaño cuando disminuyen las conexiones PostgreSQL ociosas.
+- Pipeline de lotes con hasta cuatro lotes simultáneamente en vuelo, limitado además por la ventana `max_ack_pending=512`; cada lote se procesa en una tarea independiente y el siguiente fetch no espera el commit del lote anterior. La concurrencia de grupos tenant por lote se reparte usando las conexiones ociosas observadas y el límite de lotes en vuelo.
 - Lectura de límites cgroup v2 `cpu.max`, `memory.current` y `memory.max` para reducir el tamaño del lote bajo presión. El valor se vuelve a evaluar antes de cada fetch.
 - Agrupación de los mensajes válidos por tenant y una transacción por grupo. Los grupos de tenants distintos se ejecutan concurrentemente con un límite igual a las conexiones ociosas observadas al iniciar el procesamiento (mínimo uno para el bootstrap); nunca se mezclan tenants en una transacción. La configuración RLS se aplica una sola vez por transacción.
 - Inserción set-based de Inbox y usage, validación de conflictos de idempotencia y actualización de Inbox a `processed` dentro de esa transacción.
