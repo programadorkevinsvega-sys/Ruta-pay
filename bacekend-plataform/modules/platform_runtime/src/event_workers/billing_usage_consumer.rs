@@ -73,7 +73,12 @@ fn pressure_limited_batch(
     cpu: Option<f64>,
     memory: Option<f64>,
 ) -> Option<usize> {
-    if idle == 0 || total == 0 {
+    // A lazy SQLx pool starts at size zero. Permit a small bootstrap fetch so
+    // the first persistence operation can establish its initial connection.
+    if total == 0 {
+        return Some(configured.min(32).clamp(1, MAX_BATCH_SIZE));
+    }
+    if idle == 0 {
         return None;
     }
     let pool_capacity = idle.saturating_mul(32).min(MAX_BATCH_SIZE);
@@ -96,11 +101,16 @@ fn pressure_limited_batch(
 }
 
 fn cpu_quota_cores() -> Option<f64> {
-    let contents = fs::read_to_string("/sys/fs/cgroup/cpu.max").ok()?;
+    let host_capacity = std::thread::available_parallelism()
+        .ok()
+        .map(|value| value.get() as f64);
+    let Some(contents) = fs::read_to_string("/sys/fs/cgroup/cpu.max").ok() else {
+        return host_capacity;
+    };
     let mut fields = contents.split_whitespace();
-    let quota = fields.next()?;
+    let Some(quota) = fields.next() else { return host_capacity; };
     if quota == "max" {
-        return None;
+        return host_capacity;
     }
     let quota = quota.parse::<f64>().ok()?;
     let period = fields.next()?.parse::<f64>().ok()?;
@@ -234,6 +244,11 @@ mod tests {
     #[test]
     fn pauses_fetch_when_database_pool_has_no_idle_connection() {
         assert_eq!(pressure_limited_batch(128, 0, 16, Some(0.1), Some(0.2)), None);
+    }
+
+    #[test]
+    fn permits_a_bounded_bootstrap_fetch_for_a_lazy_pool() {
+        assert_eq!(pressure_limited_batch(128, 0, 0, None, None), Some(32));
     }
 
     #[test]
