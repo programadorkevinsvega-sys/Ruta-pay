@@ -226,8 +226,6 @@ pub async fn run_with_topology(
     }
 }
 
-}
-
 fn build_nats_options(username: String, password: String) -> Result<ConnectOptions, &'static str> {
     let root = env::var_os("NATS_TLS_ROOT_CA");
     let certificate = env::var_os("NATS_TLS_CLIENT_CERT");
