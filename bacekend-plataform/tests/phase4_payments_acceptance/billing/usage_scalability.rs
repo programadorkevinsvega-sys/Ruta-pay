@@ -70,9 +70,11 @@ async fn billing_usage_scales_across_one_four_sixteen_and_sixty_four_tenants() {
             while let Some(result) = publishers.join_next().await {
                 result.expect("publisher task completes");
             }
-            peak_pool_size = peak_pool_size.max(database.runtime_pool.size());
+            let total_pool_size = replica_pools.iter().map(sqlx::Pool::size).sum();
+            let total_pool_idle: usize = replica_pools.iter().map(sqlx::Pool::num_idle).sum();
+            peak_pool_size = peak_pool_size.max(total_pool_size);
             peak_pool_in_use = peak_pool_in_use.max(
-                database.runtime_pool.size().saturating_sub(database.runtime_pool.num_idle())
+                total_pool_size.saturating_sub(total_pool_idle.min(u32::MAX as usize) as u32)
             );
         }
         wait_for_usage_count(&database.migration_pool, baseline + EVENTS_PER_SCENARIO as i64).await;
@@ -103,14 +105,14 @@ async fn billing_usage_scales_across_one_four_sixteen_and_sixty_four_tenants() {
         let commits = committed_transactions(&database.migration_pool).await - commits_before;
         let sql_ms = statement_time_ms(&database.migration_pool).await
             .map(|after| pg_statements_before.map(|before| after - before));
-        let pool_size = database.runtime_pool.size();
-        let pool_idle = database.runtime_pool.num_idle();
+        let pool_size: u32 = replica_pools.iter().map(sqlx::Pool::size).sum();
+        let pool_idle: usize = replica_pools.iter().map(sqlx::Pool::num_idle).sum();
         let throughput = EVENTS_PER_SCENARIO as f64 / elapsed.as_secs_f64();
         assert!(throughput.is_finite() && throughput > 0.0);
         assert!(p50.is_finite() && p95 >= p50 && p99 >= p95);
         assert!(distribution.values().all(|count| *count > 0));
         println!(
-            "billing_usage_scalability tenants={} events={} replicas=2 throughput_events_per_second={:.2} latency_p50_seconds={:.6} latency_p95_seconds={:.6} latency_p99_seconds={:.6} postgres_commits_delta={} pg_stat_statements_sql_ms={:?} pool_size={} pool_idle={} tenant_min_events={} tenant_max_events={}",
+            "billing_usage_scalability tenants={} events={} replicas=2 throughput_events_per_second={:.2} latency_p50_seconds={:.6} latency_p95_seconds={:.6} latency_p99_seconds={:.6} postgres_commits_delta={} pg_stat_statements_sql_ms={:?} pool_total_size={} pool_total_idle={} pool_peak_size={} pool_peak_in_use={} tenant_min_events={} tenant_max_events={}",
             tenant_count, EVENTS_PER_SCENARIO, throughput, p50, p95, p99, commits, sql_ms,
             pool_size, pool_idle, peak_pool_size, peak_pool_in_use,
             distribution.values().min().copied().unwrap_or_default(),
