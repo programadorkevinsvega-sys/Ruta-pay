@@ -121,7 +121,7 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
     assert_eq!(
         usage_count(&database.migration_pool)
             .await
-            .expect("usage count remains readable during connection-level outage"),
+            .expect("usage count is readable after duplicate delivery"),
         LOAD_EVENTS as i64,
         "duplicate event delivery cannot create a second financial usage row"
     );
@@ -136,7 +136,9 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
         publish(&jetstream, &subject, recovery_event).await;
         time::sleep(StdDuration::from_secs(7)).await;
         assert_eq!(
-            usage_count(&database.migration_pool).await,
+            usage_count(&database.migration_pool)
+                .await
+                .expect("usage count is readable during connection-level outage"),
             LOAD_EVENTS as i64,
             "usage must not be persisted while runtime database access is revoked"
         );
