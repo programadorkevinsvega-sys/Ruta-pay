@@ -7,7 +7,7 @@ use super::persistence::set_tenant_context;
 #[derive(Debug, PartialEq, Eq)]
 pub enum InboxDisposition {
     Inserted(Uuid),
-    Duplicate(Uuid),
+    Duplicate { id: Uuid, processed: bool },
 }
 
 pub async fn receive(
@@ -30,7 +30,7 @@ pub async fn receive(
         tx.commit().await?;
         return Ok(InboxDisposition::Inserted(id));
     }
-    let row=sqlx::query("SELECT id,tenant_id,event_type,schema_version,payload_sha256 FROM platform_billing.inbox_events WHERE tenant_id=$1 AND producer_id=$2 AND event_id=$3")
+    let row=sqlx::query("SELECT id,tenant_id,event_type,schema_version,payload_sha256,disposition FROM platform_billing.inbox_events WHERE tenant_id=$1 AND producer_id=$2 AND event_id=$3")
         .bind(tenant).bind(producer).bind(event_id).fetch_one(&mut *tx).await?;
     let same: bool = row.try_get::<Uuid, _>("tenant_id")? == tenant
         && row.try_get::<String, _>("event_type")? == event_type
@@ -42,8 +42,9 @@ pub async fn receive(
         ));
     }
     let original = row.try_get("id")?;
+    let processed = row.try_get::<String, _>("disposition")? == "processed";
     tx.commit().await?;
-    Ok(InboxDisposition::Duplicate(original))
+    Ok(InboxDisposition::Duplicate { id: original, processed })
 }
 
 pub async fn mark_processed(pool: &PgPool, tenant: Uuid, id: Uuid) -> Result<bool, sqlx::Error> {
@@ -51,6 +52,32 @@ pub async fn mark_processed(pool: &PgPool, tenant: Uuid, id: Uuid) -> Result<boo
     set_tenant_context(&mut tx, tenant).await?;
     let result=sqlx::query("UPDATE platform_billing.inbox_events SET disposition='processed',processed_at=now() WHERE tenant_id=$1 AND id=$2 AND disposition='received'")
         .bind(tenant).bind(id).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn mark_rejected(
+    pool: &PgPool,
+    tenant: Uuid,
+    id: Uuid,
+    code: &str,
+) -> Result<bool, sqlx::Error> {
+    if code.is_empty()
+        || code.len() > 64
+        || !code
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+    {
+        return Ok(false);
+    }
+    let mut tx = pool.begin().await?;
+    set_tenant_context(&mut tx, tenant).await?;
+    let result = sqlx::query("UPDATE platform_billing.inbox_events SET disposition='rejected',rejection_code=$3 WHERE tenant_id=$1 AND id=$2 AND disposition='received'")
+        .bind(tenant)
+        .bind(id)
+        .bind(code)
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
     Ok(result.rows_affected() == 1)
 }
