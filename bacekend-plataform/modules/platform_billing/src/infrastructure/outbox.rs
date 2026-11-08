@@ -34,14 +34,20 @@ pub async fn claim(pool:&PgPool,limit:i64)->Result<Vec<PendingBillingEvent>,sqlx
 }
 
 pub async fn acknowledge(pool:&PgPool,event_id:Uuid,token:Uuid)->Result<bool,sqlx::Error>{
+    let mut tx=pool.begin().await?;
+    sqlx::query("SELECT set_config('app.operator_scope','true',true)").execute(&mut *tx).await?;
     let result=sqlx::query("UPDATE platform_billing.outbox_events SET published_at=now(),lease_token=NULL,lease_until=NULL,last_error_code=NULL WHERE event_id=$1 AND lease_token=$2 AND lease_until>now() AND published_at IS NULL AND failed_at IS NULL")
-        .bind(event_id).bind(token).execute(pool).await?;
+        .bind(event_id).bind(token).execute(&mut *tx).await?;
+    tx.commit().await?;
     Ok(result.rows_affected()==1)
 }
 
 pub async fn retry(pool:&PgPool,event_id:Uuid,token:Uuid,error:&str)->Result<bool,sqlx::Error>{
     if error.is_empty() || error.len()>64 || !error.bytes().all(|b|b.is_ascii_lowercase()||b.is_ascii_digit()||b==b'_') { return Ok(false); }
+    let mut tx=pool.begin().await?;
+    sqlx::query("SELECT set_config('app.operator_scope','true',true)").execute(&mut *tx).await?;
     let result=sqlx::query("UPDATE platform_billing.outbox_events SET available_at=now()+make_interval(secs=>LEAST(900,GREATEST(1,ceil(power(2.0::double precision,LEAST(attempts,9)::double precision)*(0.5+random()))::integer))),lease_token=NULL,lease_until=NULL,last_error_code=$3 WHERE event_id=$1 AND lease_token=$2 AND lease_until>now() AND published_at IS NULL AND failed_at IS NULL")
-        .bind(event_id).bind(token).bind(error).execute(pool).await?;
+        .bind(event_id).bind(token).bind(error).execute(&mut *tx).await?;
+    tx.commit().await?;
     Ok(result.rows_affected()==1)
 }
