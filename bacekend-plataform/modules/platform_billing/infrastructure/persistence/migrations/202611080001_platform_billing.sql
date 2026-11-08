@@ -186,7 +186,7 @@ CREATE TABLE platform_billing.inbox_events (
     processed_at TIMESTAMPTZ,
     disposition TEXT NOT NULL CHECK (disposition IN ('received','processed','rejected')),
     rejection_code TEXT,
-    UNIQUE (producer_id,event_id),
+    UNIQUE (tenant_id,producer_id,event_id),
     UNIQUE (tenant_id,id),
     CHECK ((disposition='rejected')=(rejection_code IS NOT NULL))
 );
