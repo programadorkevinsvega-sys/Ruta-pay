@@ -55,7 +55,7 @@ pub async fn run_with_topology(
     url: String,
     username: String,
     password: String,
-    shutdown: watch::Receiver<bool>,
+    mut shutdown: watch::Receiver<bool>,
     topology: EventTopology,
 ) {
     let mut backoff = Duration::from_secs(1);
