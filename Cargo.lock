@@ -281,6 +281,7 @@ dependencies = [
  "platform-entitlements-quotas",
  "platform-identity-access",
  "platform-payments",
+ "platform-billing",
  "platform-realtime",
  "platform-runtime",
  "platform-tenant-registry",
@@ -2263,6 +2264,19 @@ dependencies = [
  "tonic",
  "tracing",
  "tracing-opentelemetry",
+ "uuid",
+]
+
+[[package]]
+name = "platform-billing"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "sqlx",
+ "thiserror",
  "uuid",
 ]
 
