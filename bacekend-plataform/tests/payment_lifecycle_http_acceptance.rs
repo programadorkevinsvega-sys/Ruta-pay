@@ -1,5 +1,5 @@
 #[path = "phase4_payments_acceptance/database.rs"]
-mod database;
+pub mod database;
 #[path = "support/http_grpc_runtime.rs"]
 mod http_grpc_runtime;
 
