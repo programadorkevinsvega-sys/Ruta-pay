@@ -134,7 +134,7 @@ CREATE TRIGGER ledger_entries_immutable
     BEFORE UPDATE OR DELETE ON platform_billing.ledger_entries
     FOR EACH ROW EXECUTE FUNCTION platform_billing.reject_financial_mutation();
 CREATE FUNCTION platform_billing.protect_issued_invoice()
-RETURNS trigger LANGUAGE plpgsql AS $
+RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
     IF TG_OP='DELETE' THEN
         IF OLD.status IN ('issued','voided') THEN
@@ -164,7 +164,7 @@ BEGIN
             USING ERRCODE='55000';
     END IF;
     RETURN NEW;
-END $;
+END $$;
 CREATE TRIGGER issued_invoice_immutable
     BEFORE UPDATE OR DELETE ON platform_billing.invoices
     FOR EACH ROW EXECUTE FUNCTION platform_billing.protect_issued_invoice();
@@ -240,7 +240,7 @@ CREATE TABLE platform_billing.collection_attempts (
 );
 
 CREATE FUNCTION platform_billing.guard_collection_attempt()
-RETURNS trigger LANGUAGE plpgsql AS $
+RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
     IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id OR
        NEW.invoice_id IS DISTINCT FROM OLD.invoice_id OR
@@ -266,12 +266,12 @@ BEGIN
     NEW.aggregate_version := OLD.aggregate_version + 1;
     NEW.updated_at := now();
     RETURN NEW;
-END $;
+END $$;
 CREATE TRIGGER collection_attempt_state_guard
     BEFORE UPDATE ON platform_billing.collection_attempts
     FOR EACH ROW EXECUTE FUNCTION platform_billing.guard_collection_attempt();
 
-DO $
+DO $$
 DECLARE table_name TEXT;
 BEGIN
   FOREACH table_name IN ARRAY ARRAY[
