@@ -326,3 +326,69 @@ async fn retry_message(
         );
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::parse_event;
+    use chrono::{Duration, Utc};
+    use serde_json::json;
+    use uuid::Uuid;
+
+    fn valid_envelope() -> Vec<u8> {
+        let now = Utc::now();
+        serde_json::to_vec(&json!({
+            "event_id": Uuid::new_v4(),
+            "event_type": "billing.usage.recorded",
+            "schema_version": 1,
+            "correlation_id": "billing-test-001",
+            "payload": {
+                "tenant_id": Uuid::new_v4(),
+                "usage_id": Uuid::new_v4(),
+                "price_version_id": Uuid::new_v4(),
+                "meter_key": "api.requests",
+                "quantity": 1,
+                "unit": "request",
+                "occurred_at": now.to_rfc3339(),
+                "environment": "test",
+                "period_start": (now - Duration::days(1)).to_rfc3339(),
+                "period_end": (now + Duration::days(1)).to_rfc3339()
+            }
+        }))
+        .expect("test event serializes")
+    }
+
+    #[test]
+    fn accepts_versioned_usage_event_with_safe_correlation_id() {
+        let bytes = valid_envelope();
+        let event = parse_event(&bytes).expect("valid usage event is accepted");
+        assert_eq!(event.quantity, 1);
+        assert_eq!(event.meter_key, "api.requests");
+    }
+
+    #[test]
+    fn rejects_invalid_correlation_id_and_non_positive_quantity() {
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&valid_envelope()).expect("valid fixture parses");
+        value["correlation_id"] = json!("billing\\nforged");
+        assert!(parse_event(&serde_json::to_vec(&value).expect("fixture serializes")).is_err());
+
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&valid_envelope()).expect("valid fixture parses");
+        value["payload"]["quantity"] = json!(0);
+        assert!(parse_event(&serde_json::to_vec(&value).expect("fixture serializes")).is_err());
+    }
+
+    #[test]
+    fn rejects_unknown_schema_versions_and_invalid_periods() {
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&valid_envelope()).expect("valid fixture parses");
+        value["schema_version"] = json!(2);
+        assert!(parse_event(&serde_json::to_vec(&value).expect("fixture serializes")).is_err());
+
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&valid_envelope()).expect("valid fixture parses");
+        value["payload"]["period_end"] = value["payload"]["period_start"].clone();
+        assert!(parse_event(&serde_json::to_vec(&value).expect("fixture serializes")).is_err());
+    }
+}
