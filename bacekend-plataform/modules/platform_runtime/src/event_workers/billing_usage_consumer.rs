@@ -1,18 +1,24 @@
 use async_nats::jetstream;
 use chrono::{DateTime, Utc};
+use metrics::{counter, histogram};
 use platform_billing::{
     application::{BillingError, BillingService, RecordUsage},
     infrastructure::inbox::{self, InboxDisposition},
 };
 use serde_json::{Value, json};
 use sqlx::PgPool;
-use std::time::Duration;
-use tokio::{sync::watch, time};
+use std::{
+    env,
+    time::{Duration, Instant},
+};
+use tokio::{sync::watch, task::JoinSet, time};
 use tokio_stream::StreamExt;
 use uuid::Uuid;
 
 const EVENT_TYPE: &str = "billing.usage.recorded";
 const PRODUCER: &str = "entitlements_quotas";
+const DEFAULT_MAX_IN_FLIGHT: usize = 16;
+const MAX_IN_FLIGHT_LIMIT: usize = 64;
 
 struct UsageEvent {
     event_id: Uuid,
@@ -36,6 +42,15 @@ pub(super) async fn run_billing_usage_consumer(
     mut shutdown: watch::Receiver<bool>,
 ) {
     let service = BillingService::new(pool.clone());
+    let max_in_flight = configured_max_in_flight();
+    tracing::info!(
+        event.name = "jetstream.consumer.configured",
+        component = "platform_billing",
+        operation = "consume_billable_usage",
+        max_in_flight,
+        max_ack_pending = 64
+    );
+
     loop {
         let mut messages = match consumer.messages().await {
             Ok(messages) => messages,
@@ -50,65 +65,202 @@ pub(super) async fn run_billing_usage_consumer(
                     retryable = true,
                     error_class = %error
                 );
-                time::sleep(Duration::from_secs(1)).await;
+                tokio::select! {
+                    result = shutdown.changed() => if result.is_err() || *shutdown.borrow() { return; },
+                    _ = time::sleep(Duration::from_secs(1)) => {}
+                }
                 continue;
             }
         };
-        loop {
+
+        let mut tasks = JoinSet::new();
+        let mut stream_ended = false;
+        while !stream_ended {
             tokio::select! {
-                result = shutdown.changed() => if result.is_err() || *shutdown.borrow() { return; },
-                message = messages.next() => match message {
-                    Some(Ok(message)) => {
-                        match parse_event(&message.payload) {
-                            Ok(event) => {
-                                let inbox_id = match inbox::receive(
-                                    &pool, event.tenant_id, PRODUCER, event.event_id,
-                                    EVENT_TYPE, 1, &event.envelope,
-                                ).await {
-                                    Ok(InboxDisposition::Inserted(id)) => Some(id),
-                                    Ok(InboxDisposition::Duplicate { id: _, processed: true }) => {
-                                        if let Err(error) = message.ack().await {
-                                            tracing::warn!(event.name="jetstream.consumer.ack.failed", component="platform_billing", operation="ack_processed_usage_duplicate", error_class=%error);
-                                        }
-                                        continue;
-                                    }
-                                    Ok(InboxDisposition::Duplicate { id, processed: false }) => Some(id),
-                                    Err(sqlx::Error::Protocol(_)) => {
-                                        term_message(&message).await;
-                                        continue;
-                                    }
-                                    Err(error) => {
-                                        retry_message(&message, &event.correlation_id, &error).await;
-                                        continue;
-                                    }
-                                };
-                                if let Some(id) = inbox_id {
-                                    match persist_usage(&service, &pool, &event, id).await {
-                                        Ok(()) => {
-                                            if let Err(error) = message.ack().await {
-                                                tracing::warn!(event.name="jetstream.consumer.ack.failed", component="platform_billing", operation="ack_billable_usage", correlation_id=%event.correlation_id, error_class=%error);
-                                            }
-                                        }
-                                        Err(UsageFailure::Permanent(code)) => {
-                                            let _ = inbox::mark_rejected(&pool, event.tenant_id, id, code).await;
-                                            term_message(&message).await;
-                                        }
-                                        Err(UsageFailure::Retryable(error)) => {
-                                            retry_message(&message, &event.correlation_id, &error).await;
-                                        }
-                                    }
-                                }
-                            }
-                            Err(()) => term_message(&message).await,
+                result = shutdown.changed() => {
+                    if result.is_err() || *shutdown.borrow() {
+                        while tasks.join_next().await.is_some() {}
+                        return;
+                    }
+                }
+                result = tasks.join_next(), if !tasks.is_empty() => {
+                    if let Some(Err(error)) = result {
+                        tracing::error!(
+                            event.name = "jetstream.consumer.task.failed",
+                            component = "platform_billing",
+                            operation = "process_billable_usage",
+                            error_code = "billing_usage_task_join_failed",
+                            error_class = %error
+                        );
+                        counter!("platform_billing_usage_task_failures_total").increment(1);
+                    }
+                }
+                message = messages.next(), if tasks.len() < max_in_flight => {
+                    match message {
+                        Some(Ok(message)) => {
+                            let service = service.clone();
+                            let pool = pool.clone();
+                            tasks.spawn(async move {
+                                process_message(message, &service, &pool).await;
+                            });
                         }
+                        Some(Err(error)) => {
+                            tracing::warn!(
+                                event.name = "jetstream.consumer.stream.failed",
+                                component = "platform_billing",
+                                operation = "read_billable_usage",
+                                dependency = "nats_jetstream",
+                                error_code = "billing_usage_stream_failed",
+                                error_category = "connectivity",
+                                retryable = true,
+                                error_class = %error
+                            );
+                            stream_ended = true;
+                        }
+                        None => stream_ended = true,
                     }
-                    Some(Err(error)) => {
-                        tracing::warn!(event.name="jetstream.consumer.stream.failed", component="platform_billing", operation="read_billable_usage", dependency="nats_jetstream", error_code="billing_usage_stream_failed", error_category="connectivity", retryable=true, error_class=%error);
-                        break;
-                    }
-                    None => break,
                 }
             }
+        }
+        while tasks.join_next().await.is_some() {}
+        if !*shutdown.borrow() {
+            time::sleep(Duration::from_millis(250)).await;
+        } else {
+            return;
+        }
+    }
+}
+
+fn configured_max_in_flight() -> usize {
+    match env::var("PLATFORM_BILLING_USAGE_MAX_IN_FLIGHT") {
+        Ok(value) => match value.parse::<usize>() {
+            Ok(value) if (1..=MAX_IN_FLIGHT_LIMIT).contains(&value) => value,
+            _ => {
+                tracing::warn!(
+                    event.name = "service.configuration.invalid",
+                    component = "platform_billing",
+                    operation = "configure_usage_consumer_concurrency",
+                    error_code = "billing_usage_max_in_flight_invalid",
+                    fallback = DEFAULT_MAX_IN_FLIGHT
+                );
+                DEFAULT_MAX_IN_FLIGHT
+            }
+        },
+        Err(_) => DEFAULT_MAX_IN_FLIGHT,
+    }
+}
+
+async fn process_message(
+    message: jetstream::Message,
+    service: &BillingService,
+    pool: &PgPool,
+) {
+    let started = Instant::now();
+    let event = match parse_event(&message.payload) {
+        Ok(event) => event,
+        Err(()) => {
+            counter!("platform_billing_usage_events_total", "outcome" => "invalid").increment(1);
+            tracing::warn!(
+                event.name = "billing.usage.event.rejected",
+                component = "platform_billing",
+                operation = "parse_billable_usage",
+                error_code = "billing_usage_event_invalid",
+                error_category = "contract",
+                retryable = false
+            );
+            term_message(&message, None, None).await;
+            return;
+        }
+    };
+
+    tracing::debug!(
+        event.name = "billing.usage.event.received",
+        component = "platform_billing",
+        operation = "consume_billable_usage",
+        event_id = %event.event_id,
+        correlation_id = %event.correlation_id
+    );
+
+    let inbox_id = match inbox::receive(
+        pool,
+        event.tenant_id,
+        PRODUCER,
+        event.event_id,
+        EVENT_TYPE,
+        1,
+        &event.envelope,
+    )
+    .await
+    {
+        Ok(InboxDisposition::Inserted(id)) => id,
+        Ok(InboxDisposition::Duplicate { processed: true, .. }) => {
+            counter!("platform_billing_usage_events_total", "outcome" => "duplicate_processed")
+                .increment(1);
+            tracing::info!(
+                event.name = "billing.usage.event.duplicate",
+                component = "platform_billing",
+                operation = "ack_processed_usage_duplicate",
+                event_id = %event.event_id,
+                correlation_id = %event.correlation_id
+            );
+            ack_message(&message, &event).await;
+            return;
+        }
+        Ok(InboxDisposition::Duplicate { id, processed: false }) => id,
+        Err(sqlx::Error::Protocol(_)) => {
+            counter!("platform_billing_usage_events_total", "outcome" => "idempotency_conflict")
+                .increment(1);
+            tracing::error!(
+                event.name = "billing.usage.event.conflict",
+                component = "platform_billing",
+                operation = "receive_billable_usage",
+                event_id = %event.event_id,
+                correlation_id = %event.correlation_id,
+                error_code = "billing_inbox_idempotency_conflict",
+                error_category = "integrity",
+                retryable = false
+            );
+            term_message(&message, Some(event.event_id), Some(&event.correlation_id)).await;
+            return;
+        }
+        Err(error) => {
+            counter!("platform_billing_usage_events_total", "outcome" => "inbox_retry").increment(1);
+            retry_message(&message, &event, &error).await;
+            return;
+        }
+    };
+
+    match persist_usage(service, &event, inbox_id).await {
+        Ok(duplicate) => {
+            let outcome = if duplicate { "duplicate_usage" } else { "processed" };
+            counter!("platform_billing_usage_events_total", "outcome" => outcome).increment(1);
+            histogram!("platform_billing_usage_processing_seconds")
+                .record(started.elapsed().as_secs_f64());
+            tracing::info!(
+                event.name = "billing.usage.event.processed",
+                component = "platform_billing",
+                operation = "persist_billable_usage",
+                event_id = %event.event_id,
+                correlation_id = %event.correlation_id,
+                duplicate_usage = duplicate
+            );
+            ack_message(&message, &event).await;
+        }
+        Err(UsageFailure::Permanent(code)) => {
+            counter!("platform_billing_usage_events_total", "outcome" => "rejected").increment(1);
+            match inbox::mark_rejected(pool, event.tenant_id, inbox_id, code).await {
+                Ok(_) => term_message(
+                    &message,
+                    Some(event.event_id),
+                    Some(&event.correlation_id),
+                )
+                .await,
+                Err(error) => retry_message(&message, &event, &error).await,
+            }
+        }
+        Err(UsageFailure::Retryable(error)) => {
+            counter!("platform_billing_usage_events_total", "outcome" => "retry").increment(1);
+            retry_message(&message, &event, &error).await;
         }
     }
 }
@@ -120,10 +272,9 @@ enum UsageFailure {
 
 async fn persist_usage(
     service: &BillingService,
-    pool: &PgPool,
     event: &UsageEvent,
     inbox_id: Uuid,
-) -> Result<(), UsageFailure> {
+) -> Result<bool, UsageFailure> {
     let source_event_id = event.usage_id.to_string();
     let attributes = json!({
         "price_version_id": event.price_version_id,
@@ -132,17 +283,21 @@ async fn persist_usage(
         "period_end": event.period_end
     });
     service
-        .record_usage(RecordUsage {
-            tenant_id: event.tenant_id,
-            meter_key: &event.meter_key,
-            source_system: PRODUCER,
-            source_event_id: &source_event_id,
-            quantity: event.quantity,
-            unit: &event.unit,
-            occurred_at: event.occurred_at,
-            attributes,
-        })
+        .record_usage_with_inbox(
+            RecordUsage {
+                tenant_id: event.tenant_id,
+                meter_key: &event.meter_key,
+                source_system: PRODUCER,
+                source_event_id: &source_event_id,
+                quantity: event.quantity,
+                unit: &event.unit,
+                occurred_at: event.occurred_at,
+                attributes,
+            },
+            inbox_id,
+        )
         .await
+        .map(|(_, duplicate)| duplicate)
         .map_err(|error| match error {
             BillingError::Database(database) => UsageFailure::Retryable(database),
             BillingError::IdempotencyConflict => {
@@ -150,11 +305,7 @@ async fn persist_usage(
             }
             BillingError::InvalidCommand => UsageFailure::Permanent("billable_usage_invalid"),
             _ => UsageFailure::Permanent("billable_usage_rejected"),
-        })?;
-    inbox::mark_processed(pool, event.tenant_id, inbox_id)
-        .await
-        .map_err(UsageFailure::Retryable)?;
-    Ok(())
+        })
 }
 
 fn required_string<'a>(value: &'a Value, key: &str) -> Result<&'a str, ()> {
@@ -175,11 +326,12 @@ fn parse_event(bytes: &[u8]) -> Result<UsageEvent, ()> {
     let event_id = Uuid::parse_str(required_string(&envelope, "event_id")?).map_err(|_| ())?;
     let tenant_id = Uuid::parse_str(required_string(payload, "tenant_id")?).map_err(|_| ())?;
     let usage_id = Uuid::parse_str(required_string(payload, "usage_id")?).map_err(|_| ())?;
-    let price_version_id = Uuid::parse_str(required_string(payload, "price_version_id")?).map_err(|_| ())?;
+    let price_version_id =
+        Uuid::parse_str(required_string(payload, "price_version_id")?).map_err(|_| ())?;
     let quantity = payload
         .get("quantity")
         .and_then(Value::as_i64)
-        .filter(|v| *v > 0)
+        .filter(|value| *value > 0)
         .ok_or(())?;
     let environment = required_string(payload, "environment")?.to_owned();
     if !matches!(environment.as_str(), "test" | "live") {
@@ -202,8 +354,7 @@ fn parse_event(bytes: &[u8]) -> Result<UsageEvent, ()> {
         || meter_key.len() > 96
         || unit.is_empty()
         || unit.len() > 32
-        || correlation_id.is_empty()
-        || correlation_id.len() > 128
+        || !payvia_observability::valid_correlation_id(&correlation_id)
     {
         return Err(());
     }
@@ -224,30 +375,67 @@ fn parse_event(bytes: &[u8]) -> Result<UsageEvent, ()> {
     })
 }
 
-async fn term_message(message: &jetstream::Message) {
-    if let Err(error) = message.ack_with(jetstream::AckKind::Term).await {
-        tracing::error!(event.name="jetstream.consumer.term.failed", component="platform_billing", operation="term_invalid_billable_usage", error_class=%error);
+async fn ack_message(message: &jetstream::Message, event: &UsageEvent) {
+    if let Err(error) = message.ack().await {
+        tracing::warn!(
+            event.name = "jetstream.consumer.ack.failed",
+            component = "platform_billing",
+            operation = "ack_billable_usage",
+            event_id = %event.event_id,
+            correlation_id = %event.correlation_id,
+            error_code = "billing_usage_ack_failed",
+            error_class = %error
+        );
     }
 }
 
-async fn retry_message(message: &jetstream::Message, correlation_id: &str, error: &sqlx::Error) {
+async fn term_message(
+    message: &jetstream::Message,
+    event_id: Option<Uuid>,
+    correlation_id: Option<&str>,
+) {
+    if let Err(error) = message.ack_with(jetstream::AckKind::Term).await {
+        tracing::error!(
+            event.name = "jetstream.consumer.term.failed",
+            component = "platform_billing",
+            operation = "term_invalid_billable_usage",
+            event_id = ?event_id,
+            correlation_id = ?correlation_id,
+            error_code = "billing_usage_term_failed",
+            error_class = %error
+        );
+    }
+}
+
+async fn retry_message(
+    message: &jetstream::Message,
+    event: &UsageEvent,
+    error: &sqlx::Error,
+) {
     let code = error.as_database_error().and_then(|cause| cause.code());
     tracing::error!(
         event.name = "jetstream.consumer.processing.failed",
         component = "platform_billing",
         operation = "persist_billable_usage",
         dependency = "postgresql",
-        error_code = code
-            .as_deref()
-            .unwrap_or("billing_usage_persistence_failed"),
+        event_id = %event.event_id,
+        correlation_id = %event.correlation_id,
+        error_code = code.as_deref().unwrap_or("billing_usage_persistence_failed"),
         error_category = "persistence",
-        retryable = true,
-        correlation_id,
+        retryable = true
     );
     if let Err(ack_error) = message
         .ack_with(jetstream::AckKind::Nak(Some(Duration::from_secs(5))))
         .await
     {
-        tracing::error!(event.name="jetstream.consumer.nak.failed", component="platform_billing", operation="retry_billable_usage", error_class=%ack_error);
+        tracing::error!(
+            event.name = "jetstream.consumer.nak.failed",
+            component = "platform_billing",
+            operation = "retry_billable_usage",
+            event_id = %event.event_id,
+            correlation_id = %event.correlation_id,
+            error_code = "billing_usage_nak_failed",
+            error_class = %ack_error
+        );
     }
 }
