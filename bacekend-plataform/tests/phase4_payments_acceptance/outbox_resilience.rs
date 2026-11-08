@@ -268,10 +268,11 @@ async fn lifecycle_outbox_event_types_are_acknowledged_by_real_jetstream() {
         .await
         .expect("stream accepts the lifecycle event subject namespace");
 
-    let signing_config = Ok(
-        GatewayRequestSigningConfig::new(vec![7_u8; 32], "platform-gateway-ci".to_owned())
-            .expect("CI gateway request signing key is valid"),
-    );
+    let signing_config = Ok(GatewayRequestSigningConfig::new(
+        vec![7_u8; 32],
+        "platform-gateway-ci".to_owned(),
+    )
+    .expect("CI gateway request signing key is valid"));
     let delivered = outbox_relay::relay_batch_with_signing_config(
         &database.runtime_pool,
         &jetstream,
