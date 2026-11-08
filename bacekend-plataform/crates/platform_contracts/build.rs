@@ -15,6 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "proto/catalog_pricing.proto",
                 "proto/entitlements_quotas.proto",
                 "proto/payments.proto",
+                "proto/billing_fiscal_integration.proto",
             ],
             &["proto"],
         )?;
@@ -26,6 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "catalog_pricing.proto",
         "entitlements_quotas.proto",
         "payments.proto",
+        "billing_fiscal_integration.proto",
     ] {
         println!("cargo:rerun-if-changed=proto/{proto}");
     }
