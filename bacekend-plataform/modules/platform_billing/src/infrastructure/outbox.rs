@@ -85,3 +85,31 @@ pub async fn retry(
     tx.commit().await?;
     Ok(result.rows_affected() == 1)
 }
+
+pub async fn quarantine(
+    pool: &PgPool,
+    event_id: Uuid,
+    token: Uuid,
+    error: &str,
+) -> Result<bool, sqlx::Error> {
+    if error.is_empty()
+        || error.len() > 64
+        || !error
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+    {
+        return Ok(false);
+    }
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT set_config('app.operator_scope','true',true)")
+        .execute(&mut *tx)
+        .await?;
+    let result = sqlx::query("UPDATE platform_billing.outbox_events SET failed_at=now(),lease_token=NULL,lease_until=NULL,last_error_code=$3 WHERE event_id=$1 AND lease_token=$2 AND lease_until>now() AND published_at IS NULL AND failed_at IS NULL")
+        .bind(event_id)
+        .bind(token)
+        .bind(error)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(result.rows_affected() == 1)
+}
