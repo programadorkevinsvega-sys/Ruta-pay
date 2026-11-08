@@ -175,7 +175,7 @@ pub(super) async fn insert_outbox(
     correlation_id: &str,
 ) -> Result<(), sqlx::Error> {
     let audience = if event_type == "payment.reconciliation.requested" {
-        "gateway"
+        "platform"
     } else {
         "tenant"
     };
