@@ -222,6 +222,11 @@ jobs:
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Tests
         run: cargo test --locked --workspace
+      - name: Identify PostgreSQL service container for outage acceptance
+        run: |
+          container_id="$(docker ps --filter ancestor=postgres:18-alpine --format '{{.ID}}' | head -n1)"
+          test -n "$container_id"
+          echo "PLATFORM_TEST_POSTGRES_CONTAINER_ID=$container_id" >> "$GITHUB_ENV"
       - name: Billing usage load and recovery measurements
         run: >-
           cargo test --locked -p bacekend-plataform --test phase4_payments_acceptance
