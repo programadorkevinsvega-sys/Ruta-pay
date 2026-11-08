@@ -127,13 +127,13 @@ pub(super) async fn process_batch(messages: Vec<jetstream::Message>, service: &B
 
 
 fn record_queue_wait(message: &jetstream::Message) {
-    if let Ok(info) = message.info() {
-        if let Ok(published) = DateTime::parse_from_rfc3339(&info.published.to_string()) {
-            let age = Utc::now().signed_duration_since(published.with_timezone(&Utc));
-            if let Ok(wait) = age.to_std() {
-                histogram!("platform_billing_usage_queue_wait_seconds")
-                    .record(wait.as_secs_f64());
-            }
+    if let Ok(info) = message.info()
+        && let Ok(published) = DateTime::parse_from_rfc3339(&info.published.to_string())
+    {
+        let age = Utc::now().signed_duration_since(published.with_timezone(&Utc));
+        if let Ok(wait) = age.to_std() {
+            histogram!("platform_billing_usage_queue_wait_seconds")
+                .record(wait.as_secs_f64());
         }
     }
 }
