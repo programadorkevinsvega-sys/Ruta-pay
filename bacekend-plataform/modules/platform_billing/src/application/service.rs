@@ -259,4 +259,3 @@ impl BillingService {
         Ok(hash)
     }
 }
-
