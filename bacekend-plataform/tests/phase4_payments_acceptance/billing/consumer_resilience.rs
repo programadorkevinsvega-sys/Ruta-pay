@@ -124,16 +124,20 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
         "duplicate event delivery cannot create a second financial usage row"
     );
 
-    database.set_runtime_database_available(false).await;
     let recovery_event = usage_envelope(tenants[1], Uuid::new_v4(), Uuid::new_v4());
-    publish(&jetstream, &subject, recovery_event).await;
-    time::sleep(StdDuration::from_secs(7)).await;
-    assert_eq!(
-        usage_count(&database.migration_pool).await,
-        LOAD_EVENTS as i64,
-        "usage must not be acknowledged or persisted while runtime database access is revoked"
-    );
-    database.set_runtime_database_available(true).await;
+    if let Ok(container_id) = std::env::var("PLATFORM_TEST_POSTGRES_CONTAINER_ID") {
+        database_outage_with_container(&container_id, &jetstream, &subject, recovery_event).await;
+    } else {
+        database.set_runtime_database_available(false).await;
+        publish(&jetstream, &subject, recovery_event).await;
+        time::sleep(StdDuration::from_secs(7)).await;
+        assert_eq!(
+            usage_count(&database.migration_pool).await,
+            LOAD_EVENTS as i64,
+            "usage must not be persisted while runtime database access is revoked"
+        );
+        database.set_runtime_database_available(true).await;
+    }
     wait_for_usage_count(&database.migration_pool, LOAD_EVENTS as i64 + 1).await;
 
     let total_usage = usage_count(&database.migration_pool).await;
@@ -168,6 +172,35 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
         .await
         .expect("isolated usage stream is deleted");
     database.finish().await;
+}
+
+async fn database_outage_with_container(
+    container_id: &str,
+    jetstream: &jetstream::Context,
+    subject: &str,
+    recovery_event: Value,
+) {
+    docker_container_action(container_id, "stop").await;
+    publish(jetstream, subject, recovery_event).await;
+    time::sleep(StdDuration::from_secs(7)).await;
+    docker_container_action(container_id, "start").await;
+}
+
+async fn docker_container_action(container_id: &str, action: &'static str) {
+    let container_id = container_id.to_owned();
+    let output = tokio::task::spawn_blocking(move || {
+        std::process::Command::new("docker")
+            .args([action, container_id.as_str()])
+            .output()
+    })
+    .await
+    .expect("Docker control task joins")
+    .expect("Docker CLI executes");
+    assert!(
+        output.status.success(),
+        "docker {action} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 fn usage_envelope(tenant_id: Uuid, event_id: Uuid, usage_id: Uuid) -> Value {
