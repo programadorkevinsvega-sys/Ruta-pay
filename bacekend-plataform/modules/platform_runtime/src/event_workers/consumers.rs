@@ -60,8 +60,8 @@ pub(super) async fn ensure_billing_usage_consumer(
                 filter_subject: filter_subject.to_owned(),
                 deliver_policy: jetstream::consumer::DeliverPolicy::All,
                 ack_policy: AckPolicy::Explicit,
-                ack_wait: Duration::from_secs(30),
-                max_deliver: 20,
+                ack_wait: Duration::from_secs(120),
+                max_deliver: -1,
                 max_ack_pending: 64,
                 ..Default::default()
             },
