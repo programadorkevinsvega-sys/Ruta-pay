@@ -2,8 +2,8 @@ use chrono::{Duration, Utc};
 use platform_billing::{
     application::{BillingService, CreateInvoice, InvoiceLine},
     infrastructure::{
-        collection::{create_attempt, transition_attempt, CreateCollectionAttempt},
-        inbox::{receive, InboxDisposition},
+        collection::{CreateCollectionAttempt, create_attempt, transition_attempt},
+        inbox::{InboxDisposition, receive},
         outbox,
     },
 };
