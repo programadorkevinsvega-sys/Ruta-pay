@@ -37,6 +37,14 @@ pub(super) async fn process_batch(
                 continue;
             }
         };
+        tracing::debug!(
+            event.name = "billing.usage.event.accepted",
+            component = "platform_billing",
+            operation = "parse_billable_usage_event",
+            event_id = %event.event_id,
+            tenant_id = %event.tenant_id,
+            correlation_id = %event.correlation_id
+        );
         let attributes = json!({
             "price_version_id": event.price_version_id,
             "environment": event.environment,
