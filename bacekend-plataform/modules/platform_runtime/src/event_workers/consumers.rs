@@ -39,7 +39,7 @@ pub(super) async fn ensure_membership_consumer(
                 ack_policy: AckPolicy::Explicit,
                 ack_wait: Duration::from_secs(30),
                 max_deliver: 20,
-                max_ack_pending: 64,
+                max_ack_pending: 512,
                 ..Default::default()
             },
         )
@@ -62,7 +62,7 @@ pub(super) async fn ensure_billing_usage_consumer(
                 ack_policy: AckPolicy::Explicit,
                 ack_wait: Duration::from_secs(30),
                 max_deliver: 20,
-                max_ack_pending: 512,
+                max_ack_pending: 64,
                 ..Default::default()
             },
         )
