@@ -322,9 +322,8 @@ mod tests {
             "payload": {"attempt_id":"f1bb8f4a-5c2e-4c8a-b0b5-0fb2f6d6f54c"}
         });
         let canonical = serde_json::to_vec(&envelope).expect("canonical event");
-        let signature = hex_upper(
-            hmac::sign(&hmac::Key::new(hmac::HMAC_SHA256, &key), &canonical).as_ref(),
-        );
+        let signature =
+            hex_upper(hmac::sign(&hmac::Key::new(hmac::HMAC_SHA256, &key), &canonical).as_ref());
         envelope["producer_auth"] = json!({
             "key_id": "platform-gateway-v1",
             "signature": signature
