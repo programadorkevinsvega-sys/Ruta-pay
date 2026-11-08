@@ -1,6 +1,6 @@
 use async_nats::jetstream::{self, Context};
 use platform_payments::infrastructure::{
-    outbox_relay,
+    outbox_relay::{self, GatewayRequestSigningConfig},
     persistence::{claim_outbox_events, extend_outbox_lease, mark_outbox_published},
 };
 use platform_runtime::event_topology::{EventTopology, delete_e2e_stream};
@@ -268,10 +268,18 @@ async fn lifecycle_outbox_event_types_are_acknowledged_by_real_jetstream() {
         .await
         .expect("stream accepts the lifecycle event subject namespace");
 
-    let delivered =
-        outbox_relay::relay_batch(&database.runtime_pool, &jetstream, &topology.subject_prefix)
-            .await
-            .expect("relay publishes all lifecycle events to JetStream");
+    let signing_config = Ok(
+        GatewayRequestSigningConfig::new(vec![7_u8; 32], "platform-gateway-ci".to_owned())
+            .expect("CI gateway request signing key is valid"),
+    );
+    let delivered = outbox_relay::relay_batch_with_signing_config(
+        &database.runtime_pool,
+        &jetstream,
+        &topology.subject_prefix,
+        &signing_config,
+    )
+    .await
+    .expect("relay publishes all lifecycle events to JetStream");
     assert_eq!(delivered, event_types.len());
 
     let published: i64 = sqlx::query_scalar(
