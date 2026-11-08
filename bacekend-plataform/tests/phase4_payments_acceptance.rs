@@ -1,3 +1,5 @@
+#[path = "phase4_payments_acceptance/billing_jetstream.rs"]
+mod billing_jetstream_acceptance;
 #[path = "phase4_payments_acceptance/billing.rs"]
 mod billing_acceptance;
 #[path = "phase4_payments_acceptance/database.rs"]
