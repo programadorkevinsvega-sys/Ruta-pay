@@ -119,7 +119,7 @@ pub async fn transition_attempt(
         tx.commit().await?;
         return Ok(false);
     }
-    let version: i64 = row.try_get("aggregate_version")? + 1;
+    let version = row.try_get::<i64, _>("aggregate_version")? + 1_i64;
     let changed=sqlx::query("UPDATE platform_billing.collection_attempts SET status=$3,provider_reference=COALESCE(provider_reference,$4) WHERE tenant_id=$1 AND id=$2")
         .bind(tenant).bind(attempt_id).bind(next_status).bind(provider_reference)
         .execute(&mut *tx).await?;
