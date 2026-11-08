@@ -56,3 +56,19 @@ El módulo aplica Row Level Security (RLS) mediante el contexto transaccional `a
 - Backpressure cuando el pool está ocupado, CPU está limitada o memoria se aproxima al límite.
 - Medición separada de queue wait, pool acquire, SQL, commit y ACK.
 - Benchmark reproducible con límites de CPU/memoria documentados, varias réplicas y PostgreSQL/NATS reales.
+
+
+## Estado de implementación y observabilidad
+
+La implementación inicial en la rama del PR introduce:
+
+- Fetch JetStream finito con límites configurables de mensajes, bytes y expiración; la admisión reduce el tamaño cuando disminuyen las conexiones PostgreSQL ociosas.
+- Lectura de límites cgroup v2 `cpu.max`, `memory.current` y `memory.max` para reducir el tamaño del lote bajo presión. El valor se vuelve a evaluar antes de cada fetch.
+- Agrupación de los mensajes válidos por tenant y una transacción por grupo. La configuración RLS se aplica una sola vez por transacción.
+- Inserción set-based de Inbox y usage, validación de conflictos de idempotencia y actualización de Inbox a `processed` dentro de esa transacción.
+- ACK individual posterior al commit del grupo; ante error de persistencia, NAK con demora para permitir redelivery.
+- Histogramas separados para antigüedad desde publicación hasta procesamiento, espera de fetch, adquisición de conexión, SQL, commit y ACK; contadores de errores de fetch, stream y ACK.
+
+La antigüedad desde publicación usa el timestamp de JetStream y no debe confundirse con duración SQL. El tiempo de fetch es una métrica distinta de la espera del mensaje en el stream.
+
+La suite de aceptación de carga ya ejercita dos réplicas, distribución entre tenants, duplicados y recuperación tras indisponibilidad de PostgreSQL. Se agregan además pruebas unitarias de rechazo temprano para lotes multi-tenant y tamaños superiores al límite. El cierre de la decisión requiere CI verde sobre el HEAD final y un benchmark en recursos CPU/memoria realmente limitados; no se afirma aún que se haya alcanzado 20.000 eventos/s.

@@ -1,7 +1,9 @@
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use sqlx::{QueryBuilder, Row, Postgres};
+use metrics::histogram;
+use sqlx::{Connection, QueryBuilder, Row, Postgres};
+use std::time::Instant;
 use uuid::Uuid;
 
 use super::{BillingError, BillingService};
@@ -28,7 +30,6 @@ pub struct UsageBatchEvent {
 pub enum UsageBatchDisposition {
     Processed,
     DuplicateProcessed,
-    DuplicateUsage,
 }
 
 impl BillingService {
@@ -63,7 +64,12 @@ impl BillingService {
                 .map(|bytes| <[u8; 32]>::from(Sha256::digest(bytes)))
                 .map_err(|_| BillingError::InvalidCommand)
         }).collect::<Result<Vec<_>, _>>()?;
-        let mut tx = self.pool.begin().await?;
+        let acquire_started = Instant::now();
+        let mut connection = self.pool.acquire().await?;
+        histogram!("platform_billing_usage_pool_acquire_seconds")
+            .record(acquire_started.elapsed().as_secs_f64());
+        let mut tx = connection.begin().await?;
+        let sql_started = Instant::now();
         set_tenant_context(&mut tx, tenant_id).await?;
 
         let mut inbox_insert = QueryBuilder::<Postgres>::new(
@@ -144,7 +150,66 @@ impl BillingService {
             mark.build().execute(&mut *tx).await?;
         }
 
+        histogram!("platform_billing_usage_sql_seconds")
+            .record(sql_started.elapsed().as_secs_f64());
+        let commit_started = Instant::now();
         tx.commit().await?;
+        histogram!("platform_billing_usage_commit_seconds")
+            .record(commit_started.elapsed().as_secs_f64());
         Ok(dispositions)
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::postgres::PgPoolOptions;
+
+    fn event(tenant_id: Uuid) -> UsageBatchEvent {
+        let now = Utc::now();
+        UsageBatchEvent {
+            tenant_id,
+            producer: "entitlements_quotas".to_owned(),
+            event_id: Uuid::new_v4(),
+            event_type: "billing.usage.recorded".to_owned(),
+            schema_version: 1,
+            payload: serde_json::json!({"event":"usage"}),
+            source_system: "entitlements_quotas".to_owned(),
+            source_event_id: Uuid::new_v4().to_string(),
+            meter_key: "api.requests".to_owned(),
+            quantity: 1,
+            unit: "request".to_owned(),
+            occurred_at: now,
+            attributes: serde_json::json!({"environment":"test"}),
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_mixed_tenant_batch_before_opening_transaction() {
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1/unused")
+            .expect("lazy pool configuration is valid");
+        let service = BillingService::new(pool);
+        let tenant_a = Uuid::new_v4();
+        let tenant_b = Uuid::new_v4();
+        let events = [event(tenant_a), event(tenant_b)];
+
+        let result = service.record_usage_batch_for_tenant(tenant_a, &events).await;
+        assert!(matches!(result, Err(BillingError::InvalidCommand)));
+    }
+
+    #[tokio::test]
+    async fn rejects_batches_over_the_hard_memory_bound_before_database_access() {
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1/unused")
+            .expect("lazy pool configuration is valid");
+        let service = BillingService::new(pool);
+        let tenant_id = Uuid::new_v4();
+        let event = event(tenant_id);
+        let events = vec![event; 513];
+
+        let result = service.record_usage_batch_for_tenant(tenant_id, &events).await;
+        assert!(matches!(result, Err(BillingError::InvalidCommand)));
     }
 }
