@@ -198,12 +198,12 @@ impl TestDatabase {
     pub async fn set_runtime_database_available(&self, available: bool) {
         let statement = if available {
             format!(
-                "GRANT CONNECT ON DATABASE \\"{}\\" TO \\"{}\\"",
+                "GRANT CONNECT ON DATABASE \"{}\" TO \"{}\"",
                 self.cleanup.database_name, self.cleanup.runtime_role
             )
         } else {
             format!(
-                "REVOKE CONNECT ON DATABASE \\"{}\\" FROM PUBLIC, \\"{}\\"",
+                "REVOKE CONNECT ON DATABASE \"{}\" FROM PUBLIC, \"{}\"",
                 self.cleanup.database_name, self.cleanup.runtime_role
             )
         };
