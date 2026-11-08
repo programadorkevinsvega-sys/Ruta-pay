@@ -30,10 +30,7 @@ impl GatewayRequestSigningConfig {
             || key_id.is_empty()
             || key_id.len() > 64
             || !key_id.bytes().all(|byte| {
-                byte.is_ascii_lowercase()
-                    || byte.is_ascii_digit()
-                    || byte == b'-'
-                    || byte == b'_'
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'_'
             })
         {
             return Err("gateway_request_signing_configuration_invalid");
