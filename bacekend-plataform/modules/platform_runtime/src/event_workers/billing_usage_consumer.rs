@@ -1,5 +1,6 @@
 use async_nats::jetstream;
 use metrics::counter;
+use platform_billing::application::BillingService;
 use sqlx::PgPool;
 use std::{
     env,
