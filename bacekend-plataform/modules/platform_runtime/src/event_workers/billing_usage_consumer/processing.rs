@@ -1,3 +1,53 @@
+use async_nats::jetstream;
+use metrics::{counter, histogram};
+use platform_billing::{
+    application::{BillingError, BillingService, RecordUsage},
+    infrastructure::inbox::{self, InboxDisposition},
+};
+use serde_json::json;
+use sqlx::PgPool;
+use std::time::{Duration, Instant};
+use uuid::Uuid;
+use tracing::Instrument;
+
+const EVENT_TYPE: &str = "billing.usage.recorded";
+const PRODUCER: &str = "entitlements_quotas";
+
+mod parser;
+use parser::{parse_event, UsageEvent};
+
+pub(super) async fn process_message(
+    message: jetstream::Message,
+    service: &BillingService,
+    pool: &PgPool,
+) {
+    let _timer = UsageProcessingTimer(Instant::now());
+    let event = match parse_event(&message.payload) {
+        Ok(event) => event,
+        Err(()) => {
+            counter!("platform_billing_usage_events_total", "outcome" => "invalid").increment(1);
+            tracing::warn!(
+                event.name = "billing.usage.event.rejected",
+                component = "platform_billing",
+                operation = "parse_billable_usage",
+                error_code = "billing_usage_event_invalid",
+                error_category = "contract",
+                retryable = false
+            );
+            term_message(&message, None, None).await;
+            return;
+        }
+    };
+    let span = tracing::info_span!(
+        "billing_usage.process",
+        event_id = %event.event_id,
+        correlation_id = %event.correlation_id
+    );
+    process_valid_message(message, service, pool, event)
+        .instrument(span)
+        .await;
+}
+
 async fn process_valid_message(
     message: jetstream::Message,
     service: &BillingService,

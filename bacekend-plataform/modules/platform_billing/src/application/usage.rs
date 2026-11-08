@@ -7,13 +7,13 @@ use uuid::Uuid;
 use super::{BillingError, BillingService, RecordUsage};
 use crate::infrastructure::persistence::set_tenant_context;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UsageInboxResult {
     Processed { duplicate_usage: bool },
     DuplicateProcessed,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsageSummary {
     pub tenant_id: Uuid,
     pub meter_key: String,
@@ -132,7 +132,7 @@ impl BillingService {
             row.try_get::<Uuid, _>("id")?
         };
 
-        let (usage_id, duplicate_usage) = insert_usage(&mut tx, &command, occurred_at).await?;
+        let (_usage_id, duplicate_usage) = insert_usage(&mut tx, &command, occurred_at).await?;
         let marked = sqlx::query("UPDATE platform_billing.inbox_events SET disposition='processed',processed_at=COALESCE(processed_at,now()) WHERE tenant_id=$1 AND id=$2 AND disposition='received'")
             .bind(command.tenant_id)
             .bind(inbox_id)
@@ -142,7 +142,6 @@ impl BillingService {
             return Err(BillingError::InvalidCommand);
         }
         tx.commit().await?;
-        let _ = usage_id;
         Ok(UsageInboxResult::Processed { duplicate_usage })
     }
 
