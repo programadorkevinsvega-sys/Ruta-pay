@@ -121,6 +121,10 @@ impl TestDatabase {
             .run(&migration_pool)
             .await
             .expect("payments migrations apply");
+        platform_billing::infrastructure::persistence::MIGRATOR
+            .run(&migration_pool)
+            .await
+            .expect("platform billing migrations apply");
 
         sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
             "CREATE ROLE \"{runtime_role}\" LOGIN PASSWORD '{runtime_password}'"
@@ -135,7 +139,7 @@ impl TestDatabase {
         .await
         .expect("runtime role receives database connect");
         sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
-            "GRANT USAGE ON SCHEMA identity_access,tenant_registry,realtime,catalog_pricing,entitlements_quotas,payments TO \"{runtime_role}\""
+            "GRANT USAGE ON SCHEMA identity_access,tenant_registry,realtime,catalog_pricing,entitlements_quotas,payments,platform_billing TO \"{runtime_role}\""
         )))
         .execute(&migration_pool)
         .await
