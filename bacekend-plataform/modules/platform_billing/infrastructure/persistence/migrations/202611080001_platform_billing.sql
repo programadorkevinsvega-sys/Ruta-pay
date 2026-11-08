@@ -43,7 +43,7 @@ CREATE TABLE platform_billing.invoices (
       (status='draft' AND issued_at IS NULL AND snapshot IS NULL AND snapshot_sha256 IS NULL AND snapshot_version IS NULL)
       OR
       (status IN ('issued','voided') AND issued_at IS NOT NULL AND snapshot IS NOT NULL
-       AND jsonb_typeof(snapshot)='object' AND octet_length(snapshot_sha256)=32 AND snapshot_version > 0)
+       AND jsonb_typeof(snapshot)='object' AND snapshot_sha256 IS NOT NULL AND octet_length(snapshot_sha256)=32 AND snapshot_version IS NOT NULL AND snapshot_version > 0)
     )
 );
 CREATE INDEX invoices_tenant_period_idx ON platform_billing.invoices(tenant_id,period_start DESC);
@@ -134,14 +134,37 @@ CREATE TRIGGER ledger_entries_immutable
     BEFORE UPDATE OR DELETE ON platform_billing.ledger_entries
     FOR EACH ROW EXECUTE FUNCTION platform_billing.reject_financial_mutation();
 CREATE FUNCTION platform_billing.protect_issued_invoice()
-RETURNS trigger LANGUAGE plpgsql AS $$
+RETURNS trigger LANGUAGE plpgsql AS $
 BEGIN
-    IF OLD.status IN ('issued','voided') THEN
-        RAISE EXCEPTION 'issued invoice is immutable; use a compensating operation'
+    IF TG_OP='DELETE' THEN
+        IF OLD.status IN ('issued','voided') THEN
+            RAISE EXCEPTION 'issued invoice is immutable; use a compensating operation'
+                USING ERRCODE='55000';
+        END IF;
+        RETURN OLD;
+    END IF;
+    IF OLD.status IN ('issued','voided') AND (
+        NEW.tenant_id IS DISTINCT FROM OLD.tenant_id OR
+        NEW.invoice_number IS DISTINCT FROM OLD.invoice_number OR
+        NEW.currency IS DISTINCT FROM OLD.currency OR
+        NEW.period_start IS DISTINCT FROM OLD.period_start OR
+        NEW.period_end IS DISTINCT FROM OLD.period_end OR
+        NEW.issued_at IS DISTINCT FROM OLD.issued_at OR
+        NEW.subtotal_minor IS DISTINCT FROM OLD.subtotal_minor OR
+        NEW.total_minor IS DISTINCT FROM OLD.total_minor OR
+        NEW.snapshot_version IS DISTINCT FROM OLD.snapshot_version OR
+        NEW.snapshot IS DISTINCT FROM OLD.snapshot OR
+        NEW.snapshot_sha256 IS DISTINCT FROM OLD.snapshot_sha256
+    ) THEN
+        RAISE EXCEPTION 'issued invoice financial content is immutable'
+            USING ERRCODE='55000';
+    END IF;
+    IF OLD.status='voided' AND NEW.status<>'voided' THEN
+        RAISE EXCEPTION 'voided invoice cannot be reopened'
             USING ERRCODE='55000';
     END IF;
     RETURN NEW;
-END $$;
+END $;
 CREATE TRIGGER issued_invoice_immutable
     BEFORE UPDATE OR DELETE ON platform_billing.invoices
     FOR EACH ROW EXECUTE FUNCTION platform_billing.protect_issued_invoice();
