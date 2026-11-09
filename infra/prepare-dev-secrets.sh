@@ -109,12 +109,39 @@ ensure_value NATS_USER payvia_dev
 printf '%s' "${platform_metrics_token}" > "${secret_dir}/platform_metrics_token"
 printf '%s' "${pasarela_metrics_token}" > "${secret_dir}/pasarela_metrics_token"
 cat > "${secret_dir}/redis.conf" <<EOF
+bind 0.0.0.0
+protected-mode yes
+port 6379
+tcp-backlog 4096
+timeout 0
+tcp-keepalive 60
+maxclients 20000
+io-threads 4
+io-threads-do-reads yes
+hz 50
+dynamic-hz yes
 appendonly yes
+appendfsync everysec
+no-appendfsync-on-rewrite yes
+aof-use-rdb-preamble yes
+aof-rewrite-incremental-fsync yes
+rdb-save-incremental-fsync yes
+lazyfree-lazy-eviction yes
+lazyfree-lazy-expire yes
+lazyfree-lazy-server-del yes
+maxmemory-policy noeviction
 requirepass ${redis_password}
 EOF
 cat > "${secret_dir}/nats-server.conf" <<EOF
 port: 4222
 http_port: 8222
+max_connections: 10000
+max_payload: 1048576
+max_pending: 67108864
+max_control_line: 4096
+write_deadline: "10s"
+ping_interval: "2m"
+max_outstanding_pings: 5
 authorization {
   users = [
     { user: "${NATS_USER}", password: "${nats_password}" }
@@ -133,6 +160,8 @@ accounts {
 system_account: SYS
 jetstream {
   store_dir: "/data"
+  max_mem_store: 536870912
+  max_file_store: 21474836480
 }
 EOF
 chmod 600 "${env_file}"
