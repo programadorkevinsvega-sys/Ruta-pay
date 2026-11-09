@@ -105,6 +105,7 @@ ensure_secret NATS_SURVEYOR_PASSWORD
 ensure_value NATS_SURVEYOR_HTTP_USER payvia_scraper
 ensure_secret NATS_SURVEYOR_HTTP_PASSWORD
 ensure_value NATS_USER payvia_dev
+ensure_value REDIS_MAXMEMORY 2gb
 
 printf '%s' "${platform_metrics_token}" > "${secret_dir}/platform_metrics_token"
 printf '%s' "${pasarela_metrics_token}" > "${secret_dir}/pasarela_metrics_token"
@@ -129,6 +130,7 @@ rdb-save-incremental-fsync yes
 lazyfree-lazy-eviction yes
 lazyfree-lazy-expire yes
 lazyfree-lazy-server-del yes
+maxmemory ${REDIS_MAXMEMORY}
 maxmemory-policy noeviction
 requirepass ${redis_password}
 EOF
