@@ -129,7 +129,9 @@ services:
     image: natsio/prometheus-nats-exporter:0.17.3
     restart: unless-stopped
     command: ["-varz", "-connz", "-subz", "-routez", "-gatewayz", "-leafz", "-jsz=all", "http://nats:8222"]
-    depends_on: [nats]
+    depends_on:
+      nats:
+        condition: service_healthy
     networks: [messaging, monitoring]
 
   nats-surveyor:
@@ -144,7 +146,9 @@ services:
       NATS_SURVEYOR_JSZ_LEADERS_ONLY: "true"
       NATS_SURVEYOR_HTTP_USER: ${NATS_SURVEYOR_HTTP_USER:?run infra/prepare-dev-secrets.sh first}
       NATS_SURVEYOR_HTTP_PASS: ${NATS_SURVEYOR_HTTP_PASSWORD:?run infra/prepare-dev-secrets.sh first}
-    depends_on: [nats]
+    depends_on:
+      nats:
+        condition: service_healthy
     networks: [messaging, monitoring]
 
   pgadmin:
