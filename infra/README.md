@@ -48,7 +48,7 @@ Requisitos: Docker Engine con el plugin Compose, Bash y OpenSSL. `infra/prepare-
 ```bash
 ./infra/prepare-dev-secrets.sh
 docker compose --env-file bacekend-plataform/.env config --quiet
-docker compose --env-file bacekend-plataform/.env up -d
+docker compose --env-file bacekend-plataform/.env up -d --wait
 ```
 
 El último comando inicia servicios persistentes de desarrollo. No se ejecuta automáticamente como parte de los cambios de código. Para detener servicios sin borrar datos:
