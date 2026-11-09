@@ -77,6 +77,8 @@ Sentry es un destino externo y no forma parte de este Compose local. Cada backen
 
 Esta pila es una base reproducible de desarrollo, no una receta de producción. En producción, instala el plano de datos/observabilidad en hosts controlados, redes privadas y endpoints cifrados; usa TLS/mTLS según el límite de confianza, secretos gestionados y rotables, autenticación delante de Grafana/Loki/Tempo, retención/backups probados, control de acceso y alertas hacia un destino operativo. Configura cada backend por separado en su VM/VPS. No agregues bins de aplicación a este Compose ni publiques puertos de administración a Internet.
 
+La configuración del Vault compartido y sus procedimientos de operación están en [infra/production/vault/README.md](./production/vault/README.md).
+
 ## Límites actuales
 
 El Collector acepta OTLP traces/metrics/logs. La biblioteca `crates/observability` usa el [appender oficial de OpenTelemetry para `tracing`](https://docs.rs/opentelemetry-appender-tracing/0.33.0/opentelemetry_appender_tracing/) y exporta spans/logs por lotes OTLP cuando `OTEL_EXPORTER_OTLP_ENDPOINT` está configurado; los logs JSON en stdout siguen activos como destino local de respaldo. La aplicación no está agregada como contenedor; su target Prometheus local usa `platform.yml`. La imagen del Collector usa la distribución oficial publicada en [GHCR](https://opentelemetry.io/docs/collector/install/docker/), ya que el tag fijado no estaba disponible en Docker Hub. La recepción real por Loki, Tempo y Prometheus se valida en [la aceptación de Fase 1](../bacekend-plataform/docs/phase-1/acceptance.md); Sentry Cloud requiere un DSN de proyecto separado y no forma parte de este Compose.

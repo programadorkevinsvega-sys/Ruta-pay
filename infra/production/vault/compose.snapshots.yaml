@@ -1,0 +1,100 @@
+services:
+  vault-snapshot-agent:
+    image: hashicorp/vault:2.2.1@sha256:962a92876e168d68eaaa24b0b8b49bbce1cb63024060a67bba95cd158a366fc2
+    container_name: shared-vault-snapshot-agent
+    restart: unless-stopped
+    network_mode: host
+    entrypoint:
+      - vault
+    env_file:
+      - /etc/vault/vault.env
+    environment:
+      VAULT_ADDR: ${VAULT_API_ADDR:?set VAULT_API_ADDR}
+    command:
+      - agent
+      - -config=/vault/config/snapshot-agent.hcl
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    ulimits:
+      core:
+        soft: 0
+        hard: 0
+    volumes:
+      - ./snapshot-agent.hcl:/vault/config/snapshot-agent.hcl:ro
+      - ${VAULT_SNAPSHOT_ROLE_ID_FILE:?set VAULT_SNAPSHOT_ROLE_ID_FILE}:/run/vault-credentials/role_id:ro
+      - ${VAULT_SNAPSHOT_SECRET_ID_FILE:?set VAULT_SNAPSHOT_SECRET_ID_FILE}:/run/vault-credentials/secret_id:ro
+      - /run/vault-agent:/run/vault-agent
+    depends_on:
+      vault:
+        condition: service_started
+    stop_grace_period: 30s
+    cpus: 0.1
+    mem_limit: 96m
+    pids_limit: 64
+    logging:
+      driver: local
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  vault-snapshotter:
+    image: hashicorp/vault:2.2.1@sha256:962a92876e168d68eaaa24b0b8b49bbce1cb63024060a67bba95cd158a366fc2
+    container_name: shared-vault-snapshotter
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - /etc/vault/vault.env
+    environment:
+      VAULT_ADDR: ${VAULT_API_ADDR:?set VAULT_API_ADDR}
+      VAULT_SNAPSHOT_INTERVAL_SECONDS: ${VAULT_SNAPSHOT_INTERVAL_SECONDS:-21600}
+      VAULT_SNAPSHOT_RETENTION_DAYS: ${VAULT_SNAPSHOT_RETENTION_DAYS:-14}
+    entrypoint:
+      - /bin/sh
+      - -ec
+    command:
+      - |
+        while :; do
+          until [ -s /run/vault-agent/token ]; do
+            sleep 30
+          done
+          snapshot="/opt/vault/snapshots/raft-$$(date -u +%Y%m%dT%H%M%SZ).snap"
+          if VAULT_TOKEN="$$(cat /run/vault-agent/token)" vault operator raft snapshot save "$$snapshot"; then
+            find /opt/vault/snapshots -type f -name 'raft-*.snap' -mtime "+$${VAULT_SNAPSHOT_RETENTION_DAYS}" -delete
+          else
+            printf '%s\n' "Vault Raft snapshot failed; next retry in 5 minutes." >&2
+            sleep 300
+            continue
+          fi
+          sleep "$${VAULT_SNAPSHOT_INTERVAL_SECONDS}"
+        done
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    ulimits:
+      core:
+        soft: 0
+        hard: 0
+    volumes:
+      - /opt/vault/snapshots:/opt/vault/snapshots
+      - /run/vault-agent:/run/vault-agent:ro
+    depends_on:
+      vault-snapshot-agent:
+        condition: service_started
+    stop_grace_period: 30s
+    cpus: 0.1
+    mem_limit: 96m
+    pids_limit: 64
+    logging:
+      driver: local
+      options:
+        max-size: "5m"
+        max-file: "3"
