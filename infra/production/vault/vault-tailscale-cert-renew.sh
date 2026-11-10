@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-domain="interserver-vault.tail4eafc5.ts.net"
+domain="vault.example.invalid"
 certificate_dir="/opt/vault/tls"
 temporary_dir="$(mktemp -d "${certificate_dir}/.renew.XXXXXX")"
 

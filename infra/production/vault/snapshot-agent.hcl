@@ -1,5 +1,5 @@
 vault {
-  address = "https://interserver-vault.tail4eafc5.ts.net:8200"
+  address = "https://vault.example.invalid:8200"
 }
 
 auto_auth {

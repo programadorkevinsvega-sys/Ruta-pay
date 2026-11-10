@@ -1,7 +1,7 @@
 ui = true
 disable_mlock = true
 
-api_addr = "https://interserver-vault.tail4eafc5.ts.net:8200"
+api_addr = "https://vault.example.invalid:8200"
 cluster_addr = "https://100.110.114.7:8201"
 cluster_name = "shared-vault"
 

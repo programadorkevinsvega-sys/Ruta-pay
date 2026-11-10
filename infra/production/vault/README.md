@@ -2,6 +2,8 @@
 
 This component deploys one HashiCorp Vault server for Payvia and other applications. It uses Vault Integrated Storage (Raft) on a single VM, listens only on that VM's Tailscale address, and exposes the UI and API on the same HTTPS port. This is a single-node deployment, not high availability.
 
+Addresses in `192.0.2.0/24` and `vault.example.invalid` are documentation placeholders. Replace them with the deployment's private addresses and Tailscale DNS name in the private copy before running any commands; do not commit those live values.
+
 ## Security and operations
 
 - Keep UFW default-deny for inbound traffic. Permit TCP/8200 only on `tailscale0` from the Tailnet; do not expose it on the public interface. Port 8201 is not opened for this single-node setup.
@@ -37,7 +39,7 @@ sudo docker compose --env-file /etc/vault/vault.env \
 Allow only the Tailnet listener and start Vault:
 
 ```bash
-sudo ufw allow in on tailscale0 from 100.64.0.0/10 \
+sudo ufw allow in on tailscale0 from 192.0.2.0/10 \
   to 100.110.114.7 port 8200 proto tcp
 sudo ufw status numbered
 sudo docker compose --env-file /etc/vault/vault.env \
@@ -67,7 +69,7 @@ It enables the local file audit device, `userpass`, AppRole, operator/snapshot p
 Create a named human account from a workstation connected to Tailscale with Vault CLI installed and TLS verification enabled:
 
 ```bash
-export VAULT_ADDR=https://interserver-vault.tail4eafc5.ts.net:8200
+export VAULT_ADDR=https://vault.example.invalid:8200
 ./create-ui-user.sh
 ```
 
@@ -115,7 +117,7 @@ Verify the service result, active timer, certificate hostname/expiry, and file o
 From an authorized administrative workstation, provision one app at a time:
 
 ```bash
-export VAULT_ADDR=https://interserver-vault.tail4eafc5.ts.net:8200
+export VAULT_ADDR=https://vault.example.invalid:8200
 ./provision-app.sh <app-slug> <secure-output-directory>
 ```
 
