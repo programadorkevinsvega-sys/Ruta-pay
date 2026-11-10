@@ -1,0 +1,10 @@
+[Unit]
+Description=Renew the Vault Tailscale TLS certificate
+After=tailscaled.service docker.service
+Requires=tailscaled.service docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/vault-tailscale-cert-renew
+UMask=0077
+LimitCORE=0

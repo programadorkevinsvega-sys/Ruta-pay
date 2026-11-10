@@ -1,0 +1,45 @@
+name: shared-vault
+
+services:
+  vault:
+    image: hashicorp/vault:2.2.1@sha256:962a92876e168d68eaaa24b0b8b49bbce1cb63024060a67bba95cd158a366fc2
+    container_name: shared-vault
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - /etc/vault/vault.env
+    environment:
+      VAULT_ADDR: ${VAULT_API_ADDR:?set VAULT_API_ADDR}
+    command:
+      - server
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    ulimits:
+      core:
+        soft: 0
+        hard: 0
+    volumes:
+      - /etc/vault/config/vault.hcl:/vault/config/vault.hcl:ro
+      - ./bootstrap.sh:/vault/config/bootstrap.sh:ro
+      - ./policies/vault-operator.hcl:/vault/config/policies/vault-operator.hcl:ro
+      - ./policies/vault-snapshot.hcl:/vault/config/policies/vault-snapshot.hcl:ro
+      - /opt/vault/data:/opt/vault/data
+      - /opt/vault/audit:/opt/vault/audit
+      - /opt/vault/pki:/opt/vault/pki
+      - /opt/vault/snapshot-agent:/opt/vault/snapshot-agent
+      - /opt/vault/snapshots:/opt/vault/snapshots
+      - /opt/vault/tls:/opt/vault/tls:ro
+    stop_grace_period: 60s
+    cpus: 0.8
+    mem_limit: 850m
+    pids_limit: 128
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "5"
