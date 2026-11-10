@@ -9,6 +9,42 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:?run infra/prepare-dev-secrets.sh first}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run infra/prepare-dev-secrets.sh first}
       POSTGRES_EXPORTER_PASSWORD: ${POSTGRES_EXPORTER_PASSWORD:?run infra/prepare-dev-secrets.sh first}
+    command:
+      - postgres
+      - -c
+      - max_connections=${PG_MAX_CONNECTIONS:-200}
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-1GB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-4GB}
+      - -c
+      - work_mem=${PG_WORK_MEM:-8MB}
+      - -c
+      - maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-256MB}
+      - -c
+      - wal_buffers=16MB
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - max_wal_size=4GB
+      - -c
+      - min_wal_size=1GB
+      - -c
+      - max_worker_processes=8
+      - -c
+      - max_parallel_workers=4
+      - -c
+      - max_parallel_workers_per_gather=2
+      - -c
+      - max_parallel_maintenance_workers=2
+      - -c
+      - jit=off
+    shm_size: 1gb
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    stop_grace_period: 1m
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
@@ -29,6 +65,13 @@ services:
     volumes:
       - redis_data:/data
       - ./infra/.local/secrets/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    sysctls:
+      net.core.somaxconn: "4096"
+    stop_grace_period: 30s
     networks: [data, redis_admin]
     healthcheck:
       test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(awk '$$1 == \"requirepass\" {print $$2}' /usr/local/etc/redis/redis.conf)\" redis-cli ping | grep -q PONG"]
@@ -44,7 +87,20 @@ services:
     volumes:
       - nats_data:/data
       - ./infra/.local/secrets/nats-server.conf:/etc/nats/nats-server.conf:ro
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    sysctls:
+      net.core.somaxconn: "4096"
+    stop_grace_period: 30s
     networks: [messaging]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8222/healthz | grep -q 'ok'"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
 
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.20.1
@@ -73,7 +129,9 @@ services:
     image: natsio/prometheus-nats-exporter:0.17.3
     restart: unless-stopped
     command: ["-varz", "-connz", "-subz", "-routez", "-gatewayz", "-leafz", "-jsz=all", "http://nats:8222"]
-    depends_on: [nats]
+    depends_on:
+      nats:
+        condition: service_healthy
     networks: [messaging, monitoring]
 
   nats-surveyor:
@@ -88,7 +146,9 @@ services:
       NATS_SURVEYOR_JSZ_LEADERS_ONLY: "true"
       NATS_SURVEYOR_HTTP_USER: ${NATS_SURVEYOR_HTTP_USER:?run infra/prepare-dev-secrets.sh first}
       NATS_SURVEYOR_HTTP_PASS: ${NATS_SURVEYOR_HTTP_PASSWORD:?run infra/prepare-dev-secrets.sh first}
-    depends_on: [nats]
+    depends_on:
+      nats:
+        condition: service_healthy
     networks: [messaging, monitoring]
 
   pgadmin:
@@ -176,6 +236,22 @@ services:
     depends_on: [postgres-exporter, redis-exporter, nats-exporter, nats-surveyor, node-exporter, otel-collector]
     networks: [monitoring]
 
+  alertmanager:
+    image: prom/alertmanager:v0.34.2
+    restart: unless-stopped
+    profiles: [notifications]
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    ports:
+      - "127.0.0.1:9093:9093"
+    volumes:
+      - ./infra/prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./infra/.local/secrets/telegram_bot_token:/run/secrets/telegram_bot_token:ro
+      - ./infra/.local/secrets/telegram_chat_id:/run/secrets/telegram_chat_id:ro
+      - alertmanager_data:/alertmanager
+    networks: [monitoring]
+
   loki:
     image: grafana/loki:3.7.7
     restart: unless-stopped
@@ -234,6 +310,7 @@ volumes:
   grafana_data:
   pgadmin_data:
   redisinsight_data:
+  alertmanager_data:
 
 networks:
   data:

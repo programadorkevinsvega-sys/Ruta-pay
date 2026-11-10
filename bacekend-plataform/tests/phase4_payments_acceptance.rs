@@ -1,7 +1,13 @@
+#[path = "phase4_payments_acceptance/billing.rs"]
+mod billing_acceptance;
+#[path = "phase4_payments_acceptance/billing_jetstream.rs"]
+mod billing_jetstream_acceptance;
 #[path = "phase4_payments_acceptance/database.rs"]
 mod database;
 #[path = "phase4_payments_acceptance/jetstream.rs"]
 mod jetstream_acceptance;
+#[path = "phase4_payments_acceptance/lifecycle_persistence.rs"]
+mod lifecycle_persistence;
 #[path = "phase4_payments_acceptance/outbox_resilience.rs"]
 mod outbox_resilience_acceptance;
 
@@ -271,3 +277,6 @@ async fn invalid_payment_intents_are_rejected_before_any_business_write() {
 async fn payment_intent_outbox_is_published_deduplicated_and_recoverable_in_realtime() {
     jetstream_acceptance::verify().await;
 }
+
+#[path = "phase4_payments_acceptance/lifecycle_operations.rs"]
+mod lifecycle_operations;

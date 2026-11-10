@@ -59,6 +59,7 @@ impl Drop for AcceptanceDatabaseCleanup {
 pub struct TestDatabase {
     pub migration_pool: sqlx::PgPool,
     pub runtime_pool: sqlx::PgPool,
+    runtime_url: String,
     cleanup: AcceptanceDatabaseCleanup,
 }
 
@@ -121,6 +122,10 @@ impl TestDatabase {
             .run(&migration_pool)
             .await
             .expect("payments migrations apply");
+        platform_billing::infrastructure::persistence::MIGRATOR
+            .run(&migration_pool)
+            .await
+            .expect("platform billing migrations apply");
 
         sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
             "CREATE ROLE \"{runtime_role}\" LOGIN PASSWORD '{runtime_password}'"
@@ -135,19 +140,19 @@ impl TestDatabase {
         .await
         .expect("runtime role receives database connect");
         sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
-            "GRANT USAGE ON SCHEMA identity_access,tenant_registry,realtime,catalog_pricing,entitlements_quotas,payments TO \"{runtime_role}\""
+            "GRANT USAGE ON SCHEMA identity_access,tenant_registry,realtime,catalog_pricing,entitlements_quotas,payments,platform_billing TO \"{runtime_role}\""
         )))
         .execute(&migration_pool)
         .await
         .expect("runtime role receives schema usage");
         sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
-            "GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA identity_access,tenant_registry,realtime,catalog_pricing,entitlements_quotas,payments TO \"{runtime_role}\""
+            "GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA identity_access,tenant_registry,realtime,catalog_pricing,entitlements_quotas,payments,platform_billing TO \"{runtime_role}\""
         )))
         .execute(&migration_pool)
         .await
         .expect("runtime role receives table privileges");
         sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
-            "GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA identity_access,tenant_registry,realtime,catalog_pricing,entitlements_quotas,payments TO \"{runtime_role}\""
+            "GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA identity_access,tenant_registry,realtime,catalog_pricing,entitlements_quotas,payments,platform_billing TO \"{runtime_role}\""
         )))
         .execute(&migration_pool)
         .await
@@ -159,10 +164,11 @@ impl TestDatabase {
         database_url
             .set_password(Some(&runtime_password))
             .expect("runtime role password is valid");
+        let runtime_url = database_url.to_string();
         let runtime_pool = PgPoolOptions::new()
             .max_connections(12)
             .acquire_timeout(StdDuration::from_secs(5))
-            .connect(database_url.as_str())
+            .connect(&runtime_url)
             .await
             .expect("restricted runtime role connects");
         let bypass_rls: bool =
@@ -175,7 +181,46 @@ impl TestDatabase {
         Self {
             migration_pool,
             runtime_pool,
+            runtime_url,
             cleanup,
+        }
+    }
+
+    pub async fn additional_runtime_pool(&self) -> sqlx::PgPool {
+        PgPoolOptions::new()
+            .max_connections(12)
+            .acquire_timeout(StdDuration::from_secs(5))
+            .connect(&self.runtime_url)
+            .await
+            .expect("additional replica pool connects with the restricted runtime role")
+    }
+
+    pub async fn set_runtime_database_available(&self, available: bool) {
+        let statement = if available {
+            format!(
+                "GRANT CONNECT ON DATABASE \"{}\" TO \"{}\"",
+                self.cleanup.database_name, self.cleanup.runtime_role
+            )
+        } else {
+            format!(
+                "REVOKE CONNECT ON DATABASE \"{}\" FROM PUBLIC, \"{}\"",
+                self.cleanup.database_name, self.cleanup.runtime_role
+            )
+        };
+        sqlx::raw_sql(sqlx::AssertSqlSafe(statement))
+            .execute(&self.cleanup.admin_pool)
+            .await
+            .expect("runtime database connectivity permission changes");
+
+        if !available {
+            sqlx::query(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1 AND usename=$2 AND pid<>pg_backend_pid()",
+            )
+            .bind(&self.cleanup.database_name)
+            .bind(&self.cleanup.runtime_role)
+            .execute(&self.cleanup.admin_pool)
+            .await
+            .expect("existing runtime database sessions are terminated");
         }
     }
 

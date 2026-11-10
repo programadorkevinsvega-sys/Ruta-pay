@@ -41,6 +41,18 @@ groups:
           summary: "Hay más de 100 solicitudes HTTP simultáneas"
           description: "Comprueba carga, límites de concurrencia y dependencias lentas."
 
+  - name: payvia-gateway
+    rules:
+      - alert: PayviaGatewayMetricsUnavailable
+        expr: absent(up{job="payvia-pasarela"} == 1)
+        for: 2m
+        labels:
+          severity: critical
+          component: gateway
+        annotations:
+          summary: "Prometheus no recibe métricas de pasarela"
+          description: "Verifica el target, GATEWAY_METRICS_ADDR y el token de scraping en la red privada."
+
   - name: shared-infrastructure
     rules:
       - alert: SharedDependencyUnavailable

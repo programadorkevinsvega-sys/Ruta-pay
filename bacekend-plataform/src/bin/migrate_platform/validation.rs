@@ -33,9 +33,27 @@ pub(super) fn valid_role_identifier(role: &str) -> bool {
         && role.len() <= 63
 }
 
+pub(super) fn validate_production_database_tls(database_url: &str) -> bool {
+    Url::parse(database_url).is_ok_and(|url| {
+        let parameters = url.query_pairs().collect::<Vec<_>>();
+        ["sslmode", "sslrootcert", "sslcert", "sslkey"]
+            .iter()
+            .all(|required| {
+                parameters
+                    .iter()
+                    .any(|(key, value)| key == required && !value.is_empty())
+            })
+            && parameters
+                .iter()
+                .any(|(key, value)| key == "sslmode" && value == "verify-full")
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{valid_role_identifier, validate_database_targets};
+    use super::{
+        valid_role_identifier, validate_database_targets, validate_production_database_tls,
+    };
 
     #[test]
     fn migration_requires_a_distinct_runtime_role_and_matching_database() {
@@ -70,5 +88,18 @@ mod tests {
         assert!(valid_role_identifier("platform_runtime"));
         assert!(!valid_role_identifier("runtime;DROP ROLE admin"));
         assert!(!valid_role_identifier(""));
+    }
+
+    #[test]
+    fn production_database_urls_require_full_server_and_client_verification() {
+        assert!(validate_production_database_tls(
+            "postgres://migration:password@db.internal/payvia?sslmode=verify-full&sslrootcert=/etc/ca.pem&sslcert=/etc/migration.crt&sslkey=/etc/migration.key"
+        ));
+        assert!(!validate_production_database_tls(
+            "postgres://migration:password@db.internal/payvia?sslmode=require&sslrootcert=/etc/ca.pem&sslcert=/etc/migration.crt&sslkey=/etc/migration.key"
+        ));
+        assert!(!validate_production_database_tls(
+            "postgres://migration:password@db.internal/payvia?sslmode=verify-full&sslrootcert=/etc/ca.pem"
+        ));
     }
 }

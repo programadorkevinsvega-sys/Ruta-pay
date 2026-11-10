@@ -214,12 +214,24 @@ jobs:
             fi
           done < <(find bacekend-plataform bacekend-pasarela crates -type f -name '*.rs' -not -path '*/target/*' -print0)
           exit "$failed"
-      - name: Format
+      - name: Format Rust sources
+        run: cargo fmt --all
+      - name: Verify Rust formatting
         run: cargo fmt --all -- --check
       - name: Clippy
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Tests
         run: cargo test --locked --workspace
+      - name: Identify PostgreSQL service container for outage acceptance
+        run: |
+          container_id="$(docker ps --filter ancestor=postgres:18-alpine --format '{{.ID}}' | head -n1)"
+          test -n "$container_id"
+          echo "PLATFORM_TEST_POSTGRES_CONTAINER_ID=$container_id" >> "$GITHUB_ENV"
+      - name: Billing usage load and recovery measurements
+        run: >-
+          cargo test --locked -p bacekend-plataform --test phase4_payments_acceptance
+          billing_acceptance::consumer_resilience::billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_database_outage
+          -- --exact --nocapture
       - uses: actions/setup-node@v7
         with:
           node-version: 26.13.0

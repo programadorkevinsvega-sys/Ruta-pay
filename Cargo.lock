@@ -243,9 +243,27 @@ dependencies = [
 name = "bacekend-pasarela"
 version = "0.1.0"
 dependencies = [
+ "async-nats",
+ "axum",
+ "base64 0.22.1",
+ "chrono",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "payvia-observability",
  "platform-contracts",
+ "reqwest 0.12.28",
+ "ring",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "subtle",
  "thiserror",
+ "tokio",
+ "tokio-stream",
  "tonic",
+ "tracing",
+ "tracing-opentelemetry",
+ "uuid",
 ]
 
 [[package]]
@@ -262,6 +280,7 @@ dependencies = [
  "opentelemetry_sdk",
  "payvia-platform-bff",
  "payvia-platform-core",
+ "platform-billing",
  "platform-catalog-pricing",
  "platform-contracts",
  "platform-entitlements-quotas",
@@ -272,6 +291,7 @@ dependencies = [
  "platform-tenant-registry",
  "redis",
  "reqwest 0.12.28",
+ "ring",
  "rpassword",
  "serde_json",
  "sha2 0.11.1",
@@ -1176,6 +1196,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower-service",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -2181,6 +2202,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
+name = "platform-billing"
+version = "0.1.0"
+dependencies = [
+ "async-nats",
+ "base64 0.22.1",
+ "chrono",
+ "metrics",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "platform-catalog-pricing"
 version = "0.1.0"
 dependencies = [
@@ -2255,10 +2294,12 @@ name = "platform-payments"
 version = "0.1.0"
 dependencies = [
  "async-nats",
+ "base64 0.22.1",
  "chrono",
  "opentelemetry",
- "platform-contracts",
  "payvia-observability",
+ "platform-contracts",
+ "ring",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -2298,10 +2339,13 @@ name = "platform-runtime"
 version = "0.1.0"
 dependencies = [
  "async-nats",
+ "base64 0.22.1",
+ "chrono",
  "metrics",
  "opentelemetry",
  "payvia-observability",
  "payvia-platform-core",
+ "platform-billing",
  "platform-catalog-pricing",
  "platform-contracts",
  "platform-entitlements-quotas",
@@ -2318,6 +2362,7 @@ dependencies = [
  "tonic",
  "tracing",
  "tracing-opentelemetry",
+ "uuid",
 ]
 
 [[package]]
@@ -2719,9 +2764,12 @@ dependencies = [
  "itoa",
  "percent-encoding",
  "pin-project-lite",
+ "rustls",
+ "rustls-native-certs",
  "ryu",
  "socket2",
  "tokio",
+ "tokio-rustls",
  "tokio-util",
  "url",
  "xxhash-rust",
@@ -2789,6 +2837,8 @@ dependencies = [
  "native-tls",
  "percent-encoding",
  "pin-project-lite",
+ "quinn",
+ "rustls",
  "rustls-pki-types",
  "serde",
  "serde_json",
@@ -2796,6 +2846,7 @@ dependencies = [
  "sync_wrapper",
  "tokio",
  "tokio-native-tls",
+ "tokio-rustls",
  "tower",
  "tower-http",
  "tower-service",
@@ -2803,6 +2854,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+ "webpki-roots",
 ]
 
 [[package]]

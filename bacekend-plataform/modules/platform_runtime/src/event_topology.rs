@@ -11,6 +11,7 @@ pub struct EventTopology {
     pub subject_prefix: String,
     pub membership_consumer: String,
     pub realtime_consumer: String,
+    pub billing_consumer: String,
 }
 
 impl EventTopology {
@@ -48,6 +49,7 @@ impl EventTopology {
             subject_prefix,
             membership_consumer: format!("PLATFORM_TENANT_OWNER_PROVISIONER{consumer_suffix}"),
             realtime_consumer: format!("PLATFORM_REALTIME_JOURNAL{consumer_suffix}"),
+            billing_consumer: format!("PLATFORM_BILLING_USAGE{consumer_suffix}"),
         })
     }
 
@@ -114,6 +116,7 @@ mod tests {
         assert_ne!(first.subject_prefix, second.subject_prefix);
         assert_ne!(first.membership_consumer, second.membership_consumer);
         assert_ne!(first.realtime_consumer, second.realtime_consumer);
+        assert_ne!(first.billing_consumer, second.billing_consumer);
         assert!(first.is_e2e());
     }
 

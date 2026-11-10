@@ -4,7 +4,7 @@ use crate::http::{
 };
 use axum::{
     Router, middleware,
-    routing::{delete, get, post},
+    routing::{delete, get, patch, post},
 };
 use platform_contracts::{
     catalog_pricing::catalog_pricing_client::CatalogPricingClient,
@@ -112,6 +112,18 @@ fn router_inner(
         .route(
             "/v1/tenants/{tenant_id}/payment-intents/{payment_intent_id}",
             get(payments::get_payment_intent),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/payment-intents/{payment_intent_id}/attempts",
+            get(payments::list_payment_attempts).post(payments::create_payment_attempt),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/payment-intents/{payment_intent_id}/transactions",
+            get(payments::list_payment_transactions),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/payment-intents/{payment_intent_id}/status",
+            patch(payments::update_payment_intent_status),
         )
         .route(
             "/v1/identity/memberships",

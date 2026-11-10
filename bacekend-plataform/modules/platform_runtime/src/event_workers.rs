@@ -1,3 +1,4 @@
+mod billing_usage_consumer;
 mod consumers;
 mod membership_consumer;
 mod realtime_consumer;
@@ -5,11 +6,14 @@ mod relays;
 
 use async_nats::{ConnectOptions, jetstream};
 use sqlx::PgPool;
-use std::{env, time::Duration};
+use std::{env, path::PathBuf, time::Duration};
 use tokio::{sync::watch, time};
 
 use self::{
-    consumers::{ensure_membership_consumer, ensure_realtime_consumer},
+    billing_usage_consumer::run_billing_usage_consumer,
+    consumers::{
+        ensure_billing_usage_consumer, ensure_membership_consumer, ensure_realtime_consumer,
+    },
     membership_consumer::run_membership_consumer,
     realtime_consumer::run_realtime_consumer,
     relays::run_relays,
@@ -18,13 +22,12 @@ use crate::event_topology::EventTopology;
 
 pub async fn run(
     pool: PgPool,
-    redis_url: String,
+    redis_client: redis::Client,
     url: String,
     username: String,
     password: String,
-    mut shutdown: watch::Receiver<bool>,
+    shutdown: watch::Receiver<bool>,
 ) {
-    let mut backoff = Duration::from_secs(1);
     let namespace = env::var("PLATFORM_EVENT_NAMESPACE").ok();
     let topology = match EventTopology::from_namespace(namespace.as_deref()) {
         Ok(topology) => topology,
@@ -40,16 +43,53 @@ pub async fn run(
             return;
         }
     };
+    run_with_topology(
+        pool,
+        redis_client,
+        url,
+        username,
+        password,
+        shutdown,
+        topology,
+    )
+    .await;
+}
+
+/// Runs a complete event runtime against an explicit, isolated topology.
+/// This also allows integration tests to exercise multiple replicas sharing
+/// the same durable JetStream consumers without mutating process environment.
+pub async fn run_with_topology(
+    pool: PgPool,
+    redis_client: redis::Client,
+    url: String,
+    username: String,
+    password: String,
+    mut shutdown: watch::Receiver<bool>,
+    topology: EventTopology,
+) {
+    let mut backoff = Duration::from_secs(1);
     loop {
-        let client = match ConnectOptions::with_user_and_password(
-            username.clone(),
-            password.clone(),
-        )
-        .connect(url.as_str())
-        .await
-        {
+        let options = match build_nats_options(username.clone(), password.clone()) {
+            Ok(options) => options,
+            Err(error_code) => {
+                tracing::error!(
+                    event.name = "service.configuration.invalid",
+                    component = "platform_event_runtime",
+                    operation = "configure_nats_mtls",
+                    error_code,
+                    error_category = "configuration",
+                    retryable = false
+                );
+                tokio::select! {
+                    result = shutdown.changed() => if result.is_err() || *shutdown.borrow() { return; },
+                    _ = time::sleep(backoff) => {}
+                }
+                continue;
+            }
+        };
+        let client = match options.connect(url.as_str()).await {
             Ok(client) => client,
-            Err(_) => {
+            Err(error) => {
                 tracing::error!(
                     event.name = "service.startup.dependency.failed",
                     component = "platform_event_runtime",
@@ -57,7 +97,8 @@ pub async fn run(
                     dependency = "nats_jetstream",
                     error_code = "nats_connect_failed",
                     error_category = "connectivity",
-                    retryable = true
+                    retryable = true,
+                    error_class = %error
                 );
                 tokio::select! {
                     result = shutdown.changed() => if result.is_err() || *shutdown.borrow() { return; },
@@ -142,19 +183,48 @@ pub async fn run(
                 continue;
             }
         };
+        let billing_subject = format!("{}.billing.usage.recorded", topology.subject_prefix);
+        let billing_consumer = match ensure_billing_usage_consumer(
+            &stream,
+            &topology.billing_consumer,
+            &billing_subject,
+        )
+        .await
+        {
+            Ok(consumer) => consumer,
+            Err(()) => {
+                tracing::error!(
+                    event.name = "service.startup.dependency.failed",
+                    component = "platform_event_runtime",
+                    operation = "ensure_billing_usage_consumer",
+                    dependency = "nats_jetstream",
+                    error_code = "jetstream_billing_consumer_unavailable",
+                    error_category = "dependency",
+                    retryable = true
+                );
+                tokio::select! {
+                    result = shutdown.changed() => if result.is_err() || *shutdown.borrow() { return; },
+                    _ = time::sleep(backoff) => {}
+                }
+                backoff = (backoff * 2).min(Duration::from_secs(30));
+                continue;
+            }
+        };
         tracing::info!(
             event.name = "service.dependency.connected",
             component = "platform_event_runtime",
             dependency = "nats_jetstream",
             stream = %topology.stream_name,
-            consumer = %topology.membership_consumer
+            consumer = %topology.membership_consumer,
+            billing_consumer = %topology.billing_consumer
         );
         let mut workers_shutdown = shutdown.clone();
         tokio::select! {
             result = workers_shutdown.changed() => if result.is_err() || *workers_shutdown.borrow() { return; },
             _ = run_relays(pool.clone(), jetstream, topology.subject_prefix.clone(), shutdown.clone()) => {},
             _ = run_membership_consumer(pool.clone(), consumer, shutdown.clone()) => {},
-            _ = run_realtime_consumer(pool.clone(), redis_url.clone(), realtime_consumer, shutdown.clone()) => {},
+            _ = run_realtime_consumer(pool.clone(), redis_client.clone(), realtime_consumer, shutdown.clone()) => {},
+            _ = run_billing_usage_consumer(pool.clone(), billing_consumer, shutdown.clone()) => {},
         }
         tracing::warn!(
             event.name = "service.dependency.worker_restarting",
@@ -163,5 +233,34 @@ pub async fn run(
             retryable = true
         );
         backoff = Duration::from_secs(1);
+    }
+}
+
+fn build_nats_options(username: String, password: String) -> Result<ConnectOptions, &'static str> {
+    let root = env::var_os("NATS_TLS_ROOT_CA").filter(|value| !value.is_empty());
+    let certificate = env::var_os("NATS_TLS_CLIENT_CERT").filter(|value| !value.is_empty());
+    let private_key = env::var_os("NATS_TLS_CLIENT_KEY").filter(|value| !value.is_empty());
+    let mapped_identity =
+        env::var("APP_ENV").is_ok_and(|value| value.eq_ignore_ascii_case("production"));
+    let required = mapped_identity
+        || env::var("PAYVIA_REQUIRE_MTLS").is_ok_and(|value| value.eq_ignore_ascii_case("true"));
+    match (root, certificate, private_key) {
+        (Some(root), Some(certificate), Some(private_key)) if mapped_identity => {
+            Ok(ConnectOptions::new()
+                .add_root_certificates(PathBuf::from(root))
+                .add_client_certificate(PathBuf::from(certificate), PathBuf::from(private_key))
+                .require_tls(true))
+        }
+        (Some(root), Some(certificate), Some(private_key)) => {
+            Ok(ConnectOptions::with_user_and_password(username, password)
+                .add_root_certificates(PathBuf::from(root))
+                .add_client_certificate(PathBuf::from(certificate), PathBuf::from(private_key))
+                .require_tls(true))
+        }
+        (None, None, None) if !required => {
+            Ok(ConnectOptions::with_user_and_password(username, password))
+        }
+        (None, None, None) => Err("platform_nats_mtls_required"),
+        _ => Err("platform_nats_mtls_configuration_incomplete"),
     }
 }

@@ -6,7 +6,8 @@ use axum::{
     response::Response,
 };
 use payvia_observability::{
-    current_span_id, current_trace_id, new_correlation_id, valid_correlation_id,
+    current_span_id, current_trace_id, new_correlation_id, start_sentry_transaction,
+    valid_correlation_id,
 };
 use payvia_platform_core::diagnostics::extract_remote_context;
 use tracing::Instrument;
@@ -45,6 +46,7 @@ pub async fn handle(mut request: Request<Body>, next: Next) -> Response {
     );
     async move {
         let started = std::time::Instant::now();
+        let sentry_transaction = start_sentry_transaction(&route, "http.server");
         let trace_id = current_trace_id();
         let span_id = current_span_id();
         metrics::gauge!("payvia_http_requests_in_flight").increment(1.0);
@@ -55,6 +57,7 @@ pub async fn handle(mut request: Request<Body>, next: Next) -> Response {
         let category = response.headers_mut().remove("x-internal-error-category").and_then(|value| value.to_str().ok().map(str::to_owned));
         let status = response.status();
         let duration = started.elapsed();
+        sentry_transaction.set_http_status(status.as_u16(), category.as_deref());
         let trace_id = current_trace_id();
         let span_id = current_span_id();
         metrics::counter!("payvia_http_requests_total", "method" => method.as_str().to_owned(), "status" => status.as_u16().to_string()).increment(1);
@@ -62,6 +65,7 @@ pub async fn handle(mut request: Request<Body>, next: Next) -> Response {
         tracing::info!(event.name = "http.request.completed", component = "platform_bff", operation = "http", http.status_code = status.as_u16(), duration_total_ms = duration.as_millis() as u64, error_code = code.as_deref().unwrap_or("none"), error_category = category.as_deref().unwrap_or("none"), correlation_id = %correlation, trace_id = %trace_id, span_id = %span_id);
         response.headers_mut().insert("x-correlation-id", HeaderValue::from_str(&correlation).unwrap_or_else(|_| HeaderValue::from_static("invalid")));
         drop(in_flight_request);
+        drop(sentry_transaction);
         response
     }.instrument(span).await
 }

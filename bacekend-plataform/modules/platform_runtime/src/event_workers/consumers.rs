@@ -46,3 +46,26 @@ pub(super) async fn ensure_membership_consumer(
         .await
         .map_err(|_| ())
 }
+
+pub(super) async fn ensure_billing_usage_consumer(
+    stream: &jetstream::stream::Stream,
+    name: &str,
+    filter_subject: &str,
+) -> Result<jetstream::consumer::PullConsumer, ()> {
+    stream
+        .get_or_create_consumer(
+            name,
+            jetstream::consumer::pull::Config {
+                durable_name: Some(name.to_owned()),
+                filter_subject: filter_subject.to_owned(),
+                deliver_policy: jetstream::consumer::DeliverPolicy::All,
+                ack_policy: AckPolicy::Explicit,
+                ack_wait: Duration::from_secs(120),
+                max_deliver: -1,
+                max_ack_pending: 512,
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(|_| ())
+}

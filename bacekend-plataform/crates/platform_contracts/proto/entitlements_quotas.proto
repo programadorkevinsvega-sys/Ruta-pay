@@ -7,7 +7,7 @@ service EntitlementsQuotas {
   rpc ListTenantEntitlements (ListTenantEntitlementsRequest) returns (ListTenantEntitlementsResponse);
   rpc ConsumeQuota (ConsumeQuotaRequest) returns (ConsumeQuotaResponse);
 }
-message CapabilityInput { string capability_key=1; bool enabled=2; optional int64 limit_value=3; string unit=4; string overage_policy=5; string environment=6; string quota_period=7; }
+message CapabilityInput { string capability_key=1; bool enabled=2; optional int64 limit_value=3; string unit=4; string overage_policy=5; string environment=6; string quota_period=7; bool billable=8; }
 message SetPlanCapabilitiesRequest { string session_token=1; string csrf_token=2; string price_version_id=3; repeated CapabilityInput capabilities=4; string correlation_id=5; }
 message SetPlanCapabilitiesResponse { uint32 capabilities_saved=1; }
 message AssignTenantPlanRequest { string session_token=1; string csrf_token=2; string tenant_id=3; string price_version_id=4; string effective_from=5; string effective_until=6; string correlation_id=7; }

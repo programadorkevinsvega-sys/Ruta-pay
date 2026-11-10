@@ -1,0 +1,74 @@
+# 192.0.2.0/24 addresses are documentation placeholders; replace them with private targets before deployment.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: production
+
+rule_files:
+  - alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: [alertmanager:9093]
+
+scrape_configs:
+  - job_name: prometheus
+    basic_auth:
+      username: payvia_metrics_admin
+      password_file: /run/secrets/prometheus_admin_password
+    static_configs:
+      - targets: [prometheus:9090]
+
+  - job_name: otel-collector
+    static_configs:
+      - targets: [otel-collector:8888]
+
+  - job_name: alertmanager
+    static_configs:
+      - targets: [alertmanager:9093]
+
+  - job_name: tempo
+    static_configs:
+      - targets: [tempo:3200]
+
+  - job_name: loki
+    static_configs:
+      - targets: [loki:3100]
+
+  - job_name: otel-exported
+    static_configs:
+      - targets: [otel-collector:9464]
+
+  - job_name: postgres
+    static_configs:
+      - targets: ["192.0.2.142:9187"]
+
+  - job_name: redis
+    static_configs:
+      - targets: ["192.0.2.65:9121"]
+
+  - job_name: nats
+    static_configs:
+      - targets: ["192.0.2.97:7777"]
+
+  - job_name: node
+    static_configs:
+      - targets: [node-exporter:9100]
+
+  - job_name: payvia-platform
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/platform_metrics_token
+    static_configs:
+      - targets: ["192.0.2.70:19090"]
+
+  - job_name: payvia-pasarela
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/pasarela_metrics_token
+    static_configs:
+      - targets: ["192.0.2.70:19091"]

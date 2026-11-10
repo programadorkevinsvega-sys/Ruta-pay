@@ -51,6 +51,7 @@ pub async fn set_capabilities(
             overage_policy: c.overage_policy,
             environment: c.environment,
             quota_period: c.quota_period,
+            billable: c.billable,
         })
         .collect();
     let request = SetPlanCapabilitiesRequest {

@@ -28,6 +28,8 @@ pub struct CapabilityDefinition {
     pub(super) overage_policy: String,
     pub(super) environment: String,
     pub(super) quota_period: String,
+    #[serde(default)]
+    pub(super) billable: bool,
 }
 
 #[derive(Deserialize, ToSchema)]

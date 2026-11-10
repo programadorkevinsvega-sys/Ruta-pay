@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package payvia.platform.billing.fiscal_integration.v1;
+
+// Neutral event contracts between Payvia's internal SaaS billing domain and
+// an independently deployed fiscal-invoicing service. These messages do not
+// implement DIAN issuance and are not part of the payments bounded context.
+
+enum FiscalDocumentIntegrationStatus {
+  FISCAL_DOCUMENT_INTEGRATION_STATUS_UNSPECIFIED = 0;
+  FISCAL_DOCUMENT_INTEGRATION_STATUS_PENDING = 1;
+  FISCAL_DOCUMENT_INTEGRATION_STATUS_ACCEPTED = 2;
+  FISCAL_DOCUMENT_INTEGRATION_STATUS_REJECTED = 3;
+  FISCAL_DOCUMENT_INTEGRATION_STATUS_DELIVERY_FAILED = 4;
+  FISCAL_DOCUMENT_INTEGRATION_STATUS_UNKNOWN = 5;
+}
+
+message BillingInvoiceIssuedV1 {
+  uint32 schema_version = 1;
+  string event_id = 2;
+  string internal_invoice_id = 3;
+  string tenant_id = 4;
+  reserved 5;
+  string internal_issued_at = 6;
+  uint32 snapshot_schema_version = 7;
+  string snapshot_media_type = 8;
+  bytes immutable_invoice_snapshot = 9;
+  bytes snapshot_sha256 = 10;
+  string correlation_id = 11;
+  string occurred_at = 12;
+}
+
+message FiscalDocumentStatusChangedV1 {
+  uint32 schema_version = 1;
+  string event_id = 2;
+  string internal_invoice_id = 3;
+  string tenant_id = 4;
+  string external_fiscal_document_id = 5;
+  FiscalDocumentIntegrationStatus status = 6;
+  string provider_code = 7;
+  string authority_reference = 8;
+  string occurred_at = 9;
+  string correlation_id = 10;
+  string failure_code = 11;
+  string safe_failure_detail = 12;
+}

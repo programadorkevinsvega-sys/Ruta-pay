@@ -50,7 +50,7 @@ impl EntitlementService {
             tx.commit().await?;
             return Ok((original_result, true));
         }
-        let capability = sqlx::query("SELECT a.price_version_id,c.enabled,c.limit_value,c.overage_policy,c.environment,c.quota_period FROM entitlements_quotas.tenant_plan_assignments a JOIN entitlements_quotas.plan_capabilities c ON c.price_version_id=a.price_version_id WHERE a.tenant_id=$1 AND a.effective_from <= $2 AND (a.effective_until IS NULL OR a.effective_until > $2) AND c.capability_key=$3 FOR SHARE OF a")
+        let capability = sqlx::query("SELECT a.price_version_id,c.enabled,c.limit_value,c.overage_policy,c.environment,c.quota_period,c.unit,c.billable FROM entitlements_quotas.tenant_plan_assignments a JOIN entitlements_quotas.plan_capabilities c ON c.price_version_id=a.price_version_id WHERE a.tenant_id=$1 AND a.effective_from <= $2 AND (a.effective_until IS NULL OR a.effective_until > $2) AND c.capability_key=$3 FOR SHARE OF a")
             .bind(tenant).bind(now).bind(key).fetch_optional(&mut *tx).await?.ok_or(EntitlementError::CapabilityUnavailable)?;
         let price_version: Uuid = capability.try_get("price_version_id")?;
         let enabled: bool = capability.try_get("enabled")?;
@@ -58,6 +58,8 @@ impl EntitlementService {
         let policy: String = capability.try_get("overage_policy")?;
         let allowed_environment: String = capability.try_get("environment")?;
         let quota_period: String = capability.try_get("quota_period")?;
+        let unit: String = capability.try_get("unit")?;
+        let billable: bool = capability.try_get("billable")?;
         let (period_start, period_end) = period_bounds(now, &quota_period)?;
         let lock_key = format!("{tenant}:{key}:{environment}:{}", period_start.timestamp());
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
@@ -100,6 +102,24 @@ impl EntitlementService {
             .bind(serde_json::json!({"tenant_id": tenant, "usage_id": usage_id, "capability_key": key, "quantity": quantity, "period_start": period_start, "period_end": period_end}))
             .bind(payvia_observability::current_traceparent())
             .bind(correlation_id).execute(&mut *tx).await?;
+        if billable {
+            sqlx::query("INSERT INTO entitlements_quotas.outbox_events (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,traceparent,correlation_id) VALUES ($1,$2,1,'billing.usage.recorded',1,'platform',$3,$4,$5)")
+                .bind(Uuid::new_v4()).bind(usage_id)
+                .bind(serde_json::json!({
+                    "tenant_id": tenant,
+                    "usage_id": usage_id,
+                    "price_version_id": price_version,
+                    "meter_key": key,
+                    "quantity": quantity,
+                    "unit": unit,
+                    "environment": environment,
+                    "period_start": period_start,
+                    "period_end": period_end,
+                    "occurred_at": now
+                }))
+                .bind(payvia_observability::current_traceparent())
+                .bind(correlation_id).execute(&mut *tx).await?;
+        }
         tx.commit().await?;
         Ok((result, false))
     }

@@ -130,6 +130,7 @@ pub(super) fn capability(
         overage_policy: overage.to_owned(),
         environment: environment.to_owned(),
         quota_period: "month".to_owned(),
+        billable: false,
     }
 }
 

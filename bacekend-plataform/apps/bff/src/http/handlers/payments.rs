@@ -1,3 +1,11 @@
+pub mod attempts;
+pub mod status;
+pub mod transactions;
+
+pub use attempts::{create as create_payment_attempt, list as list_payment_attempts};
+pub use status::update as update_payment_intent_status;
+pub use transactions::list as list_payment_transactions;
+
 use axum::{
     Json,
     extract::{Path, State},
@@ -175,7 +183,7 @@ pub async fn get_payment_intent(
     }
 }
 
-fn payment_request<T>(body: T, correlation: &str) -> tonic::Request<T> {
+pub(super) fn payment_request<T>(body: T, correlation: &str) -> tonic::Request<T> {
     let mut request = tonic::Request::new(body);
     if let Some(traceparent) = payvia_observability::current_traceparent()
         && let Ok(value) = tonic::metadata::MetadataValue::try_from(traceparent.as_str())
@@ -189,7 +197,7 @@ fn payment_request<T>(body: T, correlation: &str) -> tonic::Request<T> {
     request
 }
 
-fn bearer_key(headers: &HeaderMap) -> Option<(String, String)> {
+pub(super) fn bearer_key(headers: &HeaderMap) -> Option<(String, String)> {
     let value = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
     let (scheme, secret) = value.split_once(' ')?;
     if !scheme.eq_ignore_ascii_case("bearer")
@@ -211,7 +219,9 @@ fn bearer_key(headers: &HeaderMap) -> Option<(String, String)> {
     Some((secret.to_owned(), environment.to_owned()))
 }
 
-fn payment_view(intent: platform_contracts::payments::PaymentIntent) -> PaymentIntentView {
+pub(super) fn payment_view(
+    intent: platform_contracts::payments::PaymentIntent,
+) -> PaymentIntentView {
     PaymentIntentView {
         payment_intent_id: intent.payment_intent_id,
         tenant_id: intent.tenant_id,
@@ -226,7 +236,7 @@ fn payment_view(intent: platform_contracts::payments::PaymentIntent) -> PaymentI
     }
 }
 
-fn payment_grpc_error(
+pub(super) fn payment_grpc_error(
     status: tonic::Status,
     operation: &'static str,
     correlation: &str,
@@ -237,6 +247,12 @@ fn payment_grpc_error(
             StatusCode::BAD_REQUEST,
             "payment_input_invalid",
             "validation",
+            false,
+        ),
+        tonic::Code::FailedPrecondition | tonic::Code::Aborted => (
+            StatusCode::CONFLICT,
+            "payment_transition_conflict",
+            "conflict",
             false,
         ),
         tonic::Code::AlreadyExists => (
@@ -286,7 +302,7 @@ fn payment_grpc_error(
     payment_error(http, code, category, retryable, correlation.to_owned())
 }
 
-fn payment_error(
+pub(super) fn payment_error(
     status: StatusCode,
     code: &'static str,
     category: &'static str,

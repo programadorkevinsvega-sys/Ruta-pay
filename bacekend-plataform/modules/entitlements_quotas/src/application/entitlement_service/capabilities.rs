@@ -29,10 +29,10 @@ impl EntitlementService {
             return Err(EntitlementError::InvalidCapability.into());
         }
         for capability in capabilities {
-            sqlx::query("INSERT INTO entitlements_quotas.plan_capabilities (price_version_id,capability_key,enabled,limit_value,unit,overage_policy,environment,quota_period,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)")
+            sqlx::query("INSERT INTO entitlements_quotas.plan_capabilities (price_version_id,capability_key,enabled,limit_value,unit,overage_policy,environment,quota_period,billable,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
                 .bind(price_version).bind(&capability.key).bind(capability.enabled).bind(capability.limit_value)
                 .bind(&capability.unit).bind(&capability.overage_policy).bind(&capability.environment)
-                .bind(&capability.quota_period).bind(actor).execute(&mut *tx).await?;
+                .bind(&capability.quota_period).bind(capability.billable).bind(actor).execute(&mut *tx).await?;
         }
         sqlx::query("INSERT INTO entitlements_quotas.audit_events (event_id,actor_id,tenant_id,action,resource_id,outcome,correlation_id,trace_id,safe_details) VALUES ($1,$2,NULL,'entitlement.capabilities.configured',$3,'completed',$4,$5,$6)")
             .bind(Uuid::new_v4()).bind(actor).bind(price_version).bind(correlation_id)

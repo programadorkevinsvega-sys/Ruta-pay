@@ -105,16 +105,45 @@ ensure_secret NATS_SURVEYOR_PASSWORD
 ensure_value NATS_SURVEYOR_HTTP_USER payvia_scraper
 ensure_secret NATS_SURVEYOR_HTTP_PASSWORD
 ensure_value NATS_USER payvia_dev
+ensure_value REDIS_MAXMEMORY 2gb
 
 printf '%s' "${platform_metrics_token}" > "${secret_dir}/platform_metrics_token"
 printf '%s' "${pasarela_metrics_token}" > "${secret_dir}/pasarela_metrics_token"
 cat > "${secret_dir}/redis.conf" <<EOF
+bind 0.0.0.0
+protected-mode yes
+port 6379
+tcp-backlog 4096
+timeout 0
+tcp-keepalive 60
+maxclients 20000
+io-threads 4
+io-threads-do-reads yes
+hz 50
+dynamic-hz yes
 appendonly yes
+appendfsync everysec
+no-appendfsync-on-rewrite yes
+aof-use-rdb-preamble yes
+aof-rewrite-incremental-fsync yes
+rdb-save-incremental-fsync yes
+lazyfree-lazy-eviction yes
+lazyfree-lazy-expire yes
+lazyfree-lazy-server-del yes
+maxmemory ${REDIS_MAXMEMORY}
+maxmemory-policy noeviction
 requirepass ${redis_password}
 EOF
 cat > "${secret_dir}/nats-server.conf" <<EOF
 port: 4222
 http_port: 8222
+max_connections: 10000
+max_payload: 1048576
+max_pending: 67108864
+max_control_line: 4096
+write_deadline: "10s"
+ping_interval: "2m"
+max_outstanding_pings: 5
 authorization {
   users = [
     { user: "${NATS_USER}", password: "${nats_password}" }
@@ -133,6 +162,8 @@ accounts {
 system_account: SYS
 jetstream {
   store_dir: "/data"
+  max_mem_store: 536870912
+  max_file_store: 21474836480
 }
 EOF
 chmod 600 "${env_file}"
@@ -142,5 +173,18 @@ printf '%s' "${PROMETHEUS_ADMIN_PASSWORD}" > "${secret_dir}/prometheus_admin_pas
 printf '%s' "${NATS_SURVEYOR_HTTP_PASSWORD}" > "${secret_dir}/nats_surveyor_http_password"
 printf 'basic_auth_users:\n  "%s": "%s"\n' "${PROMETHEUS_ADMIN_USER}" "$(printf '%s\n' "${PROMETHEUS_ADMIN_PASSWORD}" | docker run --rm -i --entrypoint htpasswd "${htpasswd_image}" -B -i -n "${PROMETHEUS_ADMIN_USER}" | cut -d: -f2-)" > "${secret_dir}/prometheus-web.yml"
 write_htpasswd "${INFRA_UI_USER}" "${INFRA_UI_PASSWORD}" "${secret_dir}/infra-ui.htpasswd"
+for secret_name in telegram_bot_token telegram_chat_id; do
+  secret_path="${secret_dir}/${secret_name}"
+  if [[ -L "${secret_path}" ]]; then
+    printf 'El archivo local %s no puede ser un enlace simbólico.\n' "${secret_name}" >&2
+    exit 1
+  fi
+  if [[ ! -e "${secret_path}" ]]; then
+    : > "${secret_path}"
+  elif [[ ! -f "${secret_path}" ]]; then
+    printf 'La ruta local %s debe ser un archivo regular.\n' "${secret_name}" >&2
+    exit 1
+  fi
+done
 chmod 644 "${secret_dir}"/*
 printf '%s\n' 'Secretos locales preparados en bacekend-plataform/.env e infra/.local/secrets/. No se imprimieron en pantalla.'

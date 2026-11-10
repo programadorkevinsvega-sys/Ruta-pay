@@ -1,6 +1,6 @@
 # Fase 4 — Matriz de integración y evidencia
 
-**Estado:** implementación parcial en PR #11 (rama `feat/phase-4-payment-lifecycle`). El HEAD `c036f0010fa8140b1a8809ffa2d6be3c3e190f71` pasó [CI #942](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41753921841), incluidos límite de 400 líneas, formato, Clippy, tests del workspace, ambos frontends, E2E y checks documentales. La matriz distingue la base de dominio/contrato verificada de la persistencia, integración externa y operación que siguen pendientes. No declara aceptación ni cierre de Fase 4.
+**Estado al 2026-11-09:** implementación parcial en PR #12 (`feat/phase-4-payment-lifecycle-persistence`). Su HEAD `fb5696b44483f927aa53faab423580e4abd283cb` pasó todos los jobs de [CI #42752212426](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/42752212426). Esto verifica la automatización del slice presente, no el cierre de Fase 4 ni la aceptación de proveedores externos. La continuación de los requisitos pendientes se organiza en PR #16; las decisiones comerciales y dependencias externas siguen explícitamente bloqueadas hasta su aprobación/evidencia.
 
 ## 1. Regla de evidencia
 
@@ -47,7 +47,7 @@ Las decisiones económicas pendientes del [registro de decisiones](decision-regi
 | Scope ausente/revocado, auth HTTP inválida y denegación por cada frontera | `payment_intents_http_path_enforces_auth_scope_isolation_and_idempotency` | Cubierto en HTTP real: bearer ausente, API key revocada, scope de solo lectura, ruta cross-tenant y entorno incorrecto. |
 | Fallo/rollback PostgreSQL, timeout, recuperación de relay, redelivery y deduplicación tras reinicio | `payment_intent_outbox_is_published_deduplicated_and_recoverable_in_realtime` + `outbox_lease_expiry_is_reclaimed_and_stale_owner_is_rejected` + `outbox_retries_after_stream_becomes_available_with_jittered_backoff` + `concurrent_relays_publish_all_claimed_events_without_losing_rows` | Crash-window ACK→confirmación, recuperación de lease, backoff y recuperación tras stream ausente, y concurrencia verificados con PostgreSQL/JetStream reales en [CI #913](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41716834260) sobre SHA `1858766a46a5b92d6b6b75207e728ddaa6933498`; caída/reinicio físico de NATS, reconexión del socket y fallo total de PostgreSQL siguen pendientes |
 | Publicación JetStream y journal/realtime/cursor autenticados | `payment_intent_outbox_is_published_deduplicated_and_recoverable_in_realtime` | Cubierto con JetStream, Redis y PostgreSQL reales; la prueba verifica audience tenant, cursor y ausencia de datos de otro tenant. La sesión WebSocket autenticada no está cubierta por este test. |
-| Transiciones de estado, intentos, transacciones, eventos tardíos y reconciliación | No existen todavía los agregados/acciones completos | Pendiente |
+| Transiciones iniciales, intentos, transacciones y alta de reconciliación | Payment Intent/Attempt, Payment Transaction, guards iniciales, versión optimista, auditoría y caso durable `outcome_unknown` en PR #12. | Transiciones `created → processing → outcome_unknown`, API de attempts/transactions y caso durable incluidos en el CI exitoso #42752212426 sobre el HEAD de PR #12. La aplicación de eventos externos tardíos, resolución completa del caso y aceptación de proveedor siguen pendientes según la sección 3. |
 
 La aceptación del camino HTTP→BFF→gRPC y las denegaciones de autorización están cubiertas por `payment_intents_http_acceptance.rs`. La aceptación Outbox→JetStream→journal/cursor está cubierta por `payment_intent_outbox_is_published_deduplicated_and_recoverable_in_realtime`. Estas pruebas no completan el ciclo de vida de transacciones ni la sesión WebSocket de pagos.
 
@@ -65,36 +65,54 @@ La indisponibilidad de un stream/subject se prueba mediante rechazo real de JetS
 
 ## 3. Alcance B — Transacciones e intentos
 
-**Estado:** primera base de dominio Rust y contrato Protobuf neutral implementados y verificados en el HEAD `c036f0010fa8140b1a8809ffa2d6be3c3e190f71` por [CI #942](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41753921841). No existe todavía persistencia, caso de uso, API, consumidor ni ingestión confiable de resultados de proveedor. El ciclo operativo sigue abierto.
+**Estado:** PR #12 incorpora persistencia/API de attempts y transactions, recepción autenticada de callbacks Wompi, consumo cross-backend de eventos firmados y worker durable de reconciliación. CI #42752212426 pasó sobre el HEAD exacto; las aceptaciones de Wompi Sandbox y los demás requisitos abiertos siguen pendientes y se continúan en PR #16. No se declara cerrada Fase 4.
 
-| Área | Diseño/implementación disponible | Estado real |
+| Área | Implementación disponible | Estado real |
 |---|---|---|
-| Payment Intent | Continúa persistido únicamente en `created` por el slice ADR-0010. El modelo de lifecycle define estados de proyección, sin ampliar todavía la migración ni mutar la tabla. | Creación/consulta implementada; transiciones persistidas pendientes. |
-| Payment Attempt | `domain/payment_attempt.rs` define identidad interna, tenant, intent, entorno, número secuencial, proveedor/cuenta opacos y estado inicial `created`; valida secuencia y referencias. | Modelo de dominio y test unitario verificados en CI #942; sin tabla, RLS ni use case. |
-| Payment Transaction | `domain/payment_transaction.rs` define identidad interna, vínculo con intent/attempt, proveedor/cuenta/referencia externa, importe entero, moneda y estado inicial `pending`. El constructor rechaza intentos aún en `created` y valida el ownership del vínculo. | Modelo y tests unitarios verificados en CI #942; sin tabla, constraints ni persistencia. |
-| Guards y estados | `domain/payment_lifecycle.rs` separa estados de intent/attempt/transaction, transiciones forward-only, inicio de operación reservado a `OperationSubmitted`, timeout permitido solo sobre operaciones enviadas/en curso, `outcome_unknown` resoluble solo por reconciliación y transición de transacción `Pending → Authorized → Succeeded`. El fallo de un intento no se proyecta automáticamente a fallo del intent. | Unit tests verificados en CI #942; aún no aplicados dentro de transacciones PostgreSQL. |
-| Orden de eventos tardíos | Exige timestamp del proveedor estrictamente mayor al último timestamp aplicado; timestamps viejos o iguales no se aplican automáticamente. Conflictos terminales requieren reconciliación. | Guard unitario verificado en CI #942; falta inbox durable, control de versión y test concurrente PostgreSQL. |
-| Estado normalizado proveedor | `NormalizedProviderPaymentEventV1` y enum neutral en `crates/platform_contracts/proto/payments.proto`. `outcome_unknown` es estado interno de plataforma, no un estado del proveedor. | Contrato/schema y codegen verificados en CI #942; no hay traducción de status específico ni adapter en plataforma. Mapping de proveedor pertenece al adapter gateway. |
-| Callback verificado | El mensaje de Protobuf no prueba identidad ni firma. No se añadió RPC/HTTP o consumer que acepte callbacks. | Bloqueado hasta que gateway verifique firma/anti-replay y exista identidad autenticada del productor. |
-| Deduplicación | La decisión técnica reserva proveedor + cuenta + provider event ID como clave externa, distinta de la idempotencia de create intent. | ADR documentada; no hay event inbox/constraint ni persistencia. |
-| Resultado incierto | El modelo mantiene `outcome_unknown` separado de rechazo/fallo; solo autoridad de reconciliación puede resolverlo. | Guard unitario; no hay timeout de operación de proveedor ni estado persistido. |
-| Reconciliación | Debe consultar una fuente autoritativa del proveedor, registrar resultado/caso y evitar repetir efectos inciertos. | Pendiente: no hay provider adapter, capability de consulta, caso durable ni worker/API. |
-| Captura, cancelación, expiración y refunds | No se añaden estados/commands/endpoints. | Bloqueados por aprobaciones B-EC-07..13. |
+| Payment Intent | La migración amplía el CHECK a estados canónicos, permite aggregate_version creciente y conserva updated_at/last_event_at. El use case aplica guards para created → processing y processing → outcome_unknown, con control optimista de versión. | Intent y attempt se actualizan en una transacción PostgreSQL; estados terminales del proveedor requieren evento verificado. Automatización validada en CI #42752212426. |
+| Payment Attempt | Tabla con tenant/entorno/intent, secuencia, proveedor/cuenta, estado/version. Create/list conectados al PaymentService; SHA-256 del request + idempotency key por intent; parent row `FOR UPDATE` serializa concurrencia. | Replay de la misma clave devuelve el intento original; otra clave se rechaza hasta aprobación B-EC-10. Lecturas/mutaciones auditadas. La aceptación PostgreSQL y HTTP está incluida en CI #42752212426 sobre el HEAD de PR #12; CI #964 es evidencia histórica de una revisión anterior. |
+| Payment Transaction | Tabla con FK compuestas a intent/attempt, proveedor/cuenta y consistencia de importe/moneda; trigger impide transacción sobre attempt created. List API filtra por tenant/entorno/intent. | Query conectada. Crear/actualizar transacciones continúa reservado a la frontera de evento de proveedor autenticado; no se simulan respuestas. Automatización validada en CI #42752212426. |
+| Inbox normalizado | Deduplicación por tenant+entorno+proveedor+cuenta+provider_event_id, hash SHA-256, timestamp, correlación y envelope normalizado; no guarda body crudo. | El gateway verifica el checksum oficial de Wompi antes de normalizar y firma el envelope interno con HMAC. El consumer de plataforma vuelve a verificar esa firma, valida tenant/entorno/attempt/proveedor/cuenta/importe/moneda y escribe inbox + delivery + cambios + auditoría + Outbox en una transacción PostgreSQL. La aceptación firmada/replay/conflicto pasa CI #42752212426; el sandbox real sigue pendiente. |
+| Trazabilidad de entregas | `provider_event_deliveries` registra accepted/duplicate/rejected y vincula reentregas con el evento canónico. | El consumer registra primera entrega y replay en el ledger; la recepción HTTP del gateway solo responde 204 tras el ACK durable de JetStream. Falta aceptación real de callback contra Wompi Sandbox y operación con credenciales de cuenta válidas. |
+| Reconciliación durable | Caso por attempt con estado/lease, restricción de caso abierto e historial de consultas/evidencias. La transición a `outcome_unknown` y los conflictos/late events generan una orden Outbox firmada. | El worker gateway consume JetStream durable, verifica HMAC/key ID del productor plataforma, consulta `GET /v1/transactions/{id}` a Wompi cuando existe ID de transacción y verifica referencia de attempt/importe/moneda antes de publicar un resultado firmado. Plataforma verifica ese resultado y resuelve el caso transaccionalmente o lo conserva en manual_review. Sin transaction ID no se inventa lookup ni se reintenta el cobro. Falta verificación en Sandbox. |
+| RLS / constraints | ENABLE + FORCE RLS en las seis tablas; FK compuestas de tenant/entorno/intent/attempt/monto/moneda/proveedor/cuenta; secuencia única e inbox idempotente. | Prueba PostgreSQL real con runtime role sin BYPASSRLS para visibilidad cross-tenant y constraints; automatización validada en CI #42752212426. |
+| Auditoría | Creación/replay/lectura de attempts, consulta de transactions y transiciones de intent/attempt con actor API key, recurso, correlación y detalles acotados. | Auditoría escrita dentro de la transacción de negocio; rollback por fallo Outbox evita filas parciales. Automatización validada en CI #42752212426. |
+| Outbox | `payment_attempt.created`, cambios de estado de intent/attempt y `payment.reconciliation.requested` con aggregate_version y correlation ID. | Escrituras atómicas con estado/auditoría; trigger PostgreSQL induce fallo Outbox y verifica rollback. El relay/ACK en JetStream real está incluido en CI #42752212426; CI #964 documenta evidencia histórica en un SHA anterior. |
+| API / contratos | RPCs CreatePaymentAttempt, ListPaymentAttempts, ListPaymentTransactions y UpdatePaymentIntentStatus; BFF POST/GET attempts, GET transactions, PATCH status y OpenAPI. | Casos de uso, contratos y endpoints añadidos; aceptación HTTP real del HEAD final validada en CI #42752212426. |
+| Scopes | payment_attempts.create, payment_attempts.read, payment_transactions.read y payment_intents.update. | identity_access autoriza cada RPC con su scope; test HTTP incluye scope insuficiente. Automatización validada en CI #42752212426. |
+| Gateway / proveedor | Se implementó el ingress HTTP de callback Wompi y el primer cliente de consulta autoritativa. | `POST /v1/webhooks/wompi/{account_reference}` valida el checksum de Wompi, entorno y asociación del identificador de attempt; publica un evento interno HMAC firmado en JetStream. El worker consulta transacciones por ID y devuelve resultados firmados. NATS acepta certificados CA/cliente y puede exigir mTLS con `PAYVIA_REQUIRE_MTLS=true`; sin ese flag se mantiene compatibilidad de desarrollo/CI. No hay aún operación saliente de creación de cobro, vault/cifrado de credenciales, identidad SPIFFE/grants por comando ni sandbox acceptance; por tanto el gateway no se declara adapter de pago productivo completo. |
 
-### 3.1. Trazabilidad del modelo de dominio
+### 3.1. Trazabilidad de pruebas
 
-| Requisito técnico | Test | Evidencia/limitación |
+| Requisito | Test | Cobertura / estado |
 |---|---|---|
-| Mapear estados canónicos sin códigos específicos de proveedor | `normalized_status_maps_without_provider_specific_codes` | Unit test de dominio verificado en CI #942; no valida mapping en adapter. |
-| Transiciones forward-only y conflictos terminales | `transitions_are_forward_only_and_terminal_conflicts_need_reconciliation`; `transaction_status_is_guarded_and_terminal_state_is_immutable` | Unit tests verificados en CI #942, incluyendo `Pending → Authorized → Succeeded` y rechazo de una transición contradictoria desde estado terminal; no hay reducer persistente. |
-| Resolver `outcome_unknown` solo por reconciliación | `outcome_unknown_requires_reconciliation_to_resolve`; `only_platform_timeout_can_enter_outcome_unknown` | Unit tests verificados en CI #942; no ejecutan consulta a un proveedor real. |
-| Rechazar timestamps iguales/anteriores | `provider_event_timestamps_must_be_strictly_monotonic` | Unit test verificado en CI #942; asume timestamp fiable proveniente del adapter verificado. |
-| Secuencia de intento y proveedor válido | `attempt_requires_positive_sequence_and_normalized_provider_code` | Unit test de constructor verificado en CI #942. |
-| Dinero, referencia y estado inicial de transacción | `transaction_rejects_invalid_provider_reference_and_money`; `transaction_starts_pending_and_inherits_intent_money_and_attempt_identity` | Unit tests de constructor/modelo verificados en CI #942. |
+| Ownership, RLS, constraints, inbox duplicado, deliveries, caso único, attempt no enviado y rollback | `lifecycle_storage_enforces_ownership_deduplication_and_reconciliation_integrity` y `concurrent_provider_event_deliveries_create_one_canonical_inbox_row` | PostgreSQL real, seis tablas, rol runtime restringido, replay y carrera concurrente sobre la clave externa del inbox. **Incluido en el CI exitoso** [#42752212426](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/42752212426) del HEAD de PR #12; CI #964 es evidencia histórica. |
+| Creación de attempt, idempotency key/fingerprint, replay y retry guard | attempt_creation_is_idempotent_under_concurrency_and_disallows_unapproved_retries | 12 llamadas concurrentes, una sola creación, replay estable, conflicto por request distinta y segundo intento bloqueado; automatización validada en CI #42752212426. |
+| Estado concurrente, aggregate_version y caso outcome_unknown | `status_transitions_are_guarded_atomic_and_create_durable_reconciliation` | Actualización concurrente idempotente, transacción asociada, caso durable y Outbox. **Incluido en el CI exitoso #42752212426** sobre el HEAD de PR #12; CI #964 corresponde a una revisión anterior. |
+| Rollback de estado/auditoría/Outbox | failed_outbox_write_rolls_back_attempt_intent_and_audit_changes | Trigger PostgreSQL induce fallo real; verifica que intent, attempt, versiones y auditoría no queden parcialmente modificados; automatización validada en CI #42752212426. |
+| API HTTP→BFF→gRPC→identity_access→payments | payment_attempt_and_transaction_apis_cross_http_bff_grpc_and_payments_module | Create/replay/list attempts, list transactions, PATCH status, scopes, cross-tenant, versión obsoleta y resultado final falsificado; automatización validada en CI #42752212426. |
+| Callback firmado Wompi, replay y conflicto terminal | `signed_provider_events_apply_once_and_terminal_conflicts_require_reconciliation` | PostgreSQL real: firma HMAC cross-backend, primera aplicación, replay deduplicado, estado terminal preservado y creación durable de caso `terminal_conflict`; automatización validada en CI #42752212426. Los vectores unitarios de checksum Wompi comprueban la concatenación de propiedades dinámicas, timestamp y secreto. El sandbox del proveedor sigue pendiente. |
+| Relay Outbox/JetStream | `payment_intent_outbox_is_published_deduplicated_and_recoverable_in_realtime`, `outbox_resilience` y `lifecycle_outbox_event_types_are_acknowledged_by_real_jetstream` | Verifica relay/leases/ACK y publica tipos de eventos del lifecycle y reconciliación en JetStream real. CI #42752212426 valida la automatización del HEAD de PR #12; no prueba el sandbox ni la caída física/reinicio de NATS descrita en los pendientes. |
 
-**Evidencia vigente:** [CI #942](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/41753921841) terminó en success sobre el HEAD `c036f0010fa8140b1a8809ffa2d6be3c3e190f71`. Pasaron límite de 400 líneas, `cargo fmt --all -- --check`, Clippy con `-D warnings`, `cargo test --locked --workspace`, ambos frontends, E2E tenant/plataforma/multi-réplica y checks documentales. Esta ejecución valida el código y contrato incluidos en ese SHA; no acredita persistencia ni integración operativa del lifecycle.
+### 3.2. Límites que permanecen cerrados
 
-La presencia de modelos y tests unitarios no equivale a persistencia, integración HTTP/gRPC, callback autenticado ni aceptación cross-backend. La siguiente implementación para cerrar el ciclo requiere migraciones/RLS, use cases y pruebas PostgreSQL reales, además de la frontera segura y adapters reales indicados arriba.
+- El consumer de plataforma solo acepta eventos internos firmados; `producer_identity` sigue siendo metadato de auditoría, no autenticación. El webhook público se verifica primero con el contrato Wompi; no se acepta un NormalizedProviderPaymentEventV1 arbitrario desde internet.
+- El worker consulta Wompi cuando hay ID externo de transacción. Si falta, hay mismatch o la evidencia no es concluyente, la conciliación queda en `manual_review`; no se crea otro cobro.
+- La API del tenant solo permite created → processing (OperationSubmitted) y processing → outcome_unknown (OperationTimeout), con aggregate_version esperado. No permite afirmar authorized, succeeded o failed con una API key de tenant.
+- No se habilitan captura, cancelación, expiración, reintentos comerciales, cambio de proveedor ni refunds mientras B-EC-07..13 sigan pendientes.
+- El alcance A de suscripciones/facturación SaaS continúa independiente y pendiente.
+- Callback checksum verification Wompi y autenticación HMAC de eventos/órdenes están implementados; mTLS se puede exigir con `PAYVIA_REQUIRE_MTLS=true`. Falta probar callback/lookup en Sandbox, desplegar certs reales y completar identidad de servicio/grants ligados a operación de cobro de Fase 5.
+
+### 3.3. API, contratos y scopes
+
+| Operación | RPC | Endpoint BFF | Scope |
+|---|---|---|---|
+| Crear Payment Attempt | CreatePaymentAttempt | POST /v1/tenants/{tenant_id}/payment-intents/{payment_intent_id}/attempts | payment_attempts.create |
+| Consultar attempts | ListPaymentAttempts | GET /v1/tenants/{tenant_id}/payment-intents/{payment_intent_id}/attempts | payment_attempts.read |
+| Consultar transactions | ListPaymentTransactions | GET /v1/tenants/{tenant_id}/payment-intents/{payment_intent_id}/transactions | payment_transactions.read |
+| Actualizar estado del intent | UpdatePaymentIntentStatus | PATCH /v1/tenants/{tenant_id}/payment-intents/{payment_intent_id}/status | payment_intents.update |
+
+La prueba `payment_attempt_and_transaction_apis_cross_http_bff_grpc_and_payments_module` atraviesa HTTP real → BFF → gRPC → identity_access → payments → PostgreSQL. La matriz registra requisito → test → ejecución CI. Está incluida en el CI exitoso #42752212426 del HEAD de PR #12; CI #964 sobre `e92123be7bb7762d08fe537e42997a466146824e` es evidencia histórica.
 
 ## 4. Alcance A — Suscripciones y facturación SaaS de Payvia
 
@@ -102,12 +120,12 @@ La presencia de modelos y tests unitarios no equivale a persistencia, integraci�
 |---|---|---|
 | Catálogo y precios | `catalog_pricing` ya posee versiones de precio inmutables. | Aprobación del modelo comercial, unidades, importes, periodo, moneda, impuestos, redondeo y vigencias. |
 | Entitlements y usage ledger | `entitlements_quotas` posee asignaciones, cuotas y medición durable de consumo. | Procedencia por operación/recurso, contrato de medición facturable y reglas aprobadas de inclusión/excedente. El ledger de cuotas no es una factura ni un ledger financiero. |
-| Subscription aggregate | No existe módulo de suscripciones ni ciclo de vida persistido. | Modelo técnico, relación con asignaciones y reglas de ciclo de vida aprobadas. |
-| Billing invoices / invoice lines | No existe módulo financiero de facturación SaaS. | Modelo de obligación inmutable, snapshot reproducible, ledger financiero y reglas comerciales/fiscales aprobadas. |
+| Subscription aggregate | No existe módulo de suscripciones ni ciclo de vida persistido. | Modelo técnico, relación con asignaciones y reglas de ciclo de vida aprobadas; consumer idempotente de uso y scheduler siguen pendientes. |
+| Billing invoices / invoice lines | PR #12 añade el módulo `platform_billing` con consumo registrado, drafts, líneas, snapshot reproducible y ledger balanceado. | Completar el ciclo comercial solo tras aprobar unidades, precios, periodos, prorrateo, impuestos y reglas de vigencia; integrar consumo/periodicidad y validar contabilidad. |
 | Platform Wompi | No existe adapter propio `platform_billing_wompi`. | Cuenta/credenciales Payvia, sandbox, métodos, moneda, autenticación, callbacks oficiales y validación de idempotencia/resultado incierto. |
-| Factus | No existe módulo `electronic_invoicing` ni adapter `invoice_factus`. | Contrato fiscal, autenticación, ambiente, tipos de documento, ciclo de estados y credenciales/sandbox. |
+| Integración fiscal externa | No existe emisor fiscal ni integración runtime en este backend. ADR-0012 y `billing_fiscal_integration.proto` definen la frontera versionada para una invoice interna y el retorno de estado fiscal. | Seleccionar el microservicio/proyecto fiscal; acordar contrato operativo, autenticación, transporte (Outbox/eventos, webhook o API), idempotencia, sandbox y pruebas contractuales. La emisión y los artefactos fiscales pertenecen al sistema externo, no a `platform_billing`. |
 | Resend | No existe módulo `notifications` ni adapter `notification_resend`. | Política de notificación, destinatarios, Outbox/delivery state, clave de deduplicación y credenciales. |
-| Recaudo / ledger | No hay intentos ni resultados de cobro de invoices SaaS. | Flujo Wompi de Payvia, callback verificado, ledger y reconciliación con PostgreSQL como fuente de verdad. |
+| Recaudo / ledger | PR #12 añade `collection_attempts` aislados de los intents de compradores y asientos balanceados para recaudo registrado. | Adapter Wompi de Payvia, callbacks verificados, consultas autoritativas y reconciliación siguen pendientes; no se ejecutan cobros sin decisiones y credenciales aprobadas. |
 
 **Regla de bloqueo económico:** no calcular facturas, tarifas variables, excedentes, prorrateos, impuestos, FX, comisiones, vencimientos ni cargos recurrentes mientras las decisiones aplicables A-EC estén pendientes. Registrar la aprobación real antes de habilitar cada comportamiento.
 
@@ -115,13 +133,69 @@ La presencia de modelos y tests unitarios no equivale a persistencia, integraci�
 
 - El cobro a compradores por cuenta de los tenants y el cobro SaaS que Payvia realiza a sus tenants son flujos distintos. El primero pertenece al ownership de Payment Intents/transacciones en `payments` y requiere ejecución protocolar autorizada del gateway; el segundo pertenece a los módulos/adapters de billing de plataforma y usa la cuenta/credenciales propias de Payvia. No se comparten credenciales, ledgers ni ownership. Ninguno se declara operativo por la mera existencia del contrato neutral.
 - Plataforma no delega el cobro SaaS al backend de pasarelas.
-- El slice actual de Payment Intents no llama al gateway. El nuevo mensaje `NormalizedProviderPaymentEventV1` es solo un contrato; no se expone endpoint ni consumer para recibirlo sin autenticación.
-- El callback del proveedor debe ser verificado en el adapter gateway y el productor debe autenticarse en la frontera cross-backend. La ausencia de esas capacidades bloquea la ingestión; no se sustituye con headers, IP allowlists, permisos locales ni mocks.
+- El slice actual de Payment Intents todavía no inicia un cobro hacia el gateway; la integración añadida procesa callbacks y reconciliación de transacciones identificadas.
+- El gateway valida el callback Wompi antes de publicar. Plataforma solo consume envelopes HMAC firmados; JetStream entrega durablemente y ambos lados soportan mTLS configurable. No se aceptan callbacks arbitrarios ni se confía en headers/IP como identidad del productor.
 - No se comparten schemas ni se hacen joins/escrituras SQL entre dominios.
 - PostgreSQL es fuente de verdad; Redis no decide importes, autorización ni idempotencia comercial.
-- No se afirman adaptadores Wompi, Factus o Resend operativos sin credenciales y pruebas oficiales de sandbox.
+- No se afirman adapters propios de Wompi o Resend operativos sin credenciales y pruebas oficiales de sandbox. La emisión fiscal es externa y no se declara integrada ni operativa por la existencia del contrato.
 - Despliegue/ejecución en producción queda fuera de esta evidencia de construcción.
 
 ## 6. Criterio de salida
 
 Fase 4 solo puede declararse cerrada cuando ambos alcances tengan decisiones aprobadas, implementación completa, pruebas reales positivas/negativas/límites/concurrencia/permiso/aislamiento/estados/fallos/reintentos/integridad/redacción, integraciones externas verificadas y trazabilidad requisito → test → ejecución CI sobre el SHA final. Esta matriz deja explícitamente pendientes los puntos que aún no tienen implementación o evidencia.
+
+## 4.1. Frontera entre invoice interna y documento fiscal externo
+
+**Decisión:** una invoice interna emitida por Payvia no es una factura electrónica válida ante DIAN. Son dos ciclos independientes con ownership, estados y fuentes de verdad separados. Ver [ADR-0012](../adr/ADR-0012-separacion-billing-interno-integracion-fiscal.md).
+
+| Requisito | Contrato / responsabilidad | Estado real |
+|---|---|---|
+| Invoice interna | `platform_billing` es dueño de invoice interna, partidas inmutables, snapshot, ledger y estado financiero. | El slice inicial está implementado en PR #12; faltan decisiones y reglas comerciales para automatizar su ciclo completo. |
+| Evento de salida | `BillingInvoiceIssuedV1`: ID interno estable, tenant, versión/formato del snapshot inmutable, hash y correlación. | Contrato Protobuf y Outbox transaccional implementados; relay JetStream runtime conectado y validado en CI #42752212426. |
+| Resultado fiscal externo | `FiscalDocumentStatusChangedV1`: ID interno, ID fiscal externo, estado de integración, referencia de autoridad, código/detalle seguro y correlación. | Existe contrato y soporte de Inbox/deduplicación genérico; no existe endpoint/webhook autenticado ni consumer que procese respuestas del sistema fiscal. |
+| Transporte futuro | Outbox/JetStream, webhook autenticado o API, sin acoplar el dominio al proveedor. | Outbox/relay de invoice interna implementado; falta seleccionar el servicio externo y definir, implementar y probar su transporte/autenticación. |
+| Idempotencia y correlación | Deduplicar por event ID y por invoice interna + operación/versionado; conservar correlación con documento externo. | El Inbox genérico soporta deduplicación y detección de replay conflictivo; no hay integración runtime ni evidencia de sandbox fiscal. |
+| Separación de estados | Estado interno de invoice, estado de pago y estado fiscal externo permanecen independientes. | Decisión documentada. Debe probarse que una respuesta fiscal no modifica ledger, partidas ni estado de pago cuando se implemente el runtime. |
+
+### Criterios de aceptación de esta frontera
+
+- La emisión de la invoice interna no requiere que el servicio fiscal esté disponible.
+- Un evento fiscal duplicado o reentregado no crea dos documentos externos ni duplica cambios internos.
+- Timeout o falta de respuesta se conserva como resultado desconocido/pendiente; nunca se interpreta automáticamente como aceptación o rechazo.
+- Webhooks/resultados externos requieren autenticación criptográfica y autorización de productor; `producer_identity`, headers o IP no son prueba de autenticidad.
+- La recepción se persiste de forma durable e idempotente antes de confirmar el ACK.
+- La aceptación/rechazo fiscal no altera por sí sola los importes, partidas, ledger ni estado de cobro de la invoice interna.
+- La integración se prueba con el servicio fiscal real o su sandbox antes de declararse operativa.
+
+**Fuera de alcance de este backend:** emisión DIAN, habilitación como facturador, numeración/resolución fiscal, firma, XML, CUFE/QR, notas crédito/débito fiscales y credenciales del proveedor fiscal. No crear `invoice_factus` ni marcar facturación electrónica como implementada en Fase 4.
+
+## 5. Alcance A — Billing SaaS Payvia (implementación parcial en PR #12)
+
+| Requisito | Implementación añadida | Evidencia / límite actual |
+|---|---|---|
+| Ownership y persistencia | Nuevo crate `platform-billing`, schema propio, migración coordinada y RLS forzada. No depende del schema `payments`. | Migración `modules/platform_billing/infrastructure/persistence/migrations/202611080001_platform_billing.sql`; conectado al binario `migrate-platform`. |
+| Medición facturable | Registro append-only de eventos de consumo por tenant, deduplicación por sistema/evento de origen y agregación por meter/unidad/periodo. | `BillingService::record_usage` y `summarize_usage`. La ingesta desde el evento `quota.consumed` aún requiere un consumer runtime; no se asume que toda cuota sea facturable. |
+| Facturas internas | Draft, partidas con importe en unidades menores, moneda y vínculo opcional a evento de uso. Una invoice emitida conserva partidas, periodo, importes y snapshot. | `BillingService::create_draft`, `add_line`, `issue_invoice`. No se implementa todavía el ciclo de suscripciones, generación periódica ni reglas de pricing/prorrateo sin aprobación. |
+| Snapshot reproducible | JSON versionado, hash SHA-256 y replay idempotente de emisión. | Test `usage_invoice_snapshot_ledger_and_financial_immutability_are_enforced`; se compara hash recalculado y almacenado. |
+| Ledger | Journal con líneas de débito/crédito, cuentas explícitas, moneda y constraint diferido que rechaza asientos no balanceados. Emisión registra CxC/ingreso; recaudo exitoso registra clearing/CxC. | Test de balance y rollback de journal incompleto. El modelo contable requiere validación funcional/contable antes de contabilizar impuestos u otras partidas no definidas. |
+| Outbox | Evento `billing.invoice.issued` en la misma transacción de emisión; eventos de creación y cambio de estado de recaudo; claim con `SKIP LOCKED`, lease/token, ACK y retry con backoff. | Relay JetStream runtime ya está conectado a `platform_runtime`; prueba PostgreSQL/JetStream real valida envelope fiscal versionado, ACK, crash-window ACK→Outbox y deduplicación por `Nats-Msg-Id`. Consumer Inbox externo y webhook autenticado aún pendientes. |
+| Inbox | Dedupe durable por tenant + productor + event ID; compara tipo, versión y hash de payload para detectar replay conflictivo. | Pruebas de primera recepción, duplicado exacto y mismo event ID con payload alterado. La autenticación criptográfica del productor/webhook debe realizarse antes de llamar a `receive`; no está implementado el endpoint/consumer externo. |
+| Recaudo SaaS | `collection_attempts` dentro de `platform_billing`, una única solicitud por invoice hasta aprobación de política de reintentos, importe/moneda exactos de la invoice, idempotencia y estados forward-only. No FK ni reutilización de Payment Intents de compradores. | Pruebas de concurrencia, replay, bloqueo de nueva clave, transición terminal y journal de recaudo. Adapter Wompi de Payvia, callbacks autenticados y reconciliación siguen pendientes. |
+| Aislamiento / recuperación | RLS por tenant y worker scope explícito; transacciones para consumo, invoice, ledger, Outbox/Inbox y collection. | Test PostgreSQL aislado con rol runtime sin BYPASSRLS, aislamiento cross-tenant, concurrencia y rollback de journal desequilibrado; incluido en CI #42752212426 sobre el HEAD de PR #12. |
+
+**Límites deliberados:** no hay precios, tarifas, impuestos, unidades facturables, vencimientos ni prorrateos por defecto. El caller debe suministrar el precio explícito aprobado para cada línea. La facturación fiscal sigue fuera de este backend y se rige por ADR-0012. No se marca el Alcance A como terminado.
+
+## 6. Identidad mTLS de dependencias productivas — decisión acotada
+
+Este cambio operativo exige certificados cliente independientes para PostgreSQL, Redis y NATS, además de la autorización existente de cada dependencia. No implementa ni adelanta gRPC mTLS Plataforma↔Pasarelas, grants o scopes de Fase 5; la puerta de Fase 4 y su estado parcial no cambian.
+
+| Frontera | Diseño registrado antes del cambio | Escenarios de aceptación requeridos |
+|---|---|---|
+| Plataforma → PostgreSQL | `verify-full`, CA y certificado/clave del rol en URL; `pg_hba.conf` productivo autentica por certificado. Migraciones usan su propio certificado/rol. | Aceptar SAN/CA/CN válidos; rechazar cert ausente, expirado, CA/SAN/CN incorrectos; verificar no conexión sin TLS y no acceso fuera de permisos. |
+| Plataforma y workers → Redis | Un único `redis::Client` con CA y certificado cliente explícitos se comparte con `ConnectionManager` y workers, para conservar identidad en reconexiones; producción falla cerrado si falta mTLS. | Aceptar cert y ACL válidos; rechazar identidad ausente/inválida y ACL insuficiente; reinicio y reconexión de Redis sin perder autenticación. |
+| Plataforma/Pasarelas → NATS | TLS y certificado individual por backend, junto a usuario y permisos NATS; configuración de producción exige `tls://` y credenciales mTLS completas. | Rechazar cliente sin cert, cert/CA inválidos, usuario/subject no permitido; publicar/consumir y recuperar mensajes tras reinicio con identidad válida. |
+| PostgreSQL/Redis exporter → almacén | Cada exporter usa certificado distinto y rol/ACL de observabilidad de solo lectura. Healthcheck Redis usa su propio certificado y permiso `PING`. | Scrapes/healthchecks reales con identidad autorizada; fallar cerrados al retirar cert, CA o privilegio. |
+| Frontend → HTTP/BFF → gRPC | Sin cambio de endpoint, contrato, autorización o almacenamiento desde el BFF. | N/A: no se altera ese recorrido. gRPC entre backends permanece pendiente en Fase 5. |
+| Outbox / JetStream / realtime | Se mantiene el flujo de eventos existente; el cambio solo configura identidad de transporte y no crea ni modifica estado visible. | N/A: no se añade mutación ni evento de dominio; pruebas de entrega/recovery existentes siguen aplicando. |
+
+La rotación de certificados cliente no se considera automatizada: los archivos se cargan al inicializar clientes/pools. Rotación sin interrupción requiere renovación/reemplazo de las conexiones o despliegue solapado con capacidad de réplicas y drenaje; esa garantía queda pendiente de diseño, infraestructura y pruebas reales. La matriz criptográfica tampoco se considera aprobada hasta ejecutarse contra servicios aislados con certificados reales de prueba. Ver el procedimiento y los límites en [`infra/README.md`](../../../infra/README.md).
