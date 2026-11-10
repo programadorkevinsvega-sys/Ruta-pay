@@ -1,0 +1,59 @@
+name: payvia-shared-infra
+
+services:
+  nats:
+    image: nats:2.15.1-alpine
+    restart: unless-stopped
+    command: ["--config=/etc/nats/nats-server.conf"]
+    ports:
+      - "127.0.0.1:4222:4222"
+    volumes:
+      - nats_data:/data
+      - ./infra/.local/secrets/nats-server.conf:/etc/nats/nats-server.conf:ro
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    sysctls:
+      net.core.somaxconn: "4096"
+    stop_grace_period: 30s
+    networks: [messaging]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8222/healthz | grep -q 'ok'"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  nats-exporter:
+    image: natsio/prometheus-nats-exporter:0.17.3
+    restart: unless-stopped
+    command: ["-varz", "-connz", "-subz", "-routez", "-gatewayz", "-leafz", "-jsz=all", "http://nats:8222"]
+    depends_on:
+      nats:
+        condition: service_healthy
+    networks: [messaging, monitoring]
+
+  nats-surveyor:
+    image: natsio/nats-surveyor:0.9.11
+    restart: unless-stopped
+    environment:
+      NATS_SURVEYOR_SERVERS: nats://nats:4222
+      NATS_SURVEYOR_USER: ${NATS_SURVEYOR_USER:?run infra/prepare-dev-secrets.sh first}
+      NATS_SURVEYOR_PASSWORD: ${NATS_SURVEYOR_PASSWORD:?run infra/prepare-dev-secrets.sh first}
+      NATS_SURVEYOR_COUNT: "1"
+      NATS_SURVEYOR_JSZ: all
+      NATS_SURVEYOR_JSZ_LEADERS_ONLY: "true"
+      NATS_SURVEYOR_HTTP_USER: ${NATS_SURVEYOR_HTTP_USER:?run infra/prepare-dev-secrets.sh first}
+      NATS_SURVEYOR_HTTP_PASS: ${NATS_SURVEYOR_HTTP_PASSWORD:?run infra/prepare-dev-secrets.sh first}
+    depends_on:
+      nats:
+        condition: service_healthy
+    networks: [messaging, monitoring]
+
+volumes:
+  nats_data:
+
+networks:
+  messaging:
+  monitoring:

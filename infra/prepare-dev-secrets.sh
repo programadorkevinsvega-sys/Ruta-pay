@@ -48,14 +48,6 @@ ensure_secret() {
   printf -v "${key}" '%s' "${configured_value}"
 }
 
-write_htpasswd() {
-  local username="$1"
-  local password="$2"
-  local output_path="$3"
-  printf '%s\n' "${password}" | docker run --rm -i --entrypoint htpasswd "${htpasswd_image}" -B -i -n "${username}" > "${output_path}"
-  chmod 600 "${output_path}"
-}
-
 if [[ -e "${env_file}" ]]; then
   pg_password="$(read_secret POSTGRES_PASSWORD)"
   pg_exporter_password="$(read_secret POSTGRES_EXPORTER_PASSWORD)"
@@ -97,8 +89,6 @@ ensure_value PGADMIN_DEFAULT_EMAIL admin@payvia.dev
 ensure_secret PGADMIN_DEFAULT_PASSWORD
 ensure_value PROMETHEUS_ADMIN_USER payvia_metrics_admin
 ensure_secret PROMETHEUS_ADMIN_PASSWORD
-ensure_value INFRA_UI_USER payvia_ops
-ensure_secret INFRA_UI_PASSWORD
 ensure_secret REDISINSIGHT_ENCRYPTION_KEY
 ensure_value NATS_SURVEYOR_USER payvia_surveyor
 ensure_secret NATS_SURVEYOR_PASSWORD
@@ -106,6 +96,8 @@ ensure_value NATS_SURVEYOR_HTTP_USER payvia_scraper
 ensure_secret NATS_SURVEYOR_HTTP_PASSWORD
 ensure_value NATS_USER payvia_dev
 ensure_value REDIS_MAXMEMORY 2gb
+grep -Eq '^(# )?SENTRY_DSN=' "${env_file}" || printf '\n# SENTRY_DSN=<DSN de Sentry del proyecto de plataforma>\n' >> "${env_file}"
+grep -Eq '^(# )?SENTRY_TRACES_SAMPLE_RATE=' "${env_file}" || printf '# SENTRY_TRACES_SAMPLE_RATE=<valor entre 0 y 1>\n' >> "${env_file}"
 
 printf '%s' "${platform_metrics_token}" > "${secret_dir}/platform_metrics_token"
 printf '%s' "${pasarela_metrics_token}" > "${secret_dir}/pasarela_metrics_token"
@@ -172,19 +164,12 @@ printf '%s' "${pasarela_metrics_token}" > "${secret_dir}/pasarela_metrics_token"
 printf '%s' "${PROMETHEUS_ADMIN_PASSWORD}" > "${secret_dir}/prometheus_admin_password"
 printf '%s' "${NATS_SURVEYOR_HTTP_PASSWORD}" > "${secret_dir}/nats_surveyor_http_password"
 printf 'basic_auth_users:\n  "%s": "%s"\n' "${PROMETHEUS_ADMIN_USER}" "$(printf '%s\n' "${PROMETHEUS_ADMIN_PASSWORD}" | docker run --rm -i --entrypoint htpasswd "${htpasswd_image}" -B -i -n "${PROMETHEUS_ADMIN_USER}" | cut -d: -f2-)" > "${secret_dir}/prometheus-web.yml"
-write_htpasswd "${INFRA_UI_USER}" "${INFRA_UI_PASSWORD}" "${secret_dir}/infra-ui.htpasswd"
 for secret_name in telegram_bot_token telegram_chat_id; do
   secret_path="${secret_dir}/${secret_name}"
-  if [[ -L "${secret_path}" ]]; then
-    printf 'El archivo local %s no puede ser un enlace simbólico.\n' "${secret_name}" >&2
-    exit 1
-  fi
   if [[ ! -e "${secret_path}" ]]; then
     : > "${secret_path}"
-  elif [[ ! -f "${secret_path}" ]]; then
-    printf 'La ruta local %s debe ser un archivo regular.\n' "${secret_name}" >&2
-    exit 1
   fi
 done
 chmod 644 "${secret_dir}"/*
+chmod 600 "${secret_dir}/telegram_bot_token" "${secret_dir}/telegram_chat_id"
 printf '%s\n' 'Secretos locales preparados en bacekend-plataform/.env e infra/.local/secrets/. No se imprimieron en pantalla.'

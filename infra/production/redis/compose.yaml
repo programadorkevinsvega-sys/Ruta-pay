@@ -1,0 +1,63 @@
+name: payvia-production-redis
+
+services:
+  redis:
+    image: redis:8.10.2-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - /usr/local/etc/redis/redis.conf
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:?set REDIS_MAXMEMORY after sizing}
+    ports:
+      - "192.0.2.65:6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - ${REDIS_TLS_DIR:?set REDIS_TLS_DIR}:/run/tls:ro
+      - ${REDIS_CLIENT_CA_DIR:?set REDIS_CLIENT_CA_DIR}:/run/client-ca:ro
+      - ${REDIS_SERVER_CA_DIR:?set REDIS_SERVER_CA_DIR}:/run/server-ca:ro
+      - ${REDIS_HEALTHCHECK_TLS_DIR:?set REDIS_HEALTHCHECK_TLS_DIR}:/run/healthcheck:ro
+      - ${REDIS_HEALTHCHECK_CREDENTIAL_DIR:?set REDIS_HEALTHCHECK_CREDENTIAL_DIR}:/run/healthcheck-credentials:ro
+      - ${REDIS_ACL_DIR:?set REDIS_ACL_DIR}:/run/acl:ro
+      - ${REDIS_EXPORTER_CREDENTIAL_DIR:?set REDIS_EXPORTER_CREDENTIAL_DIR}:/run/credentials:ro
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    sysctls:
+      net.core.somaxconn: "4096"
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - REDISCLI_AUTH="$$(cat /run/healthcheck-credentials/healthcheck-password)" redis-cli -h redis --tls --cacert /run/server-ca/ca.pem --cert /run/healthcheck/redis-healthcheck.crt --key /run/healthcheck/redis-healthcheck.key --user "$${REDIS_HEALTHCHECK_USER}" ping | grep -q PONG
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    environment:
+      REDIS_HEALTHCHECK_USER: ${REDIS_HEALTHCHECK_USER:?set REDIS_HEALTHCHECK_USER}
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.91.1
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: rediss://redis:6379
+      REDIS_USER: ${REDIS_EXPORTER_USER:?set REDIS_EXPORTER_USER}
+      REDIS_PASSWORD_FILE: /run/credentials/exporter-password
+      REDIS_EXPORTER_TLS_CLIENT_KEY_FILE: /run/client/redis-exporter.key
+      REDIS_EXPORTER_TLS_CLIENT_CERT_FILE: /run/client/redis-exporter.crt
+      REDIS_EXPORTER_TLS_CA_CERT_FILE: /run/server-ca/ca.pem
+      REDIS_EXPORTER_TLS_SERVER_NAME: redis
+    ports:
+      - "192.0.2.65:9121:9121"
+    volumes:
+      - ${REDIS_SERVER_CA_DIR:?set REDIS_SERVER_CA_DIR}:/run/server-ca:ro
+      - ${REDIS_EXPORTER_TLS_DIR:?set REDIS_EXPORTER_TLS_DIR}:/run/client:ro
+      - ${REDIS_EXPORTER_CREDENTIAL_DIR:?set REDIS_EXPORTER_CREDENTIAL_DIR}:/run/credentials:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  redis_data:
