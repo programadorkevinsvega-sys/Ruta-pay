@@ -136,24 +136,22 @@ fn validate_config(config: &AppConfig) -> Result<(), ConfigError> {
             variable: "PLATFORM_DATABASE_URL",
         });
     }
-    if config.environment == "production" || config.require_mtls {
-        if url::Url::parse(&config.redis_url).is_ok_and(|url| url.scheme() != "rediss")
-            || !redis_tls_paths.iter().all(|configured| *configured)
-        {
-            return Err(ConfigError::InvalidValue {
-                variable: "PLATFORM_REDIS_TLS_CLIENT_CERT",
-            });
-        }
+    if (config.environment == "production" || config.require_mtls)
+        && (url::Url::parse(&config.redis_url).is_ok_and(|url| url.scheme() != "rediss")
+            || !redis_tls_paths.iter().all(|configured| *configured))
+    {
+        return Err(ConfigError::InvalidValue {
+            variable: "PLATFORM_REDIS_TLS_CLIENT_CERT",
+        });
     }
-    if config.environment == "production" || config.require_mtls {
-        if !config.nats_url.starts_with("tls://")
+    if (config.environment == "production" || config.require_mtls)
+        && (!config.nats_url.starts_with("tls://")
             || !nats_tls_paths.iter().all(|configured| *configured)
-            || !config.require_mtls
-        {
-            return Err(ConfigError::InvalidValue {
-                variable: "PAYVIA_REQUIRE_MTLS",
-            });
-        }
+            || !config.require_mtls)
+    {
+        return Err(ConfigError::InvalidValue {
+            variable: "PAYVIA_REQUIRE_MTLS",
+        });
     }
     if !config.grpc_addr.ip().is_loopback() {
         return Err(ConfigError::InvalidValue {
