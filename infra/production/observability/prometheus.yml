@@ -1,3 +1,4 @@
+# 192.0.2.0/24 addresses are documentation placeholders; replace them with private targets before deployment.
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
@@ -42,15 +43,15 @@ scrape_configs:
 
   - job_name: postgres
     static_configs:
-      - targets: ["10.0.2.142:9187"]
+      - targets: ["192.0.2.142:9187"]
 
   - job_name: redis
     static_configs:
-      - targets: ["10.0.2.65:9121"]
+      - targets: ["192.0.2.65:9121"]
 
   - job_name: nats
     static_configs:
-      - targets: ["10.0.2.97:7777"]
+      - targets: ["192.0.2.97:7777"]
 
   - job_name: node
     static_configs:
@@ -62,7 +63,7 @@ scrape_configs:
       type: Bearer
       credentials_file: /run/secrets/platform_metrics_token
     static_configs:
-      - targets: ["10.0.2.70:19090"]
+      - targets: ["192.0.2.70:19090"]
 
   - job_name: payvia-pasarela
     metrics_path: /metrics
@@ -70,4 +71,4 @@ scrape_configs:
       type: Bearer
       credentials_file: /run/secrets/pasarela_metrics_token
     static_configs:
-      - targets: ["10.0.2.70:19091"]
+      - targets: ["192.0.2.70:19091"]

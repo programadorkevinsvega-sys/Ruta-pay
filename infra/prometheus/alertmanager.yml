@@ -2,16 +2,27 @@ global:
   resolve_timeout: 5m
 
 route:
-  receiver: telegram
-  group_by: [alertname, service, environment]
+  receiver: payvia-telegram
+  group_by: [alertname, component, severity]
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
+  routes:
+    - receiver: payvia-telegram
+      matchers:
+        - severity=~"critical|warning"
 
 receivers:
-  - name: telegram
+  - name: payvia-telegram
     telegram_configs:
       - bot_token_file: /run/secrets/telegram_bot_token
         chat_id_file: /run/secrets/telegram_chat_id
-        parse_mode: HTML
         send_resolved: true
+        parse_mode: ""
+        message: |-
+          {{ range .Alerts -}}
+          [{{ .Status | toUpper }}] {{ .Labels.alertname }} ({{ .Labels.severity }})
+          Componente: {{ .Labels.component }}
+          {{ .Annotations.summary }}
+          {{ .Annotations.description }}
+          {{ end }}

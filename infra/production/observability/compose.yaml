@@ -86,7 +86,7 @@ services:
       PROMETHEUS_ADMIN_USER: ${PROMETHEUS_ADMIN_USER:?set PROMETHEUS_ADMIN_USER}
       PROMETHEUS_ADMIN_PASSWORD: ${PROMETHEUS_ADMIN_PASSWORD:?set PROMETHEUS_ADMIN_PASSWORD}
     ports:
-      - "10.0.2.70:3000:3000"
+      - "192.0.2.70:3000:3000"
     volumes:
       - grafana_data:/var/lib/grafana
       - ../../grafana/provisioning:/etc/grafana/provisioning:ro
