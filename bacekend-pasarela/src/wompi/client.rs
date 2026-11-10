@@ -1,5 +1,7 @@
+use payvia_observability::{current_trace_id, valid_correlation_id};
 use serde::Deserialize;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use tracing::Instrument;
 
 use super::{WompiEnvironment, WompiPaymentStatus};
 
@@ -77,6 +79,120 @@ impl WompiClient {
     }
 
     pub async fn lookup_transaction(
+        &self,
+        transaction_id: &str,
+        correlation_id: &str,
+    ) -> Result<WompiTransaction, WompiClientError> {
+        let correlation_id = if valid_correlation_id(correlation_id) {
+            correlation_id.to_owned()
+        } else {
+            payvia_observability::new_correlation_id()
+        };
+        let span = tracing::info_span!(
+            "gateway.provider.request",
+            component = "gateway_wompi",
+            operation = "lookup_transaction",
+            dependency = "wompi",
+            correlation_id = %correlation_id
+        );
+        async {
+            let started_at = Instant::now();
+            tracing::info!(
+                event.name = "gateway.provider.request.started",
+                component = "gateway_wompi",
+                operation = "lookup_transaction",
+                dependency = "wompi",
+                correlation_id = %correlation_id,
+                trace_id = %current_trace_id()
+            );
+            let result = self.lookup_transaction_inner(transaction_id).await;
+            let duration = started_at.elapsed();
+            let duration_ms = duration.as_millis() as u64;
+            metrics::histogram!(
+                "payvia_provider_request_duration_seconds",
+                "provider" => "wompi",
+                "operation" => "lookup_transaction"
+            )
+            .record(duration.as_secs_f64());
+            match &result {
+                Ok(_) => {
+                    metrics::counter!(
+                        "payvia_provider_requests_total",
+                        "provider" => "wompi",
+                        "operation" => "lookup_transaction",
+                        "result" => "success"
+                    )
+                    .increment(1);
+                    tracing::info!(
+                        event.name = "gateway.provider.request.completed",
+                        component = "gateway_wompi",
+                        operation = "lookup_transaction",
+                        dependency = "wompi",
+                        result = "success",
+                        duration_ms,
+                        correlation_id = %correlation_id,
+                        trace_id = %current_trace_id()
+                    );
+                }
+                Err(error) => {
+                    let (error_code, error_category, retryable) = match error {
+                        WompiClientError::InvalidCredential => {
+                            ("provider_credential_invalid", "authentication", false)
+                        }
+                        WompiClientError::InvalidTransactionId => {
+                            ("provider_transaction_id_invalid", "validation", false)
+                        }
+                        WompiClientError::Unavailable => {
+                            ("provider_unavailable", "connectivity", true)
+                        }
+                        WompiClientError::Rejected => {
+                            ("provider_lookup_rejected", "provider", false)
+                        }
+                        WompiClientError::InvalidResponse => {
+                            ("provider_response_invalid", "provider", false)
+                        }
+                    };
+                    metrics::counter!(
+                        "payvia_provider_requests_total",
+                        "provider" => "wompi",
+                        "operation" => "lookup_transaction",
+                        "result" => "error"
+                    )
+                    .increment(1);
+                    tracing::error!(
+                        event.name = "gateway.provider.request.failed",
+                        component = "gateway_wompi",
+                        operation = "lookup_transaction",
+                        dependency = "wompi",
+                        error_code,
+                        error_category,
+                        retryable,
+                        error_class = %error,
+                        duration_ms,
+                        correlation_id = %correlation_id,
+                        trace_id = %current_trace_id()
+                    );
+                    tracing::info!(
+                        event.name = "gateway.provider.request.completed",
+                        component = "gateway_wompi",
+                        operation = "lookup_transaction",
+                        dependency = "wompi",
+                        error_code,
+                        error_category,
+                        result = "failed",
+                        duration_ms,
+                        correlation_id = %correlation_id,
+                        trace_id = %current_trace_id()
+                    );
+                }
+            }
+            result
+        }
+        .instrument(span)
+        .await
+    }
+
+    async fn lookup_transaction_inner(
         &self,
         transaction_id: &str,
     ) -> Result<WompiTransaction, WompiClientError> {

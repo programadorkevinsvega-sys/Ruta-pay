@@ -1,0 +1,78 @@
+# Implementación de observabilidad distribuida
+
+## Alcance y estado
+
+Este plan sigue las ocho fases del prompt de observabilidad y cubre los dos binarios Rust desplegables de forma independiente. La aplicación continúa ejecutándose como binario nativo; el Compose raíz conserva la infraestructura compartida de desarrollo y añade Alertmanager como servicio opcional. Las configuraciones de producción del stack de observabilidad están aisladas en `infra/production/observability/`.
+
+La auditoría inicial se contrastó con el HEAD `be07fce` de `feat/phase-4-payment-lifecycle-persistence`, la rama del PR #12. CI run [#1185](https://github.com/programadorkevinsvega-sys/Ruta-pay/actions/runs/42543013723) terminó correctamente en el SHA auditado, pero no verifica la propagación completa de callbacks, JetStream, workers, Sentry ni el flujo de alertas.
+
+El estado de cada fase se actualizará únicamente con evidencia del código y de los comandos ejecutados. La auditoría encontró que Loki ya está en Compose; Sentry Cloud, por decisión de ADR-0007, no se autohospeda en Compose. Plataforma ya inicializaba `payvia-observability`, propagaba W3C en HTTP→gRPC y persistía `traceparent` en algunos eventos de pagos. La pasarela no inicializaba el crate compartido ni exponía métricas Prometheus; callbacks y reconciliación no conservaban una traza W3C continua. El saneador de Sentry descartaba datos diagnósticos completos. Prometheus tenía reglas, pero no Alertmanager ni enlaces Loki↔Tempo.
+
+## Decisiones de diseño
+
+- Reutilizar `crates/observability`; no crear un segundo SDK, otro backend de trazas ni un despliegue combinado de los backends.
+- Mantener JSON en stdout y hacer best-effort la exportación remota. Las fallas de Sentry/OTLP no bloquean negocio.
+- Distinguir `correlation_id`/request ID de `trace_id` y `span_id`; propagar W3C `traceparent` validado a través de HTTP, gRPC, envelopes NATS y spans de workers.
+- Mantener los eventos de negocio firmados, versionados, idempotentes y sin secretos ni payloads crudos. La instrumentación no cambia reglas de pagos ni autoridad de dominio.
+- Sentry es Cloud, con DSN separado por servicio/entorno, `send_default_pii=false` y saneamiento por allowlist de contexto seguro. Ningún test normal enviará eventos a un proyecto real.
+- `SENTRY_TRACES_SAMPLE_RATE` es opcional, validada en `[0,1]`; si no se configura no se envían transacciones de rendimiento. No se inventa una tasa predeterminada de producción.
+- Se eligió Telegram para las notificaciones de Alertmanager. El servicio local se activa con el perfil `notifications`; bot token y chat ID se leen de `infra/.local/secrets/telegram_bot_token` y `infra/.local/secrets/telegram_chat_id`, archivos locales ignorados por Git. Alertmanager usa `bot_token_file` y `chat_id_file`; no se copian secretos a Compose versionado, logs ni documentación.
+- No se inventan SLOs ni umbrales de negocio. Las reglas existentes se conservan; los objetivos nuevos requieren evidencia o aprobación.
+
+## Fases
+
+| Fase | Entrega | Criterio de aceptación | Estado inicial |
+|---|---|---|---|
+| 1. Auditoría | Inventario cotejado con binarios, flujos, infraestructura, pruebas y CI del SHA base. | Hallazgos distinguen implementación, evidencia CI y brechas; no se infiere integración por dependencias declaradas. | Completada para el HEAD base; los hallazgos quedan corregidos/extendidos en esta matriz. |
+| 2. Diseño | Contratos y matriz de integración de ambos backends; configuración y privacidad. | Ownership, campos propagados, fallbacks, N/A y escenarios requisito→test están documentados antes de código. | Completada; enlace desde la guía de infraestructura. |
+| 3. Fundación | Inicialización compartida en ambos binarios, IDs, JSON, Sentry seguro y shutdown. | Pruebas deterministas de configuración, saneamiento, propagación y shutdown; ningún secreto en eventos/logs. | En curso; inicialización compartida, muestreo configurable y redacción ampliada están conectados y pasan tests dirigidos; pendiente aceptación de captura Sentry no productiva y validación de apagado con exportadores activos. |
+| 4. Instrumentación | HTTP/Axum, gRPC/Tonic, SQLx, Redis, NATS/JetStream, clientes HTTP y workers. | Spans y eventos de fronteras correlacionados; propagación/reconexión e idempotencia probadas contra dependencias reales aplicables. | En curso; callback, Outbox y consumers de pagos conservan contexto W3C/correlation ID; lookup HTTP de Wompi registra span, duración y resultado clasificado. Faltan instrumentación SQLx/Redis homogénea y aceptación real de reconexión/proveedor. |
+| 5. Métricas | Métricas de pasarela y cobertura acotada de dependencias/workers en ambas aplicaciones. | Endpoint de scrape autenticado, histograms de latencia, tasa de errores y saturación; labels sin IDs de alta cardinalidad. | En curso; endpoint HTTP autenticable y target local, métricas de lookup Wompi/consumers JetStream y paneles de latencia/errores agregados. No se pudo validar Compose ni el scrape real porque Docker no está instalado; falta cobertura homogénea de pools/dependencias. |
+| 6. Infraestructura | Alertmanager/Telegram, datasources Grafana enlazados, dashboards y reglas. | Configuración validada; alertas enrutables; secretos externos no versionados. Entrega Telegram real se reporta aparte si faltan credenciales. | En curso; Alertmanager opcional, alerta de target gateway y enlace Tempo→Loki configurados. Sintaxis YAML/JSON validada localmente; faltan `promtool`/`amtool`, Compose y credenciales para aceptación de punta a punta. |
+| 7. Validación | Pruebas unitarias, integración con PostgreSQL/Redis/JetStream reales, degradación de exporters y CI. | Evidencia por escenario en el commit final; no se marca aceptado lo bloqueado por sandbox/credenciales. | Pendiente. |
+| 8. Documentación | Runbook, variables, consultas, coste/muestreo, respuesta a incidentes y trazabilidad requisito→test→ejecución. | Documentación describe únicamente comportamiento ejecutado y probado. | Pendiente. |
+
+## Matriz de integración previa a implementación
+
+| Frontera | Aplicación y ownership | Pruebas/aceptación requeridas |
+|---|---|---|
+| PostgreSQL / SQLx | El módulo `payments` conserva ownership de `payments.audit_events`, `payments.outbox_events` y `payments.provider_event_inbox`. La instrumentación no crea un store de telemetría ni cruza schemas. Se conservará solo contexto W3C validado y necesario para auditoría/reanudación; cualquier cambio de esquema será migración aditiva del módulo dueño. | Callback firmado válido registra `trace_id`/contexto disponible; contexto inválido no rompe el evento ni genera IDs falsos; fallo SQL revierte todos los efectos del caso de uso; no se registran parámetros SQL ni PII. |
+| Frontend → HTTP/REST/OpenAPI → BFF | No se agrega endpoint ni lógica de negocio al BFF. Se instrumenta el middleware/rutas existentes; las rutas métricas siguen privadas y con bearer token. La pasarela conserva su callback HTTP público autenticado según protocolo del proveedor, sin introducir acceso frontend directo a módulos/stores. | Solicitud HTTP con y sin `traceparent`; ID de correlación inválido/ausente; status, error, ruta normalizada y duración; respuesta/evento final comparte IDs/código/categoría; redacción de headers, URL y cuerpo. |
+| BFF → gRPC → módulo | Se preserva el contrato Tonic actual; contexto W3C viaja en metadata y el span del módulo extrae parent. Los callbacks/workers no se fuerzan a atravesar el BFF. | Éxito, status de error, timeout y desconexión; traza entrante/saliente continua; eventos causales y cierre correlacionados. |
+| Redis | No se introduce Redis como autoridad ni como transporte de trazas. Plataforma mantiene sus usos efímeros actuales (incluido realtime); gateway no obtiene una dependencia Redis nueva. Se instrumentarán operaciones existentes cuando el código/cliente permita medirlas sin alterar sus garantías. | Redis real; errores/conectividad/latencia con etiquetas acotadas. Recuperación del `ConnectionManager`/PubSub y re-suscripción para los usos existentes; sin writes de negocio parciales por telemetría. |
+| NATS JetStream / Outbox | Los productores y consumers existentes conservan contratos de negocio. Se propaga W3C en el envelope firmado y/o metadata compatible, sin incluir secretos. Consumers reconstruyen spans desde contexto validado; reintentos conservan event ID e idempotencia. | JetStream real; callback→evento→consumer→Wompi→resultado→plataforma. Mensaje duplicado, malformed/invalid traceparent, redelivery, fallo de ACK, desconexión/reconexión y ausencia de efectos parciales. |
+| Realtime / WebSocket / TanStack Query / REST cursor | La instrumentación no agrega ni altera estados persistidos visibles ni contratos realtime. Los cambios de pagos existentes siguen usando su flujo vigente. | Verificar que la adición de metadatos de observabilidad no cambia audience, cursor, orden ni recuperación; N/A para nuevos eventos/pantallas porque el alcance no añade cambios de producto visibles. |
+| Clientes HTTP y workers | Wompi conserva su cliente y protocolo oficial. Cada llamada externa y procesamiento/ACK de worker tendrá spans de operación, timeout, resultado y duración, sin URL con IDs, tokens, body ni credenciales. | Errores tipados y spans causales; sin retries no autorizados. Integración de proveedor se prueba en sandbox oficial; sin credenciales, se registra bloqueo y no se simula aceptación. |
+| Sentry / OTLP | `SENTRY_DSN` en plataforma y `GATEWAY_SENTRY_DSN` en pasarela, ambos por entorno; `SENTRY_TRACES_SAMPLE_RATE` permite muestreo de transacciones. PII desactivada, sin mensajes/valores/locals, nombres de excepciones solo con alfabeto seguro, y exportación no bloqueante. | Transporte de prueba no productivo comprueba evento seguro, contexto mínimo, ausencia de secrets/PII, errores de exporter y apagado con flush acotado. Prueba cloud requiere DSN de validación explícitamente configurado fuera del repo. |
+| Prometheus / Grafana / Alertmanager | `infra/` mantiene servicios compartidos de desarrollo; métricas de aplicaciones son escuchadas por cada binario nativo en su listener privado. Telegram es destino seleccionado; credenciales se cargan localmente, nunca como texto versionado. Tempo enlaza a Loki por `service.name` y Trace ID. | `promtool`/Alertmanager config check, target de ambas apps `up`, consulta de logs desde traza, alerta de prueba en entorno local y entrega Telegram solo con credenciales autorizadas. |
+
+## Casos de uso, riesgos y trazabilidad requerida
+
+| ID | Escenario | Resultado esperado | Nivel/evidencia |
+|---|---|---|---|
+| OBS-CTX-01 | HTTP recibe W3C válido y correlation ID ausente, válido o malformado. | Trace ID/span ID válidos en log de inicio/cierre; correlation ID generado o validado independientemente. | Unit + HTTP aceptación. |
+| OBS-CTX-02 | Callback Wompi firmado con contexto W3C válido/no válido/ausente. | Se crea span servidor; contexto válido continúa; el inválido se ignora sin fabricar padre y el callback sigue sujeto a verificación normal. | Unit + JetStream/PostgreSQL reales. |
+| OBS-CTX-03 | Entrega de evento de proveedor y reconciliación desde JetStream, incluyendo redelivery. | Worker retoma contexto validado, registra duración por dependencia/total y propaga traceparent al resultado; `event_id` mantiene idempotencia. | Aceptación real PostgreSQL + JetStream; sandbox Wompi si la operación externa se ejecuta. |
+| OBS-CTX-04 | Sentry recibe error operativo seguro; mensajes contienen credenciales/PII como canarios en prueba aislada. | Solo contexto allowlistado llega al transporte; secretos/PII y payloads no aparecen; evento no se duplica por misma falla en fronteras. | Unit + transporte Sentry de prueba; Cloud solo con autorización y DSN no productivo. |
+| OBS-MET-01 | Scrape autorizado/no autorizado de cada binario. | Endpoint no expone secretos, devuelve métricas con labels acotadas; acceso remoto requiere bearer fuerte y red privada. | HTTP integración. |
+| OBS-DEP-01 | Redis, JetStream, Collector o exporter se interrumpen y recuperan en entorno de desarrollo. | Operación de negocio conserva política existente; exporters degradan sin bloquear; consumidores se reconectan y eventos durables se reprocesan idempotentemente. | Tests reales de infraestructura y script documentado; nunca producción. |
+| OBS-ALERT-01 | Regla Prometheus genera alerta y Alertmanager la enruta a Telegram. | Configuración válida, agrupación/dedupe y entrega con token/chat configurados fuera de Git. | Lint de config; entrega externa queda bloqueada si faltan credenciales. |
+| OBS-UI-01 | Desde una traza en Tempo se navega a logs Loki por `trace_id`. | Enlaces usan campos estructurados de baja cardinalidad y no filtran credenciales. | Validación de provisioning y prueba local Grafana si los servicios están disponibles. |
+
+### Integración, datos y N/A
+
+- No hay cambios nuevos de frontend ni de estado de negocio visible; por ello no se añade una ruta REST, evento de dominio o invalidación TanStack Query. La telemetría que registra un cambio de pago usa el Outbox existente y no produce una segunda notificación.
+- PostgreSQL aplica únicamente cambios aditivos de metadata técnica en `payments`, si son necesarios para retener el contexto entre entrega y deduplicación. No se crean tablas de jobs: reconciliación ya usa caso/attempt persistentes.
+- Redis no será el journal de trazas, ni almacenará autoridad/idempotencia financiera. Se probará el comportamiento de reconexión de las funciones de plataforma ya dependientes de Redis.
+- NATS JetStream sigue siendo el transporte durable existente; no se migra a Redis Pub/Sub para trazas o eventos de negocio.
+- No se desplegará Sentry self-hosted ni se añadirán procesos de aplicación a Compose.
+
+## Evidencia y bloqueos
+
+Una fase no se cierra con archivos de configuración o pruebas sin ejecutar. El DSN Sentry y las credenciales Telegram deben residir en el entorno local ignorado/secret manager correspondiente. Las integraciones cloud y sandbox no se declararán verificadas si sus credenciales o autorización faltan.
+
+## Evidencia de esta actualización del PR
+
+En `/tmp/rutapay-observability-pr` sobre `feat/phase-4-payment-lifecycle-persistence` se ejecutaron `cargo test --locked -p payvia-observability -p bacekend-pasarela -p platform-runtime -p payvia-platform-bff` (aprobado), `cargo clippy --locked --all-targets -p payvia-observability -p bacekend-pasarela -p platform-runtime -p payvia-platform-bff -- -D warnings` (aprobado), `rustfmt --edition 2024 --check` sobre los archivos Rust modificados, `git diff --check`, parseo YAML de Compose/Prometheus/Alertmanager y Compose de producción, parseo JSON del dashboard y `bash -n infra/prepare-dev-secrets.sh` (aprobados). `cargo fmt --all -- --check` no queda aprobado: reporta formato preexistente en archivos de billing fuera del diff; el chequeo dirigido sí pasó.
+
+No se ejecutaron Docker Compose, `promtool`/`amtool`, pruebas de integración con PostgreSQL/Redis/JetStream reales, Sentry Cloud, ni entrega a Telegram; faltan Docker/validadores y credenciales autorizadas. Tampoco se verificó CI sobre un SHA nuevo. Las fases siguen abiertas y estas brechas no se reportan como aceptadas.

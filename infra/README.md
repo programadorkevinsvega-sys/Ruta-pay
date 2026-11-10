@@ -19,6 +19,7 @@ La configuración está fijada a tags de imagen versionados. PostgreSQL arranca 
 | OTLP gRPC/HTTP Collector | `127.0.0.1:4317` / `127.0.0.1:4318` | imagen oficial Contrib 0.162.0 fijada en GHCR; exporta a Tempo, Loki y Prometheus |
 | Tempo | `127.0.0.1:3200` detrás de proxy Basic Auth | volumen `tempo_data`, 7 días |
 | Loki | `127.0.0.1:3100` detrás de proxy Basic Auth | volumen `loki_data`, 7 días |
+| Alertmanager | `127.0.0.1:9093`, perfil Compose `notifications` | volumen `alertmanager_data`; notificaciones Telegram |
 | Exporters de PostgreSQL, Redis, NATS y NATS Surveyor | solo red interna Compose; scrape autenticado cuando corresponde | sin estado propio |
 
 Las credenciales locales están en `bacekend-plataform/.env`, ignorado por Git, y los hashes/archivos de servicio en `infra/.local/secrets/`. `docker compose --env-file bacekend-plataform/.env` usa ese archivo para interpolar el stack local; no se crea un `.env` raíz. Cada backend conserva su `.env` independiente, aunque repita credenciales compartidas de PostgreSQL, Redis o NATS.
@@ -32,6 +33,8 @@ Las credenciales locales están en `bacekend-plataform/.env`, ignorado por Git, 
 | NATS Surveyor | `NATS_SURVEYOR_USER` / `NATS_SURVEYOR_HTTP_USER` | `NATS_SURVEYOR_PASSWORD` / `NATS_SURVEYOR_HTTP_PASSWORD` | Credencial NATS de sistema y Basic Auth del endpoint de métricas |
 
 Los valores secretos se generan y consultan localmente en `bacekend-plataform/.env`; no se imprimen en esta guía ni se versionan. NATS Surveyor es un exporter de métricas, no un panel web: sus datos se consultan en Grafana con el usuario/contraseña de Grafana. RedisInsight no tiene una cuenta local configurable equivalente a pgAdmin; su interfaz queda detrás del proxy autenticado y su conexión a Redis viene preconfigurada con el usuario `default` y la contraseña de Redis.
+
+Alertmanager es opcional en desarrollo. `infra/prepare-dev-secrets.sh` crea archivos locales vacíos para el token del bot y el ID del chat; antes de activarlo, complétalos con credenciales de un bot de prueba y un chat autorizado, sin incluirlos en comandos, logs ni archivos versionados. El archivo de configuración usa los campos oficiales `bot_token_file` y `chat_id_file`. Para arrancarlo: `docker compose --profile notifications --env-file bacekend-plataform/.env up -d --wait alertmanager`. La configuración de producción está separada en `infra/production/observability/compose.yaml` y debe recibir rutas a secretos gestionados fuera del repositorio.
 
 Para registrar PostgreSQL desde el pgAdmin de Compose, usa `postgres` como host y `5432` como puerto; completa la base, el usuario y la contraseña con `POSTGRES_DB`, `POSTGRES_USER` y `POSTGRES_PASSWORD` de `bacekend-plataform/.env`. El nombre visible, por ejemplo `Payvia local`, va en la pestaña General. No uses `127.0.0.1` como host desde pgAdmin en Docker: dentro de ese contenedor apunta al propio pgAdmin. Para un cliente PostgreSQL instalado directamente en el host, el host publicado sí es `127.0.0.1:5432`.
 

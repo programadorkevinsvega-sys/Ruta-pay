@@ -17,6 +17,7 @@ fn test_config(grpc_addr: &str, metrics_addr: &str, metrics_token: Option<String
         version: "test-version".to_owned(),
         otlp_endpoint: None,
         sentry_dsn: None,
+        sentry_traces_sample_rate: None,
         metrics_token,
     }
 }
@@ -40,6 +41,16 @@ fn otlp_endpoint_rejects_credentials_and_query_strings() {
         "https://collector.example:4317?token=sensitive"
     ));
     assert!(validate_otlp_endpoint("https://collector.example:4317"));
+}
+
+#[test]
+fn sentry_trace_sample_rate_is_bounded_and_finite() {
+    assert!(valid_sentry_traces_sample_rate(0.0));
+    assert!(valid_sentry_traces_sample_rate(1.0));
+    assert!(!valid_sentry_traces_sample_rate(-0.1));
+    assert!(!valid_sentry_traces_sample_rate(1.1));
+    assert!(!valid_sentry_traces_sample_rate(f32::NAN));
+    assert!(!valid_sentry_traces_sample_rate(f32::INFINITY));
 }
 
 #[test]
@@ -106,6 +117,7 @@ fn isolated_valid_config() -> AppConfig {
         version: "test-version".to_owned(),
         otlp_endpoint: None,
         sentry_dsn: None,
+        sentry_traces_sample_rate: None,
         metrics_token: None,
     }
 }

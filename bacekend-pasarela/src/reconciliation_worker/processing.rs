@@ -1,4 +1,8 @@
 use super::*;
+use payvia_observability::start_sentry_transaction;
+
+#[cfg(test)]
+mod tests;
 
 pub(super) async fn process_request(
     state: &GatewayWebhookState,
@@ -14,11 +18,39 @@ pub(super) async fn process_request(
     if envelope.event_id.is_nil()
         || envelope.event_type != "payment.reconciliation.requested"
         || envelope.audience != "gateway"
-        || envelope.correlation_id.is_empty()
-        || envelope.correlation_id.len() > 128
+        || !valid_correlation_id(&envelope.correlation_id)
     {
         return Err(RequestError::InvalidEnvelope);
     }
+    let span = tracing::info_span!(
+        "gateway.reconciliation.process",
+        component = "gateway_reconciliation",
+        operation = "process_reconciliation_request",
+        event_id = %envelope.event_id,
+        correlation_id = %envelope.correlation_id,
+        delivery_attempt
+    );
+    if let Err(error) = span.set_parent(extract_trace_context(envelope.traceparent.as_deref())) {
+        tracing::warn!(
+            event.name = "gateway.reconciliation.trace_context.rejected",
+            component = "gateway_reconciliation",
+            operation = "process_reconciliation_request",
+            error_code = %error,
+            correlation_id = %envelope.correlation_id
+        );
+    }
+    process_verified_request(state, jetstream, envelope, delivery_attempt)
+        .instrument(span)
+        .await
+}
+
+async fn process_verified_request(
+    state: &GatewayWebhookState,
+    jetstream: &jetstream::Context,
+    envelope: PlatformEvent,
+    delivery_attempt: i64,
+) -> Result<(), RequestError> {
+    let sentry_transaction = start_sentry_transaction("gateway.payment_reconciliation", "worker");
     let request: ReconciliationRequest =
         serde_json::from_value(envelope.payload).map_err(|_| RequestError::InvalidEnvelope)?;
     if request.tenant_id.is_nil()
@@ -65,7 +97,10 @@ pub(super) async fn process_request(
         account.private_key.clone(),
     )
     .map_err(|_| RequestError::InvalidAccount)?;
-    let transaction = match client.lookup_transaction(transaction_reference).await {
+    let transaction = match client
+        .lookup_transaction(transaction_reference, &envelope.correlation_id)
+        .await
+    {
         Ok(transaction) => transaction,
         Err(WompiClientError::Unavailable) if delivery_attempt < 10 => {
             return Err(RequestError::Unavailable);
@@ -155,7 +190,7 @@ pub(super) async fn process_request(
     }))
     .map_err(|_| RequestError::InvalidEnvelope)?;
     let evidence_hash = hex_upper(&Sha256::digest(evidence));
-    publish_result(
+    let result = publish_result(
         state,
         jetstream,
         &request,
@@ -168,7 +203,9 @@ pub(super) async fn process_request(
         Some((&transaction.currency, evidence_hash)),
         None,
     )
-    .await
+    .await;
+    drop(sentry_transaction);
+    result
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -204,6 +241,7 @@ async fn publish_result(
         evidence_sha256: evidence.map(|value| value.1),
         safe_error_code,
         correlation_id,
+        traceparent: current_traceparent(),
         occurred_at_unix_millis: chrono::Utc::now().timestamp_millis(),
     };
     let unsigned = serde_json::to_vec(&event).map_err(|_| RequestError::InvalidEnvelope)?;
@@ -298,79 +336,4 @@ fn hex_upper(value: &[u8]) -> String {
         output.push(HEX[(byte & 0x0f) as usize] as char);
     }
     output
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-    use std::sync::Arc;
-
-    #[test]
-    fn verifies_signed_platform_reconciliation_requests_and_rejects_tampering() {
-        let key = [31_u8; 32];
-        let config = ReconciliationWorkerConfig {
-            platform_request_key: Arc::from(key.to_vec()),
-            platform_request_key_id: Arc::from("platform-gateway-v1"),
-        };
-        let mut envelope = json!({
-            "event_id": "2c02b42d-06c1-4b2c-9c51-f2e47fd2a8c8",
-            "event_type": "payment.reconciliation.requested",
-            "schema_version": 1,
-            "audience": "gateway",
-            "correlation_id": "reconciliation-test",
-            "payload": {"attempt_id":"f1bb8f4a-5c2e-4c8a-b0b5-0fb2f6d6f54c"}
-        });
-        let canonical = serde_json::to_vec(&envelope).expect("canonical event");
-        let signature =
-            hex_upper(hmac::sign(&hmac::Key::new(hmac::HMAC_SHA256, &key), &canonical).as_ref());
-        envelope["producer_auth"] = json!({
-            "key_id": "platform-gateway-v1",
-            "signature": signature
-        });
-
-        verify_platform_event(&envelope, &config)
-            .expect("platform-signed reconciliation request is authenticated");
-        envelope["audience"] = json!("tenant");
-        assert!(matches!(
-            verify_platform_event(&envelope, &config),
-            Err(RequestError::Unauthenticated)
-        ));
-    }
-
-    #[test]
-    fn rejects_wrong_platform_key_id_and_short_verification_keys() {
-        let key = [31_u8; 32];
-        let config = ReconciliationWorkerConfig {
-            platform_request_key: Arc::from(key.to_vec()),
-            platform_request_key_id: Arc::from("expected-key"),
-        };
-        let envelope = json!({
-            "event_id": "2c02b42d-06c1-4b2c-9c51-f2e47fd2a8c8",
-            "producer_auth": {"key_id":"other-key","signature":"00".repeat(32)}
-        });
-        assert!(matches!(
-            verify_platform_event(&envelope, &config),
-            Err(RequestError::Unauthenticated)
-        ));
-
-        let short_key = [31_u8; 16];
-        let short_config = ReconciliationWorkerConfig {
-            platform_request_key: Arc::from(short_key.to_vec()),
-            platform_request_key_id: Arc::from("expected-key"),
-        };
-        let mut short_envelope = json!({"event_id":"short-key-event"});
-        let canonical = serde_json::to_vec(&short_envelope).expect("canonical event");
-        let signature = hex_upper(
-            hmac::sign(&hmac::Key::new(hmac::HMAC_SHA256, &short_key), &canonical).as_ref(),
-        );
-        short_envelope["producer_auth"] = json!({
-            "key_id": "expected-key",
-            "signature": signature
-        });
-        assert!(matches!(
-            verify_platform_event(&short_envelope, &short_config),
-            Err(RequestError::Unauthenticated)
-        ));
-    }
 }

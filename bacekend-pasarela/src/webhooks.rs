@@ -10,11 +10,19 @@ use axum::{
     routing::{get, post},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use payvia_observability::{current_traceparent, new_correlation_id, valid_correlation_id};
 use ring::hmac;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::wompi::{WompiEnvironment, verify_event};
+
+mod request_diagnostics;
+
+use request_diagnostics::request_diagnostics;
+
+#[cfg(test)]
+mod tests;
 
 const PLATFORM_SUBJECT: &str = "payvia.platform.events.v1.payments.provider_event.verified";
 const MAX_CALLBACK_BYTES: usize = 65_536;
@@ -51,6 +59,8 @@ struct ProviderEvent {
     currency: String,
     occurred_at_unix_millis: i64,
     correlation_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    traceparent: Option<String>,
     payload_sha256: String,
     event_id: Uuid,
 }
@@ -73,24 +83,69 @@ enum WebhookError {
 
 impl IntoResponse for WebhookError {
     fn into_response(self) -> Response {
-        let (status, code) = match self {
-            Self::UnknownAccount => (StatusCode::NOT_FOUND, "provider_account_not_found"),
+        let (status, diagnostic) = match self {
+            Self::UnknownAccount => (
+                StatusCode::NOT_FOUND,
+                WebhookDiagnostic {
+                    code: "provider_account_not_found",
+                    category: "validation",
+                    dependency: "none",
+                    retryable: false,
+                },
+            ),
             Self::InvalidConfiguration => (
                 StatusCode::SERVICE_UNAVAILABLE,
-                "provider_account_unavailable",
+                WebhookDiagnostic {
+                    code: "provider_account_unavailable",
+                    category: "configuration",
+                    dependency: "none",
+                    retryable: false,
+                },
             ),
-            Self::InvalidCallback => (StatusCode::BAD_REQUEST, "provider_callback_invalid"),
+            Self::InvalidCallback => (
+                StatusCode::BAD_REQUEST,
+                WebhookDiagnostic {
+                    code: "provider_callback_invalid",
+                    category: "validation",
+                    dependency: "none",
+                    retryable: false,
+                },
+            ),
             Self::Unauthenticated => (
                 StatusCode::UNAUTHORIZED,
-                "provider_callback_unauthenticated",
+                WebhookDiagnostic {
+                    code: "provider_callback_unauthenticated",
+                    category: "authentication",
+                    dependency: "none",
+                    retryable: false,
+                },
             ),
             Self::EventBusUnavailable => (
                 StatusCode::SERVICE_UNAVAILABLE,
-                "provider_event_delivery_unavailable",
+                WebhookDiagnostic {
+                    code: "provider_event_delivery_unavailable",
+                    category: "dependency",
+                    dependency: "nats_jetstream",
+                    retryable: true,
+                },
             ),
         };
-        (status, Json(serde_json::json!({"error":{"code":code}}))).into_response()
+        let mut response = (
+            status,
+            Json(serde_json::json!({"error":{"code":diagnostic.code}})),
+        )
+            .into_response();
+        response.extensions_mut().insert(diagnostic);
+        response
     }
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct WebhookDiagnostic {
+    code: &'static str,
+    category: &'static str,
+    dependency: &'static str,
+    retryable: bool,
 }
 
 impl GatewayWebhookState {
@@ -137,6 +192,7 @@ pub fn router(state: GatewayWebhookState) -> Router {
             post(receive_wompi_event),
         )
         .layer(axum::extract::DefaultBodyLimit::max(MAX_CALLBACK_BYTES))
+        .layer(axum::middleware::from_fn(request_diagnostics))
         .with_state(state)
 }
 
@@ -183,7 +239,13 @@ async fn receive_wompi_event(
         amount_minor: verified.amount_minor,
         currency: verified.currency,
         occurred_at_unix_millis: verified.occurred_at.timestamp_millis(),
-        correlation_id: format!("wompi-{}", &verified.provider_event_id[..16]),
+        correlation_id: headers
+            .get("x-correlation-id")
+            .and_then(|value| value.to_str().ok())
+            .filter(|value| valid_correlation_id(value))
+            .map(str::to_owned)
+            .unwrap_or_else(new_correlation_id),
+        traceparent: current_traceparent(),
         payload_sha256: hex_upper(&verified.payload_sha256),
         event_id: verified.event_id,
     };
@@ -286,74 +348,4 @@ pub fn load_account_registry(encoded: &str) -> Result<Vec<WompiAccountConfig>, &
         }
     }
     Ok(accounts)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn account_registry_rejects_cross_environment_event_secrets() {
-        let account = WompiAccountConfig {
-            account_reference: "merchant_01".to_owned(),
-            tenant_id: Uuid::new_v4(),
-            environment: "test".to_owned(),
-            event_secret: "prod_events_not_for_test".to_owned(),
-            private_key: "prv_test_account_private_key".to_owned(),
-        };
-        assert_eq!(
-            validate_account(&account),
-            Err("wompi_event_secret_environment_mismatch")
-        );
-    }
-
-    #[test]
-    fn account_registry_rejects_invalid_and_duplicate_references() {
-        let first = WompiAccountConfig {
-            account_reference: "merchant_01".to_owned(),
-            tenant_id: Uuid::new_v4(),
-            environment: "test".to_owned(),
-            event_secret: "test_events_test_secret_long_enough".to_owned(),
-            private_key: "prv_test_private_key_long_enough".to_owned(),
-        };
-        let second = WompiAccountConfig {
-            account_reference: "merchant_01".to_owned(),
-            tenant_id: Uuid::new_v4(),
-            environment: "test".to_owned(),
-            event_secret: "test_events_second_secret_long_enough".to_owned(),
-            private_key: "prv_test_second_private_key_long".to_owned(),
-        };
-        let parsed = serde_json::to_string(&vec![
-            serde_json::json!({
-                "account_reference":first.account_reference,
-                "tenant_id":first.tenant_id,
-                "environment":first.environment,
-                "event_secret":first.event_secret,
-                "private_key":first.private_key
-            }),
-            serde_json::json!({
-                "account_reference":second.account_reference,
-                "tenant_id":second.tenant_id,
-                "environment":second.environment,
-                "event_secret":second.event_secret,
-                "private_key":second.private_key
-            }),
-        ])
-        .expect("serialize");
-        assert!(matches!(
-            load_account_registry(&parsed),
-            Err("wompi_account_reference_duplicate")
-        ));
-    }
-
-    #[test]
-    fn signing_key_requires_a_minimum_256_bits() {
-        let short = STANDARD.encode([7_u8; 16]);
-        assert_eq!(
-            load_event_signing_key(&short),
-            Err("gateway_event_signing_key_invalid")
-        );
-        let valid = STANDARD.encode([7_u8; 32]);
-        assert_eq!(load_event_signing_key(&valid).expect("valid").len(), 32);
-    }
 }

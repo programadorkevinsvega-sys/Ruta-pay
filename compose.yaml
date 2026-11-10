@@ -236,6 +236,22 @@ services:
     depends_on: [postgres-exporter, redis-exporter, nats-exporter, nats-surveyor, node-exporter, otel-collector]
     networks: [monitoring]
 
+  alertmanager:
+    image: prom/alertmanager:v0.34.2
+    restart: unless-stopped
+    profiles: [notifications]
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    ports:
+      - "127.0.0.1:9093:9093"
+    volumes:
+      - ./infra/prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./infra/.local/secrets/telegram_bot_token:/run/secrets/telegram_bot_token:ro
+      - ./infra/.local/secrets/telegram_chat_id:/run/secrets/telegram_chat_id:ro
+      - alertmanager_data:/alertmanager
+    networks: [monitoring]
+
   loki:
     image: grafana/loki:3.7.7
     restart: unless-stopped
@@ -294,6 +310,7 @@ volumes:
   grafana_data:
   pgadmin_data:
   redisinsight_data:
+  alertmanager_data:
 
 networks:
   data:

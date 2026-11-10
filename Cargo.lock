@@ -247,18 +247,22 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "chrono",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "payvia-observability",
  "platform-contracts",
  "reqwest 0.12.28",
  "ring",
  "serde",
  "serde_json",
  "sha2 0.11.1",
+ "subtle",
  "thiserror",
  "tokio",
  "tokio-stream",
  "tonic",
  "tracing",
- "tracing-subscriber",
+ "tracing-opentelemetry",
  "uuid",
 ]
 
@@ -276,12 +280,12 @@ dependencies = [
  "opentelemetry_sdk",
  "payvia-platform-bff",
  "payvia-platform-core",
+ "platform-billing",
  "platform-catalog-pricing",
  "platform-contracts",
  "platform-entitlements-quotas",
  "platform-identity-access",
  "platform-payments",
- "platform-billing",
  "platform-realtime",
  "platform-runtime",
  "platform-tenant-registry",
@@ -2198,6 +2202,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
+name = "platform-billing"
+version = "0.1.0"
+dependencies = [
+ "async-nats",
+ "base64 0.22.1",
+ "chrono",
+ "metrics",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "platform-catalog-pricing"
 version = "0.1.0"
 dependencies = [
@@ -2268,24 +2290,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "platform-billing"
-version = "0.1.0"
-dependencies = [
- "tokio",
- "async-nats",
- "base64 0.22.1",
- "chrono",
- "metrics",
- "serde",
- "serde_json",
- "sha2 0.11.1",
- "sqlx",
- "thiserror",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "platform-payments"
 version = "0.1.0"
 dependencies = [
@@ -2341,12 +2345,12 @@ dependencies = [
  "opentelemetry",
  "payvia-observability",
  "payvia-platform-core",
+ "platform-billing",
  "platform-catalog-pricing",
  "platform-contracts",
  "platform-entitlements-quotas",
  "platform-identity-access",
  "platform-payments",
- "platform-billing",
  "platform-realtime",
  "platform-tenant-registry",
  "redis",

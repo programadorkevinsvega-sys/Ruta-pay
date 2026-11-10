@@ -1,12 +1,15 @@
 use std::{sync::Arc, time::Duration};
 
 use async_nats::jetstream::{self, consumer::AckPolicy};
+use payvia_observability::{current_traceparent, extract_trace_context, valid_correlation_id};
 use ring::hmac;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use tokio::{sync::watch, time};
 use tokio_stream::StreamExt;
+use tracing::Instrument;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 use uuid::Uuid;
 
 mod processing;
@@ -35,6 +38,8 @@ struct PlatformEvent {
     event_type: String,
     audience: String,
     correlation_id: String,
+    #[serde(default)]
+    traceparent: Option<String>,
     payload: Value,
 }
 
@@ -78,6 +83,8 @@ struct ReconciliationResult<'a> {
     evidence_sha256: Option<String>,
     safe_error_code: Option<&'static str>,
     correlation_id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    traceparent: Option<String>,
     occurred_at_unix_millis: i64,
 }
 

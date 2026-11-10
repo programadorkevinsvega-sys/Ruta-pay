@@ -14,6 +14,7 @@ pub struct AppConfig {
     pub version: String,
     pub otlp_endpoint: Option<String>,
     pub sentry_dsn: Option<String>,
+    pub sentry_traces_sample_rate: Option<f32>,
     pub metrics_token: Option<String>,
 }
 
@@ -55,6 +56,7 @@ impl AppConfig {
             version: value("APP_VERSION", env!("CARGO_PKG_VERSION")),
             otlp_endpoint: otlp_endpoint()?,
             sentry_dsn: sentry_dsn()?,
+            sentry_traces_sample_rate: sentry_traces_sample_rate()?,
             metrics_token: optional("APP_METRICS_BEARER_TOKEN"),
         };
         validate_config(&config)?;
@@ -63,6 +65,14 @@ impl AppConfig {
 }
 
 fn validate_config(config: &AppConfig) -> Result<(), ConfigError> {
+    if config
+        .sentry_traces_sample_rate
+        .is_some_and(|rate| !valid_sentry_traces_sample_rate(rate))
+    {
+        return Err(ConfigError::InvalidValue {
+            variable: "SENTRY_TRACES_SAMPLE_RATE",
+        });
+    }
     if !validate_database_url(&config.database_url) {
         return Err(ConfigError::InvalidValue {
             variable: "PLATFORM_DATABASE_URL",
@@ -227,6 +237,26 @@ fn sentry_dsn() -> Result<Option<String>, ConfigError> {
         });
     }
     Ok(dsn)
+}
+
+fn sentry_traces_sample_rate() -> Result<Option<f32>, ConfigError> {
+    let rate = optional("SENTRY_TRACES_SAMPLE_RATE")
+        .map(|value| {
+            value.parse::<f32>().map_err(|_| ConfigError::InvalidValue {
+                variable: "SENTRY_TRACES_SAMPLE_RATE",
+            })
+        })
+        .transpose()?;
+    if rate.is_some_and(|value| !valid_sentry_traces_sample_rate(value)) {
+        return Err(ConfigError::InvalidValue {
+            variable: "SENTRY_TRACES_SAMPLE_RATE",
+        });
+    }
+    Ok(rate)
+}
+
+fn valid_sentry_traces_sample_rate(rate: f32) -> bool {
+    rate.is_finite() && (0.0..=1.0).contains(&rate)
 }
 
 fn optional(variable: &str) -> Option<String> {

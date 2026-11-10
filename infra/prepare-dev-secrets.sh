@@ -173,5 +173,18 @@ printf '%s' "${PROMETHEUS_ADMIN_PASSWORD}" > "${secret_dir}/prometheus_admin_pas
 printf '%s' "${NATS_SURVEYOR_HTTP_PASSWORD}" > "${secret_dir}/nats_surveyor_http_password"
 printf 'basic_auth_users:\n  "%s": "%s"\n' "${PROMETHEUS_ADMIN_USER}" "$(printf '%s\n' "${PROMETHEUS_ADMIN_PASSWORD}" | docker run --rm -i --entrypoint htpasswd "${htpasswd_image}" -B -i -n "${PROMETHEUS_ADMIN_USER}" | cut -d: -f2-)" > "${secret_dir}/prometheus-web.yml"
 write_htpasswd "${INFRA_UI_USER}" "${INFRA_UI_PASSWORD}" "${secret_dir}/infra-ui.htpasswd"
+for secret_name in telegram_bot_token telegram_chat_id; do
+  secret_path="${secret_dir}/${secret_name}"
+  if [[ -L "${secret_path}" ]]; then
+    printf 'El archivo local %s no puede ser un enlace simbólico.\n' "${secret_name}" >&2
+    exit 1
+  fi
+  if [[ ! -e "${secret_path}" ]]; then
+    : > "${secret_path}"
+  elif [[ ! -f "${secret_path}" ]]; then
+    printf 'La ruta local %s debe ser un archivo regular.\n' "${secret_name}" >&2
+    exit 1
+  fi
+done
 chmod 644 "${secret_dir}"/*
 printf '%s\n' 'Secretos locales preparados en bacekend-plataform/.env e infra/.local/secrets/. No se imprimieron en pantalla.'

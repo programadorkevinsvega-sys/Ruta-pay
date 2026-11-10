@@ -9,5 +9,6 @@ pub fn initialize(config: &AppConfig) -> Result<TelemetryRuntime, TelemetryInitE
         release: &config.version,
         otlp_endpoint: config.otlp_endpoint.as_deref(),
         sentry_dsn: config.sentry_dsn.as_deref(),
+        sentry_traces_sample_rate: config.sentry_traces_sample_rate,
     })
 }
