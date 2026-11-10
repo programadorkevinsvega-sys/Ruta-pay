@@ -1,0 +1,64 @@
+name: payvia-shared-infra
+
+services:
+  redis:
+    image: redis:8.10.2-alpine
+    restart: unless-stopped
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./infra/.local/secrets/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    sysctls:
+      net.core.somaxconn: "4096"
+    stop_grace_period: 30s
+    networks: [data, redis_admin]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(awk '$$1 == \"requirepass\" {print $$2}' /usr/local/etc/redis/redis.conf)\" redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.91.1
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?run infra/prepare-dev-secrets.sh first}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks: [data, monitoring]
+
+  redisinsight:
+    image: redis/redisinsight:3.8.0
+    restart: unless-stopped
+    environment:
+      RI_APP_HOST: 0.0.0.0
+      RI_APP_PORT: "5540"
+      RI_ENCRYPTION_KEY: ${REDISINSIGHT_ENCRYPTION_KEY:?run infra/prepare-dev-secrets.sh first}
+      RI_REDIS_HOST: redis
+      RI_REDIS_PORT: "6379"
+      RI_REDIS_ALIAS: payvia-dev
+      RI_REDIS_USERNAME: default
+      RI_REDIS_PASSWORD: ${REDIS_PASSWORD:?run infra/prepare-dev-secrets.sh first}
+    volumes:
+      - redisinsight_data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks: [redis_admin]
+
+volumes:
+  redis_data:
+  redisinsight_data:
+
+networks:
+  data:
+  monitoring:
+  redis_admin:

@@ -1,0 +1,58 @@
+name: payvia-staging-nats
+
+services:
+  nats:
+    image: nats:2.15.1-alpine
+    restart: unless-stopped
+    network_mode: host
+    mem_limit: 1536m
+    cpus: 1.5
+    command: ["--config=/etc/nats/nats-server.conf"]
+    environment:
+      NATS_MAX_MEM_STORE: ${NATS_MAX_MEM_STORE:-256MB}
+      NATS_MAX_FILE_STORE: ${NATS_MAX_FILE_STORE:-4GB}
+    volumes:
+      - nats_data:/data
+      - ./nats-server.conf:/etc/nats/nats-server.conf:ro
+    secrets:
+      - source: nats_authorization
+        target: /etc/nats/authorization.conf
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8222/healthz | grep -q 'ok'"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  nats-exporter:
+    image: natsio/prometheus-nats-exporter:0.17.3
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.2
+    command:
+      - -a
+      - 192.0.2.97
+      - -varz
+      - -connz
+      - -subz
+      - -routez
+      - -gatewayz
+      - -leafz
+      - -jsz=all
+      - http://127.0.0.1:8222
+    network_mode: host
+    depends_on:
+      nats:
+        condition: service_healthy
+
+volumes:
+  nats_data:
+
+secrets:
+  nats_authorization:
+    file: ${NATS_AUTHORIZATION_FILE:?set NATS_AUTHORIZATION_FILE}

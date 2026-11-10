@@ -48,7 +48,7 @@ npm run build
 npm run dev
 ```
 
-La configuración pertenece a esta aplicación frontend. Copia `.env.example` a `.env` en `frontends/frontend-plataform` y define `VITE_PLATFORM_BFF_URL` con la dirección del BFF. Vite reenvía `/v1` por ese destino y alinea `Host` y `Origin` únicamente en el proxy local para cumplir la validación same-origin del BFF. Producción requiere servir `/v1` por HTTPS al BFF sin alterar `Host` ni `Origin`.
+La única variable frontend es `VITE_PLATFORM_BFF_URL`. Copia `.env.example` a `.env` en `frontends/frontend-plataform` para indicar el BFF al proxy local de Vite, que reenvía `/v1` y alinea `Host`/`Origin` solo en desarrollo. En producción, el servidor web enruta `/v1` por HTTPS al BFF de plataforma en el puerto privado `18080` (o al puerto definido en `APP_HTTP_ADDR`), sin alterar `Host` ni `Origin`; el bundle no debe contener credenciales ni secretos. La variable `VITE_*` no configura el proxy del servidor de producción.
 
 ## Uso de APIs administrativas
 

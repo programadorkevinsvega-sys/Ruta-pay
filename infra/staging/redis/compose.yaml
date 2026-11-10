@@ -1,0 +1,57 @@
+name: payvia-staging-redis
+
+services:
+  redis:
+    image: redis:8.10.2-alpine
+    restart: unless-stopped
+    user: "999:1000"
+    network_mode: host
+    mem_limit: 768m
+    cpus: 0.8
+    command:
+      - redis-server
+      - /usr/local/etc/redis/redis.conf
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-512mb}
+    volumes:
+      - redis_data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - ${REDIS_ACL_FILE:?set REDIS_ACL_FILE}:/run/acl/users.acl:ro
+    secrets:
+      - redis_healthcheck_password
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - REDISCLI_AUTH="$$(cat /run/secrets/redis_healthcheck_password)" redis-cli -h 192.0.2.65 --user payvia_healthcheck ping | grep -q PONG
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    stop_grace_period: 30s
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.91.1
+    restart: unless-stopped
+    network_mode: host
+    mem_limit: 128m
+    cpus: 0.2
+    environment:
+      REDIS_ADDR: redis://192.0.2.65:6379
+      REDIS_USER: payvia_exporter
+      REDIS_PASSWORD_FILE: /run/secrets/redis_exporter_password
+    command:
+      - --web.listen-address=192.0.2.65:9121
+    secrets:
+      - redis_exporter_password
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  redis_data:
+
+secrets:
+  redis_healthcheck_password:
+    file: ${REDIS_HEALTHCHECK_PASSWORD_FILE:?set REDIS_HEALTHCHECK_PASSWORD_FILE}
+  redis_exporter_password:
+    file: ${REDIS_EXPORTER_PASSWORD_FILE:?set REDIS_EXPORTER_PASSWORD_FILE}

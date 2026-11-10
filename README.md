@@ -73,7 +73,7 @@ Los navegadores consumen exclusivamente el BFF de plataforma mediante REST/OpenA
 
 ### Build y despliegues
 
-Los dos backends comparten el `Cargo.toml`/`Cargo.lock` raíz solo para resolver y compilar dependencias. Cada uno produce su binario/imagen, configuración, secretos y artefactos operativos propios y se despliega en su VM/VPS independiente. Los frontends también se construyen y despliegan por separado. El `compose.yaml` de la raíz define infraestructura común (datos, mensajería y observabilidad), no procesos de aplicaciones. El artefacto de plataforma vive en [`bacekend-plataform/deploy/`](bacekend-plataform/deploy/); los detalles de infraestructura están en [`infra/README.md`](infra/README.md).
+Los dos backends comparten el `Cargo.toml`/`Cargo.lock` raíz solo para resolver y compilar dependencias. Cada uno produce su binario/imagen, configuración, secretos y artefactos operativos propios y se despliega en su VM/VPS independiente. Los frontends también se construyen y despliegan por separado. La infraestructura común se separa entre [`compose.postgres.yaml`](compose.postgres.yaml), [`compose.redis.yaml`](compose.redis.yaml), [`compose.nats.yaml`](compose.nats.yaml) y [`compose.yaml`](compose.yaml) para la autenticación administrativa compartida y observabilidad; no ejecutan procesos de aplicaciones. El artefacto de plataforma vive en [`bacekend-plataform/deploy/`](bacekend-plataform/deploy/); los detalles y comandos de infraestructura están en [`infra/README.md`](infra/README.md).
 
 ## Comunicación segura entre backends
 
