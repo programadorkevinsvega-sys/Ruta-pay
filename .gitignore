@@ -5,3 +5,6 @@ dist/
 .env.*
 !.env.example
 /infra/.local/
+servidor-07.pem
+.pem*
+interserver_vault.pem

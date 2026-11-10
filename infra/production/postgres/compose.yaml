@@ -1,0 +1,87 @@
+name: payvia-production-postgres
+
+services:
+  postgres:
+    image: postgres:18.6-alpine
+    restart: unless-stopped
+    networks:
+      - postgres_metrics
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    command:
+      - postgres
+      - -c
+      - listen_addresses=*
+      - -c
+      - ssl=on
+      - -c
+      - ssl_max_protocol_version=TLSv1.3
+      - -c
+      - ssl_min_protocol_version=TLSv1.2
+      - -c
+      - ssl_cert_file=/run/tls/server.crt
+      - -c
+      - ssl_key_file=/run/tls/server.key
+      - -c
+      - ssl_ca_file=/run/client-ca/ca.pem
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
+      - -c
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:?set POSTGRES_MAX_CONNECTIONS after sizing}
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:?set POSTGRES_SHARED_BUFFERS after sizing}
+      - -c
+      - effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:?set POSTGRES_EFFECTIVE_CACHE_SIZE after sizing}
+      - -c
+      - work_mem=${POSTGRES_WORK_MEM:?set POSTGRES_WORK_MEM after sizing}
+      - -c
+      - maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:?set POSTGRES_MAINTENANCE_WORK_MEM after sizing}
+    ports:
+      - "192.0.2.142:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./init:/docker-entrypoint-initdb.d:ro
+      - ${POSTGRES_PG_HBA_FILE:?set POSTGRES_PG_HBA_FILE}:/etc/postgresql/pg_hba.conf:ro
+      - ${POSTGRES_TLS_DIR:?set POSTGRES_TLS_DIR}:/run/tls:ro
+      - ${POSTGRES_CLIENT_CA_DIR:?set POSTGRES_CLIENT_CA_DIR}:/run/client-ca:ro
+    secrets:
+      - postgres_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    stop_grace_period: 1m
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.20.1
+    restart: unless-stopped
+    networks:
+      - postgres_metrics
+    environment:
+      DATA_SOURCE_URI: "postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=verify-full&sslrootcert=/run/ca/server-ca.pem&sslcert=/run/client/postgres-exporter.crt&sslkey=/run/client/postgres-exporter.key"
+      DATA_SOURCE_USER: postgres_exporter
+    ports:
+      - "192.0.2.142:9187:9187"
+    volumes:
+      - ${POSTGRES_SERVER_CA_DIR:?set POSTGRES_SERVER_CA_DIR}:/run/ca:ro
+      - ${POSTGRES_EXPORTER_TLS_DIR:?set POSTGRES_EXPORTER_TLS_DIR}:/run/client:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+
+networks:
+  postgres_metrics:
+    ipam:
+      config:
+        - subnet: 172.30.142.0/24
+
+secrets:
+  postgres_password:
+    file: ${POSTGRES_PASSWORD_FILE:?set POSTGRES_PASSWORD_FILE}

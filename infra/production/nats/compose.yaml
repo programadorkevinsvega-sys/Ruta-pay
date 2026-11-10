@@ -1,0 +1,51 @@
+name: payvia-production-nats
+
+services:
+  nats:
+    image: nats:2.15.1-alpine
+    restart: unless-stopped
+    command: ["--config=/etc/nats/nats-server.conf"]
+    environment:
+      NATS_MAX_MEM_STORE: ${NATS_MAX_MEM_STORE:?set NATS_MAX_MEM_STORE after sizing}
+      NATS_MAX_FILE_STORE: ${NATS_MAX_FILE_STORE:?set NATS_MAX_FILE_STORE after sizing}
+    ports:
+      - "192.0.2.97:4222:4222"
+    volumes:
+      - nats_data:/data
+      - ./nats-server.conf:/etc/nats/nats-server.conf:ro
+      - ${NATS_TLS_DIR:?set NATS_TLS_DIR}:/run/tls:ro
+      - ${NATS_AUTHORIZATION_DIR:?set NATS_AUTHORIZATION_DIR}:/etc/nats/auth:ro
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    sysctls:
+      net.core.somaxconn: "4096"
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8222/healthz | grep -q 'ok'"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  nats-exporter:
+    image: natsio/prometheus-nats-exporter:0.17.3
+    restart: unless-stopped
+    command:
+      - -varz
+      - -connz
+      - -subz
+      - -routez
+      - -gatewayz
+      - -leafz
+      - -jsz=all
+      - http://nats:8222
+    ports:
+      - "192.0.2.97:7777:7777"
+    depends_on:
+      nats:
+        condition: service_healthy
+
+volumes:
+  nats_data:
