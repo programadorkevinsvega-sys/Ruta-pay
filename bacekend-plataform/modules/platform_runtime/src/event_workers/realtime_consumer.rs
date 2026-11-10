@@ -6,25 +6,10 @@ use tokio_stream::StreamExt;
 
 pub(super) async fn run_realtime_consumer(
     pool: PgPool,
-    redis_url: String,
+    redis_client: redis::Client,
     consumer: jetstream::consumer::PullConsumer,
     mut shutdown: watch::Receiver<bool>,
 ) {
-    let redis_client = match redis::Client::open(redis_url) {
-        Ok(client) => client,
-        Err(_) => {
-            tracing::error!(
-                event.name = "realtime.redis.client.invalid",
-                component = "realtime",
-                operation = "create_redis_client",
-                dependency = "redis",
-                error_code = "redis_url_invalid",
-                error_category = "configuration",
-                retryable = false
-            );
-            return;
-        }
-    };
     let mut backoff = Duration::from_millis(100);
     let mut redis = loop {
         match redis::aio::ConnectionManager::new(redis_client.clone()).await {

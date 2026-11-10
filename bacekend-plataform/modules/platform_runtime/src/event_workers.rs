@@ -22,7 +22,7 @@ use crate::event_topology::EventTopology;
 
 pub async fn run(
     pool: PgPool,
-    redis_url: String,
+    redis_client: redis::Client,
     url: String,
     username: String,
     password: String,
@@ -43,7 +43,16 @@ pub async fn run(
             return;
         }
     };
-    run_with_topology(pool, redis_url, url, username, password, shutdown, topology).await;
+    run_with_topology(
+        pool,
+        redis_client,
+        url,
+        username,
+        password,
+        shutdown,
+        topology,
+    )
+    .await;
 }
 
 /// Runs a complete event runtime against an explicit, isolated topology.
@@ -51,7 +60,7 @@ pub async fn run(
 /// the same durable JetStream consumers without mutating process environment.
 pub async fn run_with_topology(
     pool: PgPool,
-    redis_url: String,
+    redis_client: redis::Client,
     url: String,
     username: String,
     password: String,
@@ -80,7 +89,7 @@ pub async fn run_with_topology(
         };
         let client = match options.connect(url.as_str()).await {
             Ok(client) => client,
-            Err(_) => {
+            Err(error) => {
                 tracing::error!(
                     event.name = "service.startup.dependency.failed",
                     component = "platform_event_runtime",
@@ -88,7 +97,8 @@ pub async fn run_with_topology(
                     dependency = "nats_jetstream",
                     error_code = "nats_connect_failed",
                     error_category = "connectivity",
-                    retryable = true
+                    retryable = true,
+                    error_class = %error
                 );
                 tokio::select! {
                     result = shutdown.changed() => if result.is_err() || *shutdown.borrow() { return; },
@@ -213,7 +223,7 @@ pub async fn run_with_topology(
             result = workers_shutdown.changed() => if result.is_err() || *workers_shutdown.borrow() { return; },
             _ = run_relays(pool.clone(), jetstream, topology.subject_prefix.clone(), shutdown.clone()) => {},
             _ = run_membership_consumer(pool.clone(), consumer, shutdown.clone()) => {},
-            _ = run_realtime_consumer(pool.clone(), redis_url.clone(), realtime_consumer, shutdown.clone()) => {},
+            _ = run_realtime_consumer(pool.clone(), redis_client.clone(), realtime_consumer, shutdown.clone()) => {},
             _ = run_billing_usage_consumer(pool.clone(), billing_consumer, shutdown.clone()) => {},
         }
         tracing::warn!(
@@ -227,12 +237,20 @@ pub async fn run_with_topology(
 }
 
 fn build_nats_options(username: String, password: String) -> Result<ConnectOptions, &'static str> {
-    let root = env::var_os("NATS_TLS_ROOT_CA");
-    let certificate = env::var_os("NATS_TLS_CLIENT_CERT");
-    let private_key = env::var_os("NATS_TLS_CLIENT_KEY");
-    let required =
-        env::var("PAYVIA_REQUIRE_MTLS").is_ok_and(|value| value.eq_ignore_ascii_case("true"));
+    let root = env::var_os("NATS_TLS_ROOT_CA").filter(|value| !value.is_empty());
+    let certificate = env::var_os("NATS_TLS_CLIENT_CERT").filter(|value| !value.is_empty());
+    let private_key = env::var_os("NATS_TLS_CLIENT_KEY").filter(|value| !value.is_empty());
+    let mapped_identity =
+        env::var("APP_ENV").is_ok_and(|value| value.eq_ignore_ascii_case("production"));
+    let required = mapped_identity
+        || env::var("PAYVIA_REQUIRE_MTLS").is_ok_and(|value| value.eq_ignore_ascii_case("true"));
     match (root, certificate, private_key) {
+        (Some(root), Some(certificate), Some(private_key)) if mapped_identity => {
+            Ok(ConnectOptions::new()
+                .add_root_certificates(PathBuf::from(root))
+                .add_client_certificate(PathBuf::from(certificate), PathBuf::from(private_key))
+                .require_tls(true))
+        }
         (Some(root), Some(certificate), Some(private_key)) => {
             Ok(ConnectOptions::with_user_and_password(username, password)
                 .add_root_certificates(PathBuf::from(root))

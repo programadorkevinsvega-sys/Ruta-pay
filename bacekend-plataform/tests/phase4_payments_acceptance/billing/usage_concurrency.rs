@@ -92,7 +92,10 @@ async fn usage_inbox_is_atomic_and_concurrent_redelivery_is_idempotent() {
             }
         }
     }
-    assert_eq!(original_writes, 1, "one transaction inserts the usage event");
+    assert_eq!(
+        original_writes, 1,
+        "one transaction inserts the usage event"
+    );
     assert!(!usage_ids.is_empty());
     assert!(usage_ids.iter().all(|id| *id == usage_ids[0]));
 

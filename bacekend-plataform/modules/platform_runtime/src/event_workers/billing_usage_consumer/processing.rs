@@ -32,7 +32,8 @@ pub(super) async fn process_batch(
         let event = match parse_event(&message.payload) {
             Ok(event) => event,
             Err(()) => {
-                counter!("platform_billing_usage_events_total", "outcome" => "invalid").increment(1);
+                counter!("platform_billing_usage_events_total", "outcome" => "invalid")
+                    .increment(1);
                 term_message(&message, None, None).await;
                 continue;
             }
@@ -67,7 +68,10 @@ pub(super) async fn process_batch(
             occurred_at: event.occurred_at,
             attributes,
         };
-        groups.entry(tenant_id).or_default().push((message, batch_event));
+        groups
+            .entry(tenant_id)
+            .or_default()
+            .push((message, batch_event));
     }
 
     histogram!("platform_billing_usage_tenant_groups_per_fetch").record(groups.len() as f64);
@@ -109,8 +113,14 @@ async fn process_tenant_group(
     group: Vec<(jetstream::Message, UsageBatchEvent)>,
     service: &BillingService,
 ) {
-    let events = group.iter().map(|(_, event)| event.clone()).collect::<Vec<_>>();
-    match service.record_usage_batch_for_tenant(tenant_id, &events).await {
+    let events = group
+        .iter()
+        .map(|(_, event)| event.clone())
+        .collect::<Vec<_>>();
+    match service
+        .record_usage_batch_for_tenant(tenant_id, &events)
+        .await
+    {
         Ok(dispositions) => {
             for ((message, event), disposition) in group.into_iter().zip(dispositions) {
                 let outcome = match disposition {
@@ -135,7 +145,9 @@ async fn process_tenant_group(
             }
         }
         Err(BillingError::Database(database_error)) => {
-            let code = database_error.as_database_error().and_then(|cause| cause.code());
+            let code = database_error
+                .as_database_error()
+                .and_then(|cause| cause.code());
             tracing::error!(
                 event.name = "billing.usage.batch.failed",
                 component = "platform_billing",
@@ -177,8 +189,7 @@ fn record_queue_wait(message: &jetstream::Message) {
     {
         let age = Utc::now().signed_duration_since(published.with_timezone(&Utc));
         if let Ok(wait) = age.to_std() {
-            histogram!("platform_billing_usage_queue_wait_seconds")
-                .record(wait.as_secs_f64());
+            histogram!("platform_billing_usage_queue_wait_seconds").record(wait.as_secs_f64());
         }
     }
 }
@@ -206,26 +217,29 @@ async fn process_single_fallback(
     event: UsageBatchEvent,
     service: &BillingService,
 ) {
-    let result = service.record_usage_from_event(
-        RecordUsage {
-            tenant_id: event.tenant_id,
-            meter_key: &event.meter_key,
-            source_system: &event.source_system,
-            source_event_id: &event.source_event_id,
-            quantity: event.quantity,
-            unit: &event.unit,
-            occurred_at: event.occurred_at,
-            attributes: event.attributes,
-        },
-        &event.producer,
-        event.event_id,
-        &event.event_type,
-        event.schema_version,
-        &event.payload,
-    ).await;
+    let result = service
+        .record_usage_from_event(
+            RecordUsage {
+                tenant_id: event.tenant_id,
+                meter_key: &event.meter_key,
+                source_system: &event.source_system,
+                source_event_id: &event.source_event_id,
+                quantity: event.quantity,
+                unit: &event.unit,
+                occurred_at: event.occurred_at,
+                attributes: event.attributes,
+            },
+            &event.producer,
+            event.event_id,
+            &event.event_type,
+            event.schema_version,
+            &event.payload,
+        )
+        .await;
     match result {
         Ok(_) => {
-            counter!("platform_billing_usage_events_total", "outcome" => "fallback_processed").increment(1);
+            counter!("platform_billing_usage_events_total", "outcome" => "fallback_processed")
+                .increment(1);
             let ack_started = Instant::now();
             if let Err(error) = message.ack().await {
                 counter!("platform_billing_usage_ack_failures_total").increment(1);
@@ -253,7 +267,8 @@ async fn process_single_fallback(
             nak_message(&message).await;
         }
         Err(_) => {
-            counter!("platform_billing_usage_events_total", "outcome" => "fallback_rejected").increment(1);
+            counter!("platform_billing_usage_events_total", "outcome" => "fallback_rejected")
+                .increment(1);
             term_message(&message, Some(event.event_id), None).await;
         }
     }

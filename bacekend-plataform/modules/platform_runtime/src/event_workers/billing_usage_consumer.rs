@@ -2,7 +2,10 @@ use async_nats::jetstream;
 use metrics::{counter, histogram};
 use platform_billing::application::BillingService;
 use sqlx::PgPool;
-use std::{env, fs, time::{Duration, Instant}};
+use std::{
+    env, fs,
+    time::{Duration, Instant},
+};
 use tokio::{sync::watch, task::JoinSet, time};
 use tokio_stream::StreamExt;
 
@@ -27,23 +30,19 @@ impl AdaptiveBackpressure {
         let total = pool.size() as usize;
         let cpu = self.cpu_utilization();
         let memory = memory_utilization();
-        let limit = pressure_limited_batch(
-            configured_batch_size(),
-            idle,
-            total,
-            cpu,
-            memory,
-        );
+        let limit = pressure_limited_batch(configured_batch_size(), idle, total, cpu, memory);
         if let Some(limit) = limit {
             histogram!("platform_billing_usage_adaptive_batch_limit").record(limit as f64);
         } else {
             counter!("platform_billing_usage_backpressure_pauses_total", "reason" => "pool_exhausted").increment(1);
         }
         if cpu.is_some_and(|value| value >= 0.75) {
-            counter!("platform_billing_usage_resource_pressure_total", "resource" => "cpu").increment(1);
+            counter!("platform_billing_usage_resource_pressure_total", "resource" => "cpu")
+                .increment(1);
         }
         if memory.is_some_and(|value| value >= 0.85) {
-            counter!("platform_billing_usage_resource_pressure_total", "resource" => "memory").increment(1);
+            counter!("platform_billing_usage_resource_pressure_total", "resource" => "memory")
+                .increment(1);
         }
         limit
     }
@@ -55,7 +54,9 @@ impl AdaptiveBackpressure {
             .lines()
             .find_map(|line| {
                 let mut fields = line.split_whitespace();
-                (fields.next()? == "usage_usec").then(|| fields.next()?.parse::<u64>().ok()).flatten()
+                (fields.next()? == "usage_usec")
+                    .then(|| fields.next()?.parse::<u64>().ok())
+                    .flatten()
             })?;
         let now = Instant::now();
         let previous = self.previous_cpu.replace((usage, now));
@@ -110,7 +111,9 @@ fn cpu_quota_cores() -> Option<f64> {
         return host_capacity;
     };
     let mut fields = contents.split_whitespace();
-    let Some(quota) = fields.next() else { return host_capacity; };
+    let Some(quota) = fields.next() else {
+        return host_capacity;
+    };
     if quota == "max" {
         return host_capacity;
     }
@@ -120,10 +123,16 @@ fn cpu_quota_cores() -> Option<f64> {
 }
 
 fn memory_utilization() -> Option<f64> {
-    let current = fs::read_to_string("/sys/fs/cgroup/memory.current").ok()?
-        .trim().parse::<u64>().ok()?;
-    let maximum = fs::read_to_string("/sys/fs/cgroup/memory.max").ok()?
-        .trim().parse::<u64>().ok()?;
+    let current = fs::read_to_string("/sys/fs/cgroup/memory.current")
+        .ok()?
+        .trim()
+        .parse::<u64>()
+        .ok()?;
+    let maximum = fs::read_to_string("/sys/fs/cgroup/memory.max")
+        .ok()?
+        .trim()
+        .parse::<u64>()
+        .ok()?;
     (maximum > 0).then_some((current as f64 / maximum as f64).clamp(0.0, 1.0))
 }
 
@@ -144,7 +153,9 @@ pub(super) async fn run_billing_usage_consumer(
     );
 
     loop {
-        if *shutdown.borrow() { return; }
+        if *shutdown.borrow() {
+            return;
+        }
         let Some(batch_limit) = backpressure.batch_limit(&pool) else {
             if in_flight.is_empty() {
                 tokio::select! {
@@ -186,7 +197,8 @@ pub(super) async fn run_billing_usage_consumer(
             continue;
         }
         let fetch_started = Instant::now();
-        let fetch = consumer.fetch()
+        let fetch = consumer
+            .fetch()
             .max_messages(batch_limit)
             .max_bytes(MAX_BATCH_BYTES)
             .expires(Duration::from_millis(500))
@@ -253,8 +265,7 @@ pub(super) async fn run_billing_usage_consumer(
             histogram!("platform_billing_usage_batch_processing_seconds")
                 .record(process_started.elapsed().as_secs_f64());
         });
-        histogram!("platform_billing_usage_batches_in_flight")
-            .record(in_flight.len() as f64);
+        histogram!("platform_billing_usage_batches_in_flight").record(in_flight.len() as f64);
     }
 }
 
@@ -306,7 +317,10 @@ mod tests {
 
     #[test]
     fn pauses_fetch_when_database_pool_has_no_idle_connection() {
-        assert_eq!(pressure_limited_batch(128, 0, 16, Some(0.1), Some(0.2)), None);
+        assert_eq!(
+            pressure_limited_batch(128, 0, 16, Some(0.1), Some(0.2)),
+            None
+        );
     }
 
     #[test]
@@ -316,20 +330,41 @@ mod tests {
 
     #[test]
     fn scales_batch_with_pool_capacity_and_cpu_pressure() {
-        assert_eq!(pressure_limited_batch(128, 2, 16, Some(0.1), Some(0.2)), Some(64));
-        assert_eq!(pressure_limited_batch(128, 8, 16, Some(0.80), Some(0.2)), Some(96));
-        assert_eq!(pressure_limited_batch(128, 8, 16, Some(0.95), Some(0.2)), Some(64));
+        assert_eq!(
+            pressure_limited_batch(128, 2, 16, Some(0.1), Some(0.2)),
+            Some(64)
+        );
+        assert_eq!(
+            pressure_limited_batch(128, 8, 16, Some(0.80), Some(0.2)),
+            Some(96)
+        );
+        assert_eq!(
+            pressure_limited_batch(128, 8, 16, Some(0.95), Some(0.2)),
+            Some(64)
+        );
     }
 
     #[test]
     fn applies_memory_pressure_after_cpu_pressure() {
-        assert_eq!(pressure_limited_batch(128, 8, 16, Some(0.80), Some(0.90)), Some(72));
-        assert_eq!(pressure_limited_batch(128, 8, 16, Some(0.95), Some(0.98)), Some(32));
+        assert_eq!(
+            pressure_limited_batch(128, 8, 16, Some(0.80), Some(0.90)),
+            Some(72)
+        );
+        assert_eq!(
+            pressure_limited_batch(128, 8, 16, Some(0.95), Some(0.98)),
+            Some(32)
+        );
     }
 
     #[test]
     fn caps_batch_size_and_keeps_a_minimum_when_capacity_exists() {
-        assert_eq!(pressure_limited_batch(512, 64, 64, Some(0.0), Some(0.0)), Some(512));
-        assert_eq!(pressure_limited_batch(1, 1, 1, Some(1.0), Some(1.0)), Some(1));
+        assert_eq!(
+            pressure_limited_batch(512, 64, 64, Some(0.0), Some(0.0)),
+            Some(512)
+        );
+        assert_eq!(
+            pressure_limited_batch(1, 1, 1, Some(1.0), Some(1.0)),
+            Some(1)
+        );
     }
 }

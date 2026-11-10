@@ -6,6 +6,12 @@ fn test_config(grpc_addr: &str, metrics_addr: &str, metrics_token: Option<String
             .expect("isolated PostgreSQL test administrator URL is configured"),
         redis_url: env::var("PLATFORM_REDIS_URL")
             .expect("real development Redis URL is configured"),
+        redis_tls_root_ca: None,
+        redis_tls_client_cert: None,
+        redis_tls_client_key: None,
+        nats_tls_root_ca: None,
+        nats_tls_client_cert: None,
+        nats_tls_client_key: None,
         nats_url: env::var("PLATFORM_NATS_URL")
             .expect("real development JetStream URL is configured"),
         nats_username: env::var("NATS_USER").expect("development NATS user is configured"),
@@ -14,6 +20,7 @@ fn test_config(grpc_addr: &str, metrics_addr: &str, metrics_token: Option<String
         grpc_addr: grpc_addr.parse().expect("address"),
         metrics_addr: metrics_addr.parse().expect("address"),
         environment: "test".to_owned(),
+        require_mtls: false,
         version: "test-version".to_owned(),
         otlp_endpoint: None,
         sentry_dsn: None,
@@ -107,6 +114,12 @@ fn isolated_valid_config() -> AppConfig {
     AppConfig {
         database_url: "postgres://tester:secret@127.0.0.1/payvia".to_owned(),
         redis_url: "rediss://:secret@127.0.0.1/0".to_owned(),
+        redis_tls_root_ca: None,
+        redis_tls_client_cert: None,
+        redis_tls_client_key: None,
+        nats_tls_root_ca: None,
+        nats_tls_client_cert: None,
+        nats_tls_client_key: None,
         nats_url: "tls://127.0.0.1:4222".to_owned(),
         nats_username: "ci-user".to_owned(),
         nats_password: "0123456789abcdef0123456789abcdef".to_owned(),
@@ -114,6 +127,7 @@ fn isolated_valid_config() -> AppConfig {
         grpc_addr: "127.0.0.1:50051".parse().expect("gRPC address"),
         metrics_addr: "127.0.0.1:9090".parse().expect("metrics address"),
         environment: "test".to_owned(),
+        require_mtls: false,
         version: "test-version".to_owned(),
         otlp_endpoint: None,
         sentry_dsn: None,
@@ -123,12 +137,19 @@ fn isolated_valid_config() -> AppConfig {
 }
 
 #[test]
-fn config_accepts_every_declared_environment_and_rejects_unknown_values() {
+fn config_accepts_nonproduction_environments_and_rejects_unknown_values() {
     let mut config = isolated_valid_config();
-    for environment in ["development", "test", "staging", "production"] {
+    for environment in ["development", "test", "staging"] {
         config.environment = environment.to_owned();
         assert_eq!(validate_config(&config), Ok(()), "{environment}");
     }
+    config.environment = "production".to_owned();
+    assert_eq!(
+        validate_config(&config),
+        Err(ConfigError::InvalidValue {
+            variable: "PLATFORM_DATABASE_URL"
+        })
+    );
     for environment in ["", "prod", "local", "Production", "unknown"] {
         config.environment = environment.to_owned();
         assert_eq!(
@@ -139,6 +160,93 @@ fn config_accepts_every_declared_environment_and_rejects_unknown_values() {
             "{environment}"
         );
     }
+}
+
+#[test]
+fn production_requires_verified_database_tls_and_complete_redis_client_identity() {
+    let mut config = isolated_valid_config();
+    config.environment = "production".to_owned();
+    config.database_url =
+        "postgres://user:password@db.internal/payvia?sslmode=verify-full&sslrootcert=/etc/ca.pem&sslcert=/etc/client.crt&sslkey=/etc/client.key"
+            .to_owned();
+    config.redis_url = "rediss://:password@redis.internal/0".to_owned();
+    assert_eq!(
+        validate_config(&config),
+        Err(ConfigError::InvalidValue {
+            variable: "PLATFORM_REDIS_TLS_CLIENT_CERT"
+        })
+    );
+
+    config.redis_tls_root_ca = Some("/etc/redis/ca.pem".into());
+    assert_eq!(
+        validate_config(&config),
+        Err(ConfigError::InvalidValue {
+            variable: "PLATFORM_REDIS_TLS_CLIENT_CERT"
+        })
+    );
+    config.redis_tls_client_cert = Some("/etc/redis/client.crt".into());
+    config.redis_tls_client_key = Some("/etc/redis/client.key".into());
+    config.redis_url = "redis://:password@redis.internal/0".to_owned();
+    assert_eq!(
+        validate_config(&config),
+        Err(ConfigError::InvalidValue {
+            variable: "PLATFORM_REDIS_TLS_CLIENT_CERT"
+        })
+    );
+    config.redis_url = "rediss://:password@redis.internal/0".to_owned();
+    assert_eq!(
+        validate_config(&config),
+        Err(ConfigError::InvalidValue {
+            variable: "PAYVIA_REQUIRE_MTLS"
+        })
+    );
+    config.require_mtls = true;
+    config.nats_tls_root_ca = Some("/etc/nats/ca.pem".into());
+    assert_eq!(
+        validate_config(&config),
+        Err(ConfigError::InvalidValue {
+            variable: "PAYVIA_REQUIRE_MTLS"
+        })
+    );
+    config.nats_tls_client_cert = Some("/etc/nats/platform.crt".into());
+    config.nats_tls_client_key = Some("/etc/nats/platform.key".into());
+    assert_eq!(validate_config(&config), Ok(()));
+}
+
+#[test]
+fn production_database_url_requires_verify_full_and_client_credentials() {
+    assert!(validate_production_database_url(
+        "postgres://user:password@db.internal/payvia?sslmode=verify-full&sslrootcert=/etc/ca.pem&sslcert=/etc/client.crt&sslkey=/etc/client.key"
+    ));
+    assert!(!validate_production_database_url(
+        "postgres://user:password@db.internal/payvia?sslmode=require&sslrootcert=/etc/ca.pem&sslcert=/etc/client.crt&sslkey=/etc/client.key"
+    ));
+    assert!(!validate_production_database_url(
+        "postgres://user:password@db.internal/payvia?sslmode=verify-full&sslrootcert=/etc/ca.pem"
+    ));
+}
+
+#[test]
+fn explicit_mtls_requirement_fails_closed_outside_production() {
+    let mut config = isolated_valid_config();
+    config.environment = "staging".to_owned();
+    config.require_mtls = true;
+    assert_eq!(
+        validate_config(&config),
+        Err(ConfigError::InvalidValue {
+            variable: "PLATFORM_REDIS_TLS_CLIENT_CERT"
+        })
+    );
+
+    config.redis_tls_root_ca = Some("/etc/redis/ca.pem".into());
+    config.redis_tls_client_cert = Some("/etc/redis/client.crt".into());
+    config.redis_tls_client_key = Some("/etc/redis/client.key".into());
+    assert_eq!(
+        validate_config(&config),
+        Err(ConfigError::InvalidValue {
+            variable: "PAYVIA_REQUIRE_MTLS"
+        })
+    );
 }
 
 #[test]

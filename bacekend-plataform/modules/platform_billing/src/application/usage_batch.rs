@@ -1,11 +1,11 @@
 use chrono::{DateTime, Utc};
+use metrics::histogram;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use metrics::histogram;
-use sqlx::{Connection, QueryBuilder, Row, Postgres};
+use sqlx::{Connection, Postgres, QueryBuilder, Row};
+use std::collections::HashMap;
 use std::time::Instant;
 use uuid::Uuid;
-use std::collections::HashMap;
 
 use super::{BillingError, BillingService};
 use crate::infrastructure::persistence::set_tenant_context;
@@ -42,31 +42,37 @@ impl BillingService {
         tenant_id: Uuid,
         events: &[UsageBatchEvent],
     ) -> Result<Vec<UsageBatchDisposition>, BillingError> {
-        if events.is_empty() || events.len() > 512 || events.iter().any(|event| {
-            event.tenant_id != tenant_id
-                || event.producer.is_empty()
-                || event.event_type.is_empty()
-                || event.schema_version <= 0
-                || event.source_system.is_empty()
-                || event.source_event_id.is_empty()
-                || event.meter_key.is_empty()
-                || event.meter_key.len() > 96
-                || event.unit.is_empty()
-                || event.unit.len() > 32
-                || event.quantity <= 0
-                || !event.payload.is_object()
-                || !event.attributes.is_object()
-                || event.producer != events[0].producer
-                || event.source_system != events[0].source_system
-        }) {
+        if events.is_empty()
+            || events.len() > 512
+            || events.iter().any(|event| {
+                event.tenant_id != tenant_id
+                    || event.producer.is_empty()
+                    || event.event_type.is_empty()
+                    || event.schema_version <= 0
+                    || event.source_system.is_empty()
+                    || event.source_event_id.is_empty()
+                    || event.meter_key.is_empty()
+                    || event.meter_key.len() > 96
+                    || event.unit.is_empty()
+                    || event.unit.len() > 32
+                    || event.quantity <= 0
+                    || !event.payload.is_object()
+                    || !event.attributes.is_object()
+                    || event.producer != events[0].producer
+                    || event.source_system != events[0].source_system
+            })
+        {
             return Err(BillingError::InvalidCommand);
         }
 
-        let digests = events.iter().map(|event| {
-            serde_json::to_vec(&event.payload)
-                .map(|bytes| <[u8; 32]>::from(Sha256::digest(bytes)))
-                .map_err(|_| BillingError::InvalidCommand)
-        }).collect::<Result<Vec<_>, _>>()?;
+        let digests = events
+            .iter()
+            .map(|event| {
+                serde_json::to_vec(&event.payload)
+                    .map(|bytes| <[u8; 32]>::from(Sha256::digest(bytes)))
+                    .map_err(|_| BillingError::InvalidCommand)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let acquire_started = Instant::now();
         let mut connection = self.pool.acquire().await?;
         histogram!("platform_billing_usage_pool_acquire_seconds")
@@ -76,34 +82,41 @@ impl BillingService {
         set_tenant_context(&mut tx, tenant_id).await?;
 
         let mut inbox_insert = QueryBuilder::<Postgres>::new(
-            "INSERT INTO platform_billing.inbox_events              (id,tenant_id,producer_id,event_id,event_type,schema_version,payload_sha256,disposition) "
+            "INSERT INTO platform_billing.inbox_events              (id,tenant_id,producer_id,event_id,event_type,schema_version,payload_sha256,disposition) ",
         );
-        inbox_insert.push_values(events.iter().zip(digests.iter()), |mut row, (event, digest)| {
-            row.push_bind(Uuid::new_v4())
-                .push_bind(tenant_id)
-                .push_bind(&event.producer)
-                .push_bind(event.event_id)
-                .push_bind(&event.event_type)
-                .push_bind(event.schema_version)
-                .push_bind(digest.to_vec())
-                .push("'received'");
-        });
+        inbox_insert.push_values(
+            events.iter().zip(digests.iter()),
+            |mut row, (event, digest)| {
+                row.push_bind(Uuid::new_v4())
+                    .push_bind(tenant_id)
+                    .push_bind(&event.producer)
+                    .push_bind(event.event_id)
+                    .push_bind(&event.event_type)
+                    .push_bind(event.schema_version)
+                    .push_bind(digest.to_vec())
+                    .push("'received'");
+            },
+        );
         inbox_insert.push(" ON CONFLICT (tenant_id,producer_id,event_id) DO NOTHING");
         inbox_insert.build().execute(&mut *tx).await?;
 
         let producer = &events[0].producer;
         let source_system = &events[0].source_system;
-        if events.iter().any(|event| {
-            event.producer != *producer || event.source_system != *source_system
-        }) {
+        if events
+            .iter()
+            .any(|event| event.producer != *producer || event.source_system != *source_system)
+        {
             return Err(BillingError::InvalidCommand);
         }
 
-        let event_ids = events.iter().map(|event| event.event_id).collect::<Vec<_>>();
+        let event_ids = events
+            .iter()
+            .map(|event| event.event_id)
+            .collect::<Vec<_>>();
         let inbox_rows = sqlx::query(
             "SELECT id,event_id,event_type,schema_version,payload_sha256,disposition
              FROM platform_billing.inbox_events
-             WHERE tenant_id=$1 AND producer_id=$2 AND event_id=ANY($3)"
+             WHERE tenant_id=$1 AND producer_id=$2 AND event_id=ANY($3)",
         )
         .bind(tenant_id)
         .bind(producer)
@@ -113,13 +126,13 @@ impl BillingService {
         let mut inbox_by_event = HashMap::with_capacity(inbox_rows.len());
         for row in inbox_rows {
             inbox_by_event.insert(
-                row.try_get::<Uuid,_>("event_id")?,
+                row.try_get::<Uuid, _>("event_id")?,
                 (
-                    row.try_get::<Uuid,_>("id")?,
-                    row.try_get::<String,_>("event_type")?,
-                    row.try_get::<i16,_>("schema_version")?,
-                    row.try_get::<Vec<u8>,_>("payload_sha256")?,
-                    row.try_get::<String,_>("disposition")?,
+                    row.try_get::<Uuid, _>("id")?,
+                    row.try_get::<String, _>("event_type")?,
+                    row.try_get::<i16, _>("schema_version")?,
+                    row.try_get::<Vec<u8>, _>("payload_sha256")?,
+                    row.try_get::<String, _>("disposition")?,
                 ),
             );
         }
@@ -128,8 +141,9 @@ impl BillingService {
         let mut active = Vec::with_capacity(events.len());
         let mut dispositions = Vec::with_capacity(events.len());
         for (event, digest) in events.iter().zip(digests.iter()) {
-            let (id, event_type, schema_version, stored_digest, disposition) =
-                inbox_by_event.get(&event.event_id).ok_or(BillingError::InvalidCommand)?;
+            let (id, event_type, schema_version, stored_digest, disposition) = inbox_by_event
+                .get(&event.event_id)
+                .ok_or(BillingError::InvalidCommand)?;
             if event_type != &event.event_type
                 || *schema_version != event.schema_version
                 || stored_digest.as_slice() != digest.as_slice()
@@ -164,13 +178,14 @@ impl BillingService {
             usage_insert.push(" ON CONFLICT (tenant_id,source_system,source_event_id) DO NOTHING");
             usage_insert.build().execute(&mut *tx).await?;
 
-            let source_event_ids = active.iter()
+            let source_event_ids = active
+                .iter()
                 .map(|event| event.source_event_id.clone())
                 .collect::<Vec<_>>();
             let usage_rows = sqlx::query(
                 "SELECT source_event_id,meter_key,quantity,unit,occurred_at,attributes
                  FROM platform_billing.usage_events
-                 WHERE tenant_id=$1 AND source_system=$2 AND source_event_id=ANY($3)"
+                 WHERE tenant_id=$1 AND source_system=$2 AND source_event_id=ANY($3)",
             )
             .bind(tenant_id)
             .bind(source_system)
@@ -180,19 +195,20 @@ impl BillingService {
             let mut usage_by_source = HashMap::with_capacity(usage_rows.len());
             for row in usage_rows {
                 usage_by_source.insert(
-                    row.try_get::<String,_>("source_event_id")?,
+                    row.try_get::<String, _>("source_event_id")?,
                     (
-                        row.try_get::<String,_>("meter_key")?,
-                        row.try_get::<i64,_>("quantity")?,
-                        row.try_get::<String,_>("unit")?,
-                        row.try_get::<DateTime<Utc>,_>("occurred_at")?,
-                        row.try_get::<Value,_>("attributes")?,
+                        row.try_get::<String, _>("meter_key")?,
+                        row.try_get::<i64, _>("quantity")?,
+                        row.try_get::<String, _>("unit")?,
+                        row.try_get::<DateTime<Utc>, _>("occurred_at")?,
+                        row.try_get::<Value, _>("attributes")?,
                     ),
                 );
             }
             for event in &active {
-                let (meter_key, quantity, unit, occurred_at, attributes) =
-                    usage_by_source.get(&event.source_event_id).ok_or(BillingError::InvalidCommand)?;
+                let (meter_key, quantity, unit, occurred_at, attributes) = usage_by_source
+                    .get(&event.source_event_id)
+                    .ok_or(BillingError::InvalidCommand)?;
                 if meter_key != &event.meter_key
                     || *quantity != event.quantity
                     || unit != &event.unit
@@ -204,10 +220,12 @@ impl BillingService {
             }
             let mut mark = QueryBuilder::<Postgres>::new(
                 "UPDATE platform_billing.inbox_events SET disposition='processed',
-                 processed_at=COALESCE(processed_at,now()) WHERE tenant_id="
+                 processed_at=COALESCE(processed_at,now()) WHERE tenant_id=",
             );
-            mark.push_bind(tenant_id).push(" AND id = ANY(")
-                .push_bind(inbox_ids).push(") AND disposition='received'");
+            mark.push_bind(tenant_id)
+                .push(" AND id = ANY(")
+                .push_bind(inbox_ids)
+                .push(") AND disposition='received'");
             mark.build().execute(&mut *tx).await?;
         }
 
@@ -220,7 +238,6 @@ impl BillingService {
         Ok(dispositions)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -256,7 +273,9 @@ mod tests {
         let tenant_b = Uuid::new_v4();
         let events = [event(tenant_a), event(tenant_b)];
 
-        let result = service.record_usage_batch_for_tenant(tenant_a, &events).await;
+        let result = service
+            .record_usage_batch_for_tenant(tenant_a, &events)
+            .await;
         assert!(matches!(result, Err(BillingError::InvalidCommand)));
     }
 
@@ -270,7 +289,9 @@ mod tests {
         let event = event(tenant_id);
         let events = vec![event; 513];
 
-        let result = service.record_usage_batch_for_tenant(tenant_id, &events).await;
+        let result = service
+            .record_usage_batch_for_tenant(tenant_id, &events)
+            .await;
         assert!(matches!(result, Err(BillingError::InvalidCommand)));
     }
 }

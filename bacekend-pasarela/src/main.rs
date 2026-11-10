@@ -66,15 +66,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|_| "GATEWAY_PLATFORM_REQUEST_VERIFY_KEY_ID is required")?;
     let nats_url =
         env::var("GATEWAY_NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".to_owned());
-    let nats_user = env::var("GATEWAY_NATS_USER").map_err(|_| "GATEWAY_NATS_USER is required")?;
-    let nats_password =
-        env::var("GATEWAY_NATS_PASSWORD").map_err(|_| "GATEWAY_NATS_PASSWORD is required")?;
-    if nats_user.trim().is_empty() || nats_password.len() < 32 {
+    if environment == "production" && !nats_url.starts_with("tls://") {
+        return Err("gateway_nats_tls_required".into());
+    }
+    let mapped_identity = environment == "production";
+    let nats_user = env::var("GATEWAY_NATS_USER").unwrap_or_default();
+    let nats_password = env::var("GATEWAY_NATS_PASSWORD").unwrap_or_default();
+    if !mapped_identity && (nats_user.trim().is_empty() || nats_password.len() < 32) {
         return Err("gateway NATS credentials are invalid".into());
     }
 
-    let options = build_nats_options(nats_user, nats_password).map_err(std::io::Error::other)?;
-    let nats = options.connect(&nats_url).await?;
+    let options = build_nats_options(nats_user, nats_password).map_err(|error_code| {
+        tracing::error!(
+            event.name = "service.configuration.invalid",
+            component = "gateway_runtime",
+            operation = "configure_nats_mtls",
+            error_code,
+            error_category = "configuration",
+            retryable = false
+        );
+        std::io::Error::other(error_code)
+    })?;
+    let nats = options.connect(&nats_url).await.inspect_err(|error| {
+        tracing::error!(
+            event.name = "service.startup.dependency.failed",
+            component = "gateway_runtime",
+            operation = "connect_nats",
+            dependency = "nats_jetstream",
+            error_code = "nats_connect_failed",
+            error_category = "connectivity",
+            retryable = true,
+            error_class = %error
+        );
+    })?;
     let jetstream = async_nats::jetstream::new(nats);
     let state =
         GatewayWebhookState::new(accounts, jetstream.clone(), &signing_key, signing_key_id)?;
@@ -124,12 +148,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn build_nats_options(username: String, password: String) -> Result<ConnectOptions, &'static str> {
-    let root = env::var_os("NATS_TLS_ROOT_CA");
-    let certificate = env::var_os("NATS_TLS_CLIENT_CERT");
-    let private_key = env::var_os("NATS_TLS_CLIENT_KEY");
-    let required =
-        env::var("PAYVIA_REQUIRE_MTLS").is_ok_and(|value| value.eq_ignore_ascii_case("true"));
+    let root = env::var_os("NATS_TLS_ROOT_CA").filter(|value| !value.is_empty());
+    let certificate = env::var_os("NATS_TLS_CLIENT_CERT").filter(|value| !value.is_empty());
+    let private_key = env::var_os("NATS_TLS_CLIENT_KEY").filter(|value| !value.is_empty());
+    let mapped_identity =
+        env::var("GATEWAY_ENV").is_ok_and(|value| value.eq_ignore_ascii_case("production"));
+    let required = mapped_identity
+        || env::var("PAYVIA_REQUIRE_MTLS").is_ok_and(|value| value.eq_ignore_ascii_case("true"));
     match (root, certificate, private_key) {
+        (Some(root), Some(certificate), Some(private_key)) if mapped_identity => {
+            Ok(ConnectOptions::new()
+                .add_root_certificates(PathBuf::from(root))
+                .add_client_certificate(PathBuf::from(certificate), PathBuf::from(private_key))
+                .require_tls(true))
+        }
         (Some(root), Some(certificate), Some(private_key)) => {
             Ok(ConnectOptions::with_user_and_password(username, password)
                 .add_root_certificates(PathBuf::from(root))

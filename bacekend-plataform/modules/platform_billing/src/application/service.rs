@@ -77,8 +77,9 @@ impl BillingService {
         {
             return Err(BillingError::InvalidCommand);
         }
-        let occurred_at = DateTime::<Utc>::from_timestamp_micros(command.occurred_at.timestamp_micros())
-            .ok_or(BillingError::InvalidCommand)?;
+        let occurred_at =
+            DateTime::<Utc>::from_timestamp_micros(command.occurred_at.timestamp_micros())
+                .ok_or(BillingError::InvalidCommand)?;
         let mut tx = self.pool.begin().await?;
         set_tenant_context(&mut tx, command.tenant_id).await?;
         let (usage_id, duplicate) =

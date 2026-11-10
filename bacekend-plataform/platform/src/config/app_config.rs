@@ -1,9 +1,16 @@
-use std::{env, net::SocketAddr, str::FromStr};
+use std::{env, net::SocketAddr, path::PathBuf, str::FromStr};
 use thiserror::Error;
 
 pub struct AppConfig {
     pub database_url: String,
     pub redis_url: String,
+    pub redis_tls_root_ca: Option<PathBuf>,
+    pub redis_tls_client_cert: Option<PathBuf>,
+    pub redis_tls_client_key: Option<PathBuf>,
+    pub nats_tls_root_ca: Option<PathBuf>,
+    pub nats_tls_client_cert: Option<PathBuf>,
+    pub nats_tls_client_key: Option<PathBuf>,
+    pub require_mtls: bool,
     pub nats_url: String,
     pub nats_username: String,
     pub nats_password: String,
@@ -43,16 +50,26 @@ impl ConfigError {
 
 impl AppConfig {
     pub fn from_env() -> Result<Self, ConfigError> {
+        let environment = value("APP_ENV", "development");
+        let require_mtls =
+            env::var("PAYVIA_REQUIRE_MTLS").is_ok_and(|value| value.eq_ignore_ascii_case("true"));
         let config = Self {
             database_url: database_url()?,
             redis_url: redis_url()?,
+            redis_tls_root_ca: optional_path("PLATFORM_REDIS_TLS_ROOT_CA"),
+            redis_tls_client_cert: optional_path("PLATFORM_REDIS_TLS_CLIENT_CERT"),
+            redis_tls_client_key: optional_path("PLATFORM_REDIS_TLS_CLIENT_KEY"),
+            nats_tls_root_ca: optional_path("NATS_TLS_ROOT_CA"),
+            nats_tls_client_cert: optional_path("NATS_TLS_CLIENT_CERT"),
+            nats_tls_client_key: optional_path("NATS_TLS_CLIENT_KEY"),
+            require_mtls,
             nats_url: nats_url()?,
-            nats_username: required("NATS_USER")?,
-            nats_password: required("NATS_PASSWORD")?,
+            nats_username: nats_credential("NATS_USER", environment == "production")?,
+            nats_password: nats_credential("NATS_PASSWORD", environment == "production")?,
             http_addr: address("APP_HTTP_ADDR", "0.0.0.0:8080")?,
             grpc_addr: address("APP_MODULE_GRPC_ADDR", "127.0.0.1:50051")?,
             metrics_addr: address("APP_METRICS_ADDR", "127.0.0.1:9090")?,
-            environment: value("APP_ENV", "development"),
+            environment,
             version: value("APP_VERSION", env!("CARGO_PKG_VERSION")),
             otlp_endpoint: otlp_endpoint()?,
             sentry_dsn: sentry_dsn()?,
@@ -84,8 +101,8 @@ fn validate_config(config: &AppConfig) -> Result<(), ConfigError> {
         });
     }
     if !validate_nats_url(&config.nats_url)
-        || config.nats_username.trim().is_empty()
-        || config.nats_password.len() < 32
+        || (config.environment != "production"
+            && (config.nats_username.trim().is_empty() || config.nats_password.len() < 32))
     {
         return Err(ConfigError::InvalidValue {
             variable: "PLATFORM_NATS_URL",
@@ -95,6 +112,48 @@ fn validate_config(config: &AppConfig) -> Result<(), ConfigError> {
         return Err(ConfigError::InvalidValue {
             variable: "APP_ENV",
         });
+    }
+    let redis_tls_paths = [
+        config.redis_tls_root_ca.is_some(),
+        config.redis_tls_client_cert.is_some(),
+        config.redis_tls_client_key.is_some(),
+    ];
+    let nats_tls_paths = [
+        config.nats_tls_root_ca.is_some(),
+        config.nats_tls_client_cert.is_some(),
+        config.nats_tls_client_key.is_some(),
+    ];
+    if redis_tls_paths.iter().any(|configured| *configured)
+        && !redis_tls_paths.iter().all(|configured| *configured)
+    {
+        return Err(ConfigError::InvalidValue {
+            variable: "PLATFORM_REDIS_TLS_CLIENT_CERT",
+        });
+    }
+    if config.environment == "production" && !validate_production_database_url(&config.database_url)
+    {
+        return Err(ConfigError::InvalidValue {
+            variable: "PLATFORM_DATABASE_URL",
+        });
+    }
+    if config.environment == "production" || config.require_mtls {
+        if url::Url::parse(&config.redis_url).is_ok_and(|url| url.scheme() != "rediss")
+            || !redis_tls_paths.iter().all(|configured| *configured)
+        {
+            return Err(ConfigError::InvalidValue {
+                variable: "PLATFORM_REDIS_TLS_CLIENT_CERT",
+            });
+        }
+    }
+    if config.environment == "production" || config.require_mtls {
+        if !config.nats_url.starts_with("tls://")
+            || !nats_tls_paths.iter().all(|configured| *configured)
+            || !config.require_mtls
+        {
+            return Err(ConfigError::InvalidValue {
+                variable: "PAYVIA_REQUIRE_MTLS",
+            });
+        }
     }
     if !config.grpc_addr.ip().is_loopback() {
         return Err(ConfigError::InvalidValue {
@@ -135,6 +194,22 @@ fn validate_database_url(value: &str) -> bool {
             && url.query_pairs().all(|(key, value)| {
                 !matches!(key.as_ref(), "password" | "sslpassword") && value.len() <= 32
             })
+    })
+}
+
+fn validate_production_database_url(value: &str) -> bool {
+    url::Url::parse(value).is_ok_and(|url| {
+        let parameters = url.query_pairs().collect::<Vec<_>>();
+        ["sslmode", "sslrootcert", "sslcert", "sslkey"]
+            .iter()
+            .all(|required| {
+                parameters
+                    .iter()
+                    .any(|(key, value)| key == required && !value.is_empty())
+            })
+            && parameters
+                .iter()
+                .any(|(key, value)| key == "sslmode" && value == "verify-full")
     })
 }
 
@@ -187,6 +262,20 @@ fn required(variable: &'static str) -> Result<String, ConfigError> {
         .ok()
         .filter(|value| !value.trim().is_empty())
         .ok_or(ConfigError::InvalidValue { variable })
+}
+
+fn nats_credential(variable: &'static str, require_mtls: bool) -> Result<String, ConfigError> {
+    if require_mtls {
+        Ok(optional(variable).unwrap_or_default())
+    } else {
+        required(variable)
+    }
+}
+
+fn optional_path(variable: &'static str) -> Option<PathBuf> {
+    env::var_os(variable)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
 }
 
 fn address(variable: &'static str, default: &str) -> Result<SocketAddr, ConfigError> {

@@ -1,4 +1,7 @@
-use super::{privileges::grant_runtime_privileges, validation::validate_database_targets};
+use super::{
+    privileges::grant_runtime_privileges,
+    validation::{validate_database_targets, validate_production_database_tls},
+};
 use sqlx::postgres::PgPoolOptions;
 use std::{env, time::Duration};
 
@@ -16,6 +19,12 @@ pub(super) async fn migrate() -> Result<(), &'static str> {
         .filter(|value| !value.trim().is_empty())
         .ok_or("platform_runtime_db_role_missing")?;
     validate_database_targets(&database_url, &runtime_database_url, &runtime_role)?;
+    if env::var("APP_ENV").is_ok_and(|environment| environment == "production")
+        && (!validate_production_database_tls(&database_url)
+            || !validate_production_database_tls(&runtime_database_url))
+    {
+        return Err("platform_migration_tls_configuration_invalid");
+    }
     let pool = PgPoolOptions::new()
         .max_connections(2)
         .acquire_timeout(Duration::from_secs(5))

@@ -89,11 +89,11 @@ impl BillingService {
         {
             return Err(BillingError::InvalidCommand);
         }
-        let occurred_at = DateTime::<Utc>::from_timestamp_micros(
-            command.occurred_at.timestamp_micros(),
-        )
-        .ok_or(BillingError::InvalidCommand)?;
-        let payload_bytes = serde_json::to_vec(payload).map_err(|_| BillingError::InvalidCommand)?;
+        let occurred_at =
+            DateTime::<Utc>::from_timestamp_micros(command.occurred_at.timestamp_micros())
+                .ok_or(BillingError::InvalidCommand)?;
+        let payload_bytes =
+            serde_json::to_vec(payload).map_err(|_| BillingError::InvalidCommand)?;
         let payload_digest: [u8; 32] = Sha256::digest(payload_bytes).into();
         let mut tx = self.pool.begin().await?;
         set_tenant_context(&mut tx, command.tenant_id).await?;
@@ -145,7 +145,6 @@ impl BillingService {
         Ok(UsageInboxResult::Processed { duplicate_usage })
     }
 
-
     /// Records usage and completes its inbox receipt in one PostgreSQL transaction.
     pub async fn record_usage_with_inbox(
         &self,
@@ -163,8 +162,9 @@ impl BillingService {
             return Err(BillingError::InvalidCommand);
         }
 
-        let occurred_at = DateTime::<Utc>::from_timestamp_micros(command.occurred_at.timestamp_micros())
-            .ok_or(BillingError::InvalidCommand)?;
+        let occurred_at =
+            DateTime::<Utc>::from_timestamp_micros(command.occurred_at.timestamp_micros())
+                .ok_or(BillingError::InvalidCommand)?;
         let mut tx = self.pool.begin().await?;
         set_tenant_context(&mut tx, command.tenant_id).await?;
         let (usage_id, duplicate) = insert_usage(&mut tx, &command, occurred_at).await?;

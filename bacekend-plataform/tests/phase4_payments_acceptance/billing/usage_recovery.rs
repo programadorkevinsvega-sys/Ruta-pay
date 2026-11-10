@@ -33,7 +33,8 @@ async fn failed_inbox_completion_rolls_back_usage_and_allows_safe_recovery() {
         &envelope,
     )
     .await
-    .expect("inbox receipt persists") {
+    .expect("inbox receipt persists")
+    {
         InboxDisposition::Inserted(id) => id,
         _ => panic!("first receipt must be inserted"),
     };

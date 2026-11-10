@@ -4,10 +4,10 @@ use async_nats::jetstream::{
 };
 use chrono::{Duration, Utc};
 use platform_runtime::{
-    event_topology::{delete_e2e_stream, EventTopology},
+    event_topology::{EventTopology, delete_e2e_stream},
     event_workers::run_with_topology,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::Row;
 use std::time::{Duration as StdDuration, Instant};
 use tokio::{sync::watch, time};
@@ -30,13 +30,18 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
     let nats_user = std::env::var("NATS_USER").expect("CI provides NATS user");
     let nats_password = std::env::var("NATS_PASSWORD").expect("CI provides NATS password");
     let redis_url = std::env::var("PLATFORM_REDIS_URL").expect("CI provides Redis URL");
+    let redis_client =
+        redis::Client::open(redis_url.as_str()).expect("CI provides a valid Redis URL");
     let client = async_nats::ConnectOptions::new()
         .user_and_password(nats_user.clone(), nats_password.clone())
         .connect(&nats_url)
         .await
         .expect("authenticated JetStream connection");
     let jetstream = jetstream::new(client);
-    let stream = topology.ensure_stream(&jetstream).await.expect("stream created");
+    let stream = topology
+        .ensure_stream(&jetstream)
+        .await
+        .expect("stream created");
     let subject = format!("{}.billing.usage.recorded", topology.subject_prefix);
     let consumer = stream
         .get_or_create_consumer(
@@ -60,7 +65,7 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
     for pool in replica_pools.iter().cloned() {
         replicas.push(tokio::spawn(run_with_topology(
             pool,
-            redis_url.clone(),
+            redis_client.clone(),
             nats_url.clone(),
             nats_user.clone(),
             nats_password.clone(),
@@ -93,13 +98,16 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
         }
     }
     wait_for_usage_count(&database.migration_pool, LOAD_EVENTS as i64).await;
-    let distinct_tenants: i64 = sqlx::query_scalar(
-        "SELECT count(DISTINCT tenant_id) FROM platform_billing.usage_events",
-    )
-    .fetch_one(&database.migration_pool)
-    .await
-    .expect("tenant distribution is measurable");
-    assert_eq!(distinct_tenants, tenants.len() as i64, "load is persisted across all tenants");
+    let distinct_tenants: i64 =
+        sqlx::query_scalar("SELECT count(DISTINCT tenant_id) FROM platform_billing.usage_events")
+            .fetch_one(&database.migration_pool)
+            .await
+            .expect("tenant distribution is measurable");
+    assert_eq!(
+        distinct_tenants,
+        tenants.len() as i64,
+        "load is persisted across all tenants"
+    );
 
     let elapsed = started.elapsed();
     let throughput = LOAD_EVENTS as f64 / elapsed.as_secs_f64();
@@ -143,7 +151,8 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
 
     let recovery_event = usage_envelope(tenants[1], Uuid::new_v4(), Uuid::new_v4());
     let recovery_started = Instant::now();
-    let outage_mode = if let Ok(container_id) = std::env::var("PLATFORM_TEST_POSTGRES_CONTAINER_ID") {
+    let outage_mode = if let Ok(container_id) = std::env::var("PLATFORM_TEST_POSTGRES_CONTAINER_ID")
+    {
         database_outage_with_container(&container_id, &jetstream, &subject, recovery_event).await;
         "postgres_container_restart"
     } else {
@@ -185,9 +194,14 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
     .expect("processed inbox records are inspectable");
     assert_eq!(total_usage, LOAD_EVENTS as i64 + 1);
     assert_eq!(total_inbox, LOAD_EVENTS as i64 + 1);
-    assert_eq!(processed_inbox, total_inbox, "all accepted events complete their inbox receipt");
+    assert_eq!(
+        processed_inbox, total_inbox,
+        "all accepted events complete their inbox receipt"
+    );
 
-    shutdown_tx.send(true).expect("replica shutdown signal is delivered");
+    shutdown_tx
+        .send(true)
+        .expect("replica shutdown signal is delivered");
     for replica in replicas {
         time::timeout(StdDuration::from_secs(10), replica)
             .await
@@ -261,7 +275,9 @@ async fn publish(jetstream: &jetstream::Context, subject: &str, envelope: Value)
         .publish(subject.to_owned(), payload.into())
         .await
         .expect("JetStream accepts usage event");
-    acknowledgement.await.expect("JetStream confirms durable publish");
+    acknowledgement
+        .await
+        .expect("JetStream confirms durable publish");
 }
 
 async fn usage_count(pool: &sqlx::PgPool) -> Result<i64, sqlx::Error> {

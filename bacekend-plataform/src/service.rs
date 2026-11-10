@@ -52,7 +52,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let event_task = tokio::spawn(platform_runtime::event_workers::run(
         database_pool.clone(),
-        config.redis_url.clone(),
+        redis_client.clone(),
         config.nats_url.clone(),
         config.nats_username.clone(),
         config.nats_password.clone(),

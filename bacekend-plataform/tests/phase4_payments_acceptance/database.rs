@@ -208,9 +208,9 @@ impl TestDatabase {
             )
         };
         sqlx::raw_sql(sqlx::AssertSqlSafe(statement))
-        .execute(&self.cleanup.admin_pool)
-        .await
-        .expect("runtime database connectivity permission changes");
+            .execute(&self.cleanup.admin_pool)
+            .await
+            .expect("runtime database connectivity permission changes");
 
         if !available {
             sqlx::query(

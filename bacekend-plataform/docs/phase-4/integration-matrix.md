@@ -184,3 +184,18 @@ Fase 4 solo puede declararse cerrada cuando ambos alcances tengan decisiones apr
 | Aislamiento / recuperación | RLS por tenant y worker scope explícito; transacciones para consumo, invoice, ledger, Outbox/Inbox y collection. | Test PostgreSQL aislado con rol runtime sin BYPASSRLS, aislamiento cross-tenant, concurrencia y rollback de journal desequilibrado. Pendiente ejecución CI sobre HEAD final. |
 
 **Límites deliberados:** no hay precios, tarifas, impuestos, unidades facturables, vencimientos ni prorrateos por defecto. El caller debe suministrar el precio explícito aprobado para cada línea. La facturación fiscal sigue fuera de este backend y se rige por ADR-0012. No se marca el Alcance A como terminado.
+
+## 6. Identidad mTLS de dependencias productivas — decisión acotada
+
+Este cambio operativo exige certificados cliente independientes para PostgreSQL, Redis y NATS, además de la autorización existente de cada dependencia. No implementa ni adelanta gRPC mTLS Plataforma↔Pasarelas, grants o scopes de Fase 5; la puerta de Fase 4 y su estado parcial no cambian.
+
+| Frontera | Diseño registrado antes del cambio | Escenarios de aceptación requeridos |
+|---|---|---|
+| Plataforma → PostgreSQL | `verify-full`, CA y certificado/clave del rol en URL; `pg_hba.conf` productivo autentica por certificado. Migraciones usan su propio certificado/rol. | Aceptar SAN/CA/CN válidos; rechazar cert ausente, expirado, CA/SAN/CN incorrectos; verificar no conexión sin TLS y no acceso fuera de permisos. |
+| Plataforma y workers → Redis | Un único `redis::Client` con CA y certificado cliente explícitos se comparte con `ConnectionManager` y workers, para conservar identidad en reconexiones; producción falla cerrado si falta mTLS. | Aceptar cert y ACL válidos; rechazar identidad ausente/inválida y ACL insuficiente; reinicio y reconexión de Redis sin perder autenticación. |
+| Plataforma/Pasarelas → NATS | TLS y certificado individual por backend, junto a usuario y permisos NATS; configuración de producción exige `tls://` y credenciales mTLS completas. | Rechazar cliente sin cert, cert/CA inválidos, usuario/subject no permitido; publicar/consumir y recuperar mensajes tras reinicio con identidad válida. |
+| PostgreSQL/Redis exporter → almacén | Cada exporter usa certificado distinto y rol/ACL de observabilidad de solo lectura. Healthcheck Redis usa su propio certificado y permiso `PING`. | Scrapes/healthchecks reales con identidad autorizada; fallar cerrados al retirar cert, CA o privilegio. |
+| Frontend → HTTP/BFF → gRPC | Sin cambio de endpoint, contrato, autorización o almacenamiento desde el BFF. | N/A: no se altera ese recorrido. gRPC entre backends permanece pendiente en Fase 5. |
+| Outbox / JetStream / realtime | Se mantiene el flujo de eventos existente; el cambio solo configura identidad de transporte y no crea ni modifica estado visible. | N/A: no se añade mutación ni evento de dominio; pruebas de entrega/recovery existentes siguen aplicando. |
+
+La rotación de certificados cliente no se considera automatizada: los archivos se cargan al inicializar clientes/pools. Rotación sin interrupción requiere renovación/reemplazo de las conexiones o despliegue solapado con capacidad de réplicas y drenaje; esa garantía queda pendiente de diseño, infraestructura y pruebas reales. La matriz criptográfica tampoco se considera aprobada hasta ejecutarse contra servicios aislados con certificados reales de prueba. Ver el procedimiento y los límites en [`infra/README.md`](../../../infra/README.md).

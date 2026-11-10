@@ -153,13 +153,14 @@ pub(super) async fn audit_service_event(
     details: serde_json::Value,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO payments.audit_events (event_id,tenant_id,actor_key_id,actor_service_identity,action,resource_id,outcome,correlation_id,trace_id,safe_details) VALUES ($1,$2,NULL,'gateway-pasarela:wompi',$3,$4,'completed',$5,NULL,$6)",
+        "INSERT INTO payments.audit_events (event_id,tenant_id,actor_key_id,actor_service_identity,action,resource_id,outcome,correlation_id,trace_id,safe_details) VALUES ($1,$2,NULL,'gateway-pasarela:wompi',$3,$4,'completed',$5,$6,$7)",
     )
     .bind(Uuid::new_v4())
     .bind(event.tenant_id)
     .bind(action)
     .bind(resource_id)
     .bind(&event.correlation_id)
+    .bind(payvia_observability::current_trace_id_option())
     .bind(details)
     .execute(&mut **tx)
     .await?;
@@ -180,7 +181,7 @@ pub(super) async fn insert_outbox(
         "tenant"
     };
     sqlx::query(
-        "INSERT INTO payments.outbox_events (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,correlation_id) VALUES ($1,$2,$3,$4,1,$5,$6,$7)",
+        "INSERT INTO payments.outbox_events (event_id,aggregate_id,aggregate_version,event_type,schema_version,audience,payload,traceparent,correlation_id) VALUES ($1,$2,$3,$4,1,$5,$6,$7,$8)",
     )
     .bind(Uuid::new_v4())
     .bind(aggregate_id)
@@ -188,6 +189,7 @@ pub(super) async fn insert_outbox(
     .bind(event_type)
     .bind(audience)
     .bind(payload)
+    .bind(payvia_observability::current_traceparent())
     .bind(correlation_id)
     .execute(&mut **tx)
     .await?;
