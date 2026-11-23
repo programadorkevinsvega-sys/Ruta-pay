@@ -8,8 +8,8 @@ pub struct ErrorEnvelope {
 
 #[derive(Serialize, ToSchema)]
 pub struct ErrorBody {
-    pub code: &'static str,
-    pub category: &'static str,
+    pub code: String,
+    pub category: String,
     pub message: &'static str,
     pub correlation_id: String,
     pub trace_id: String,

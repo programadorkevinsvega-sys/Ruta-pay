@@ -1,0 +1,28 @@
+[Unit]
+Description=Payvia staging Vault Agent
+Documentation=https://developer.hashicorp.com/vault/docs/agent-and-proxy/agent
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/local/bin/vault agent -config=/etc/payvia/staging/vault-agent/agent.hcl -log-format=json -log-level=info
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/etc/payvia/staging/vault-agent /etc/payvia/staging/service /run
+
+[Install]
+WantedBy=multi-user.target

@@ -8,6 +8,8 @@ async-nats.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
+metrics.workspace = true
+opentelemetry.workspace = true
 platform-contracts = { path = "../../crates/platform_contracts" }
 payvia-observability = { path = "../../../crates/observability" }
 sqlx.workspace = true

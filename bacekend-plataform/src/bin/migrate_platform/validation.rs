@@ -49,11 +49,27 @@ pub(super) fn validate_production_database_tls(database_url: &str) -> bool {
     })
 }
 
+pub(super) fn configure_database_tls_mode(
+    database_url: &str,
+    require_tls: bool,
+) -> Result<String, &'static str> {
+    if require_tls {
+        return validate_production_database_tls(database_url)
+            .then(|| database_url.to_owned())
+            .ok_or("platform_migration_tls_configuration_invalid");
+    }
+
+    payvia_platform_core::config::app_config::plaintext_database_url(database_url)
+        .map_err(|_| "platform_migration_database_url_invalid")
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        valid_role_identifier, validate_database_targets, validate_production_database_tls,
+        configure_database_tls_mode, valid_role_identifier, validate_database_targets,
+        validate_production_database_tls,
     };
+    use url::Url;
 
     #[test]
     fn migration_requires_a_distinct_runtime_role_and_matching_database() {
@@ -101,5 +117,34 @@ mod tests {
         assert!(!validate_production_database_tls(
             "postgres://migration:password@db.internal/payvia?sslmode=verify-full&sslrootcert=/etc/ca.pem"
         ));
+    }
+
+    #[test]
+    fn development_database_urls_disable_tls_and_remove_vault_rendered_certificates() {
+        let configured = "postgres://runtime:password@db.internal/payvia?sslmode=verify-full&sslrootcert=/run/vault/ca.pem&sslcert=/run/vault/client.crt&sslkey=/run/vault/client.key&application_name=platform";
+        let plain = configure_database_tls_mode(configured, false)
+            .expect("development mode accepts a valid database URL");
+        let parsed = Url::parse(&plain).expect("normalized URL parses");
+        assert_eq!(
+            parsed.query_pairs().find(|(key, _)| key == "sslmode"),
+            Some(("sslmode".into(), "disable".into()))
+        );
+        assert!(!parsed.query().unwrap_or_default().contains("sslcert"));
+        assert!(
+            parsed
+                .query_pairs()
+                .any(|(key, value)| key == "application_name" && value == "platform")
+        );
+    }
+
+    #[test]
+    fn tls_enabled_database_urls_require_verified_server_and_client_certificates() {
+        assert!(
+            configure_database_tls_mode(
+                "postgres://runtime:password@db.internal/payvia?sslmode=disable",
+                true
+            )
+            .is_err()
+        );
     }
 }

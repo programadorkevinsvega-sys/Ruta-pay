@@ -103,12 +103,16 @@ async fn usage_invoice_snapshot_ledger_and_financial_immutability_are_enforced()
         .expect("usage aggregates for a bounded period");
     assert_eq!(usage_summary.quantity, 120);
     assert_eq!(usage_summary.event_count, 1);
+    let mut inspection = db
+        .tenant_scoped_migration_transaction(tenant)
+        .await
+        .expect("tenant-scoped invoice inspection begins");
     let snapshot: serde_json::Value = sqlx::query_scalar(
         "SELECT snapshot FROM platform_billing.invoices WHERE tenant_id=$1 AND id=$2",
     )
     .bind(tenant)
     .bind(invoice)
-    .fetch_one(&db.migration_pool)
+    .fetch_one(&mut *inspection)
     .await
     .expect("snapshot exists");
     let stored_hash: Vec<u8> = sqlx::query_scalar(
@@ -116,7 +120,7 @@ async fn usage_invoice_snapshot_ledger_and_financial_immutability_are_enforced()
     )
     .bind(tenant)
     .bind(invoice)
-    .fetch_one(&db.migration_pool)
+    .fetch_one(&mut *inspection)
     .await
     .expect("snapshot hash exists");
     let actual: [u8; 32] =
@@ -125,25 +129,45 @@ async fn usage_invoice_snapshot_ledger_and_financial_immutability_are_enforced()
     assert_eq!(actual, hash);
     assert_eq!(snapshot["total_minor"], json!(360));
     let balanced:bool=sqlx::query_scalar("SELECT sum(amount_minor) FILTER(WHERE direction='debit')=sum(amount_minor) FILTER(WHERE direction='credit') FROM platform_billing.ledger_entries WHERE tenant_id=$1 AND journal_id=(SELECT id FROM platform_billing.ledger_journals WHERE tenant_id=$1 AND invoice_id=$2)")
-        .bind(tenant).bind(invoice).fetch_one(&db.migration_pool).await.expect("ledger balance is queryable");
+        .bind(tenant).bind(invoice).fetch_one(&mut *inspection).await.expect("ledger balance is queryable");
     assert!(balanced);
     let event_count:i64=sqlx::query_scalar("SELECT count(*) FROM platform_billing.outbox_events WHERE tenant_id=$1 AND aggregate_id=$2 AND event_type='billing.invoice.issued'")
-        .bind(tenant).bind(invoice).fetch_one(&db.migration_pool).await.expect("invoice event count is readable");
+        .bind(tenant).bind(invoice).fetch_one(&mut *inspection).await.expect("invoice event count is readable");
     assert_eq!(
         event_count, 1,
         "invoice issuance and event are atomic and idempotent"
     );
+    inspection
+        .commit()
+        .await
+        .expect("tenant-scoped invoice inspection completes");
+    let mut tamper_lines = db
+        .tenant_scoped_migration_transaction(tenant)
+        .await
+        .expect("tenant-scoped invoice-line mutation begins");
     assert!(sqlx::query("UPDATE platform_billing.invoice_lines SET description='tampered' WHERE tenant_id=$1 AND invoice_id=$2")
-        .bind(tenant).bind(invoice).execute(&db.migration_pool).await.is_err());
+        .bind(tenant).bind(invoice).execute(&mut *tamper_lines).await.is_err());
+    tamper_lines
+        .rollback()
+        .await
+        .expect("rejected invoice-line mutation is rolled back");
+    let mut tamper_invoice = db
+        .tenant_scoped_migration_transaction(tenant)
+        .await
+        .expect("tenant-scoped invoice mutation begins");
     assert!(
         sqlx::query(
             "UPDATE platform_billing.invoices SET total_minor=1 WHERE tenant_id=$1 AND id=$2"
         )
         .bind(tenant)
         .bind(invoice)
-        .execute(&db.migration_pool)
+        .execute(&mut *tamper_invoice)
         .await
         .is_err()
     );
+    tamper_invoice
+        .rollback()
+        .await
+        .expect("rejected invoice mutation is rolled back");
     db.finish().await;
 }

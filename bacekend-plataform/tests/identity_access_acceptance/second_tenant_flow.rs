@@ -17,7 +17,7 @@ pub struct SecondTenantFlowContext<'a> {
     pub client: &'a Client,
     pub migration_pool: &'a PgPool,
     pub runtime_pool: &'a PgPool,
-    pub jetstream: &'a jetstream::Context,
+    pub publisher_jetstream: &'a jetstream::Context,
     pub event_topology: &'a EventTopology,
     pub stream: &'a jetstream::stream::Stream,
     pub registration_subject: &'a str,
@@ -29,7 +29,7 @@ pub struct SecondTenantFlowContext<'a> {
 
 pub async fn verify(context: SecondTenantFlowContext<'_>) -> SecondTenantFixture {
     let SecondTenantFlowContext {
-        client, migration_pool, runtime_pool, jetstream, event_topology, stream,
+        client, migration_pool, runtime_pool, publisher_jetstream, event_topology, stream,
         registration_subject, http_addr, origin, tenant_slug, created_tenant_id,
     } = context;
     let second_tenant_credentials = second_tenant_registration::register(
@@ -46,7 +46,7 @@ pub async fn verify(context: SecondTenantFlowContext<'_>) -> SecondTenantFixture
             client,
             migration_pool,
             runtime_pool,
-            jetstream,
+            publisher_jetstream,
             event_topology,
             stream,
             registration_subject,

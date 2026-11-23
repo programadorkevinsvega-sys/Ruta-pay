@@ -22,6 +22,7 @@ impl EventTopology {
             .map(str::to_owned);
         if let Some(value) = namespace.as_deref()
             && (value.len() > 48
+                || value == "e2e_"
                 || !value.bytes().all(|character| {
                     character.is_ascii_lowercase()
                         || character.is_ascii_digit()
@@ -32,11 +33,17 @@ impl EventTopology {
             return Err("event_namespace_invalid");
         }
         let (stream_name, subject_prefix, consumer_suffix) = match namespace.as_deref() {
-            Some(value) => (
-                format!("PAYVIA_PLATFORM_EVENTS_{}", value.to_ascii_uppercase()),
-                format!("payvia.platform.events.{value}.v1"),
-                format!("_{}", value.to_ascii_uppercase()),
-            ),
+            Some(value) => {
+                let subject_prefix = value.strip_prefix("e2e_").map_or_else(
+                    || format!("payvia.platform.events.{value}.v1"),
+                    |suffix| format!("payvia.platform.events.e2e.{suffix}.v1"),
+                );
+                (
+                    format!("PAYVIA_PLATFORM_EVENTS_{}", value.to_ascii_uppercase()),
+                    subject_prefix,
+                    format!("_{}", value.to_ascii_uppercase()),
+                )
+            }
             None => (
                 PRODUCTION_STREAM.to_owned(),
                 PRODUCTION_SUBJECT_PREFIX.to_owned(),
@@ -114,6 +121,7 @@ mod tests {
 
         assert_ne!(first.stream_name, second.stream_name);
         assert_ne!(first.subject_prefix, second.subject_prefix);
+        assert_eq!(first.subject_prefix, "payvia.platform.events.e2e.a1.v1");
         assert_ne!(first.membership_consumer, second.membership_consumer);
         assert_ne!(first.realtime_consumer, second.realtime_consumer);
         assert_ne!(first.billing_consumer, second.billing_consumer);
@@ -129,5 +137,13 @@ mod tests {
         assert!(!production.is_e2e());
         assert!(EventTopology::from_namespace(Some("e2e;delete-all")).is_err());
         assert!(EventTopology::from_namespace(Some("_e2e")).is_err());
+        assert!(EventTopology::from_namespace(Some("e2e_")).is_err());
+    }
+
+    #[test]
+    fn non_e2e_namespace_subject_prefix_remains_unchanged() {
+        let topology = EventTopology::from_namespace(Some("staging")).expect("valid namespace");
+
+        assert_eq!(topology.subject_prefix, "payvia.platform.events.staging.v1");
     }
 }

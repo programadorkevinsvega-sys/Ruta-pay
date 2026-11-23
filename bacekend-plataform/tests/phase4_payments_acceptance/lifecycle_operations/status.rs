@@ -62,6 +62,10 @@ async fn status_transitions_are_guarded_atomic_and_create_durable_reconciliation
     assert_eq!(replay.status, "submitted");
 
     let transaction_id = Uuid::new_v4();
+    let mut transaction_setup = database
+        .tenant_scoped_migration_transaction(tenant_id)
+        .await
+        .expect("tenant-scoped provider transaction setup begins");
     sqlx::query(
         "INSERT INTO payments.payment_transactions (id,tenant_id,environment,payment_intent_id,payment_attempt_id,provider_code,provider_account_reference,provider_transaction_reference,amount_minor,currency,status,aggregate_version) VALUES ($1,$2,'test',$3,$4,'wompi','account_01','provider-tx-accepted',1299,'COP','pending',1)",
     )
@@ -69,9 +73,13 @@ async fn status_transitions_are_guarded_atomic_and_create_durable_reconciliation
     .bind(tenant_id)
     .bind(intent.id)
     .bind(attempt.id)
-    .execute(&database.migration_pool)
+    .execute(&mut *transaction_setup)
     .await
     .expect("submitted attempt may own a matching provider transaction");
+    transaction_setup
+        .commit()
+        .await
+        .expect("provider transaction setup commits");
 
     let transactions = service
         .list_payment_transactions(
@@ -134,12 +142,16 @@ async fn status_transitions_are_guarded_atomic_and_create_durable_reconciliation
         Err(PaymentServiceError::StatusUpdateNotAllowed)
     ));
 
+    let mut inspection = database
+        .tenant_scoped_migration_transaction(tenant_id)
+        .await
+        .expect("tenant-scoped lifecycle inspection begins");
     let case = sqlx::query(
         "SELECT id,payment_transaction_id,status FROM payments.payment_reconciliation_cases WHERE payment_intent_id=$1 AND payment_attempt_id=$2",
     )
     .bind(intent.id)
     .bind(attempt.id)
-    .fetch_one(&database.migration_pool)
+    .fetch_one(&mut *inspection)
     .await
     .expect("outcome_unknown creates one durable case");
     let case_id: Uuid = Row::try_get(&case, "id").expect("case id is present");
@@ -154,7 +166,7 @@ async fn status_transitions_are_guarded_atomic_and_create_durable_reconciliation
     )
     .bind(intent.id)
     .bind(attempt.id)
-    .fetch_one(&database.migration_pool)
+    .fetch_one(&mut *inspection)
     .await
     .expect("aggregate states are queryable");
     assert_eq!(
@@ -170,7 +182,7 @@ async fn status_transitions_are_guarded_atomic_and_create_durable_reconciliation
         "SELECT count(*) FROM payments.audit_events WHERE resource_id=$1 AND action='payment_intent.status_changed'",
     )
     .bind(intent.id)
-    .fetch_one(&database.migration_pool)
+    .fetch_one(&mut *inspection)
     .await
     .expect("intent transition audit is queryable");
     assert_eq!(intent_audit_count, 2);
@@ -179,7 +191,7 @@ async fn status_transitions_are_guarded_atomic_and_create_durable_reconciliation
         "SELECT count(*) FROM payments.audit_events WHERE resource_id=$1 AND action='payment_attempt.status_changed'",
     )
     .bind(attempt.id)
-    .fetch_one(&database.migration_pool)
+    .fetch_one(&mut *inspection)
     .await
     .expect("attempt transition audit is queryable");
     assert_eq!(
@@ -193,9 +205,13 @@ async fn status_transitions_are_guarded_atomic_and_create_durable_reconciliation
     .bind(intent.id)
     .bind(attempt.id)
     .bind(case_id)
-    .fetch_one(&database.migration_pool)
+    .fetch_one(&mut *inspection)
     .await
     .expect("all lifecycle events are durable");
     assert_eq!(events, 7);
+    inspection
+        .commit()
+        .await
+        .expect("tenant-scoped lifecycle inspection completes");
     database.finish().await;
 }

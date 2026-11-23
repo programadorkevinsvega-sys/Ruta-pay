@@ -133,8 +133,24 @@ async fn billing_collection_inbox_outbox_concurrency_and_recovery_are_isolated()
         retry.is_err(),
         "new commercial retry key stays blocked until policy approval"
     );
-    let collection_journal:i64=sqlx::query_scalar("SELECT count(*) FROM platform_billing.ledger_journals WHERE tenant_id=$1 AND journal_key=$2")
-        .bind(tenant).bind(format!("collection-succeeded:{attempt}")).fetch_one(&db.migration_pool).await.expect("collection journal is queryable");
+    let mut tenant_inspection = db
+        .migration_pool
+        .begin()
+        .await
+        .expect("tenant inspection transaction starts");
+    sqlx::query("SELECT set_config('app.tenant_id',$1,true)")
+        .bind(tenant.to_string())
+        .execute(&mut *tenant_inspection)
+        .await
+        .expect("inspection queries are scoped to the collection tenant");
+    let collection_journal: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM platform_billing.ledger_journals WHERE tenant_id=$1 AND journal_key=$2",
+    )
+    .bind(tenant)
+    .bind(format!("collection-succeeded:{attempt}"))
+    .fetch_one(&mut *tenant_inspection)
+    .await
+    .expect("tenant collection journal is queryable");
     assert_eq!(
         collection_journal, 1,
         "successful collection posts one balanced accounting journal"
@@ -142,9 +158,13 @@ async fn billing_collection_inbox_outbox_concurrency_and_recovery_are_isolated()
     let buyer_payments: i64 =
         sqlx::query_scalar("SELECT count(*) FROM payments.payment_intents WHERE tenant_id=$1")
             .bind(tenant)
-            .fetch_one(&db.migration_pool)
+            .fetch_one(&mut *tenant_inspection)
             .await
-            .expect("buyer payment table is readable");
+            .expect("tenant buyer payment table is readable");
+    tenant_inspection
+        .commit()
+        .await
+        .expect("tenant inspection transaction commits");
     assert_eq!(
         buyer_payments, 0,
         "SaaS collection never creates a tenant buyer payment intent"
@@ -196,8 +216,32 @@ async fn billing_collection_inbox_outbox_concurrency_and_recovery_are_isolated()
         .expect("billing outbox claims pending event");
     assert_eq!(claimed.len(), 5);
     let old = claimed[0].clone();
-    sqlx::query("UPDATE platform_billing.outbox_events SET lease_until=now()-interval '1 second' WHERE event_id=$1")
-        .bind(old.event_id).execute(&db.migration_pool).await.expect("simulate worker crash after lease");
+    let mut lease_expiration = db
+        .migration_pool
+        .begin()
+        .await
+        .expect("lease expiration transaction starts");
+    sqlx::query("SELECT set_config('app.tenant_id',$1,true)")
+        .bind(tenant.to_string())
+        .execute(&mut *lease_expiration)
+        .await
+        .expect("lease expiration is scoped to the invoice tenant");
+    let expired_leases = sqlx::query(
+        "UPDATE platform_billing.outbox_events SET lease_until=now()-interval '1 second' WHERE event_id=$1",
+    )
+    .bind(old.event_id)
+    .execute(&mut *lease_expiration)
+    .await
+    .expect("simulate worker crash after lease");
+    assert_eq!(
+        expired_leases.rows_affected(),
+        1,
+        "tenant-scoped lease expiration affects its one event"
+    );
+    lease_expiration
+        .commit()
+        .await
+        .expect("lease expiration transaction commits");
     let recovered = outbox::claim(&db.runtime_pool, 16)
         .await
         .expect("expired lease is recovered");

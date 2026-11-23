@@ -1,0 +1,5 @@
+{{- with pkiCert "pki_int/issue/postgres-exporter-client" "common_name=postgres_exporter" "ttl=2160h" -}}
+{{ .Data.Cert }}
+{{ .Data.CA }}
+{{ .Data.Key }}
+{{- end -}}

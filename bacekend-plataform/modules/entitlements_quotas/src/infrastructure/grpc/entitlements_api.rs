@@ -1,5 +1,7 @@
 mod admin;
 mod consume;
+mod context;
+mod diagnostics;
 mod mapping;
 mod tenant;
 
@@ -50,18 +52,35 @@ impl EntitlementsQuotasApi {
         token: String,
         csrf: String,
         correlation: String,
+        operation: &'static str,
     ) -> Result<Uuid, Status> {
-        let response = self
-            .identity
-            .clone()
-            .authorize_operator_operation(Request::new(AuthorizeOperatorOperationRequest {
+        let started = std::time::Instant::now();
+        let request = context::contextual_request(
+            AuthorizeOperatorOperationRequest {
                 session_token: token,
                 csrf_token: csrf,
                 permission: "catalog.manage".to_owned(),
-                correlation_id: correlation,
-            }))
-            .await?
-            .into_inner();
+                correlation_id: correlation.clone(),
+            },
+            &correlation,
+        )?;
+        let response = self
+            .identity
+            .clone()
+            .authorize_operator_operation(request)
+            .await;
+        let response = match response {
+            Ok(response) => response.into_inner(),
+            Err(status) => {
+                return Err(diagnostics::dependency_error(
+                    status,
+                    operation,
+                    "identity_access",
+                    &correlation,
+                    started.elapsed().as_millis() as u64,
+                ));
+            }
+        };
         Uuid::parse_str(&response.operator_id)
             .map_err(|_| Status::internal("operator identity is invalid"))
     }
@@ -97,34 +116,69 @@ impl EntitlementsQuotas for EntitlementsQuotasApi {
         &self,
         request: Request<SetPlanCapabilitiesRequest>,
     ) -> Result<Response<SetPlanCapabilitiesResponse>, Status> {
-        self.set_plan_capabilities_handler(request).await
+        let correlation_id = request.get_ref().correlation_id.clone();
+        let started = std::time::Instant::now();
+        let result = self.set_plan_capabilities_handler(request).await;
+        diagnostics::record_module_result(
+            "set_plan_capabilities",
+            &correlation_id,
+            started,
+            &result,
+        );
+        result
     }
 
     async fn assign_tenant_plan(
         &self,
         request: Request<AssignTenantPlanRequest>,
     ) -> Result<Response<AssignTenantPlanResponse>, Status> {
-        self.assign_tenant_plan_handler(request).await
+        let correlation_id = request.get_ref().correlation_id.clone();
+        let started = std::time::Instant::now();
+        let result = self.assign_tenant_plan_handler(request).await;
+        diagnostics::record_module_result("assign_tenant_plan", &correlation_id, started, &result);
+        result
     }
 
     async fn get_tenant_entitlement(
         &self,
         request: Request<GetTenantEntitlementRequest>,
     ) -> Result<Response<TenantEntitlementResponse>, Status> {
-        self.get_tenant_entitlement_handler(request).await
+        let correlation_id = request.get_ref().correlation_id.clone();
+        let started = std::time::Instant::now();
+        let result = self.get_tenant_entitlement_handler(request).await;
+        diagnostics::record_module_result(
+            "get_tenant_entitlement",
+            &correlation_id,
+            started,
+            &result,
+        );
+        result
     }
 
     async fn list_tenant_entitlements(
         &self,
         request: Request<ListTenantEntitlementsRequest>,
     ) -> Result<Response<ListTenantEntitlementsResponse>, Status> {
-        self.list_tenant_entitlements_handler(request).await
+        let correlation_id = request.get_ref().correlation_id.clone();
+        let started = std::time::Instant::now();
+        let result = self.list_tenant_entitlements_handler(request).await;
+        diagnostics::record_module_result(
+            "list_tenant_entitlements",
+            &correlation_id,
+            started,
+            &result,
+        );
+        result
     }
 
     async fn consume_quota(
         &self,
         request: Request<ConsumeQuotaRequest>,
     ) -> Result<Response<ConsumeQuotaResponse>, Status> {
-        self.consume_quota_handler(request).await
+        let correlation_id = request.get_ref().correlation_id.clone();
+        let started = std::time::Instant::now();
+        let result = self.consume_quota_handler(request).await;
+        diagnostics::record_module_result("consume_quota", &correlation_id, started, &result);
+        result
     }
 }

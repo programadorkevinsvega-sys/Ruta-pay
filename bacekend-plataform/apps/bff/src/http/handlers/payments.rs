@@ -311,8 +311,8 @@ pub(super) fn payment_error(
 ) -> Response {
     let body = ErrorEnvelope {
         error: ErrorBody {
-            code,
-            category,
+            code: code.to_owned(),
+            category: category.to_owned(),
             message: "The payment intent operation could not be completed.",
             correlation_id,
             trace_id: current_trace_id(),

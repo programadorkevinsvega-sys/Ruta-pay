@@ -44,12 +44,16 @@ async fn failed_outbox_write_rolls_back_attempt_intent_and_audit_changes() {
         .await;
     assert!(matches!(result, Err(PaymentServiceError::Database(_))));
 
+    let mut inspection = database
+        .tenant_scoped_migration_transaction(tenant_id)
+        .await
+        .expect("tenant-scoped rollback inspection begins");
     let states = sqlx::query(
         "SELECT i.status AS intent_status,i.aggregate_version,a.status AS attempt_status,a.aggregate_version AS attempt_version FROM payments.payment_intents i JOIN payments.payment_attempts a ON a.payment_intent_id=i.id WHERE i.id=$1 AND a.id=$2",
     )
     .bind(intent.id)
     .bind(attempt.id)
-    .fetch_one(&database.migration_pool)
+    .fetch_one(&mut *inspection)
     .await
     .expect("rolled back aggregates remain queryable");
     assert_eq!(
@@ -73,11 +77,15 @@ async fn failed_outbox_write_rolls_back_attempt_intent_and_audit_changes() {
         "SELECT count(*) FROM payments.audit_events WHERE resource_id=$1 AND action='payment_intent.status_changed'",
     )
     .bind(intent.id)
-    .fetch_one(&database.migration_pool)
+    .fetch_one(&mut *inspection)
     .await
     .expect("audit rows are queryable");
     assert_eq!(audit, 0);
 
+    inspection
+        .commit()
+        .await
+        .expect("tenant-scoped rollback inspection completes");
     sqlx::raw_sql(
         "DROP TRIGGER fail_status_outbox_acceptance ON payments.outbox_events; DROP FUNCTION payments.fail_status_outbox_acceptance();",
     )

@@ -1,0 +1,5 @@
+{{- with pkiCert "pki_int/issue/redis-server" "common_name=redis.tail4eafc5.ts.net" "alt_names=redis" "ttl=2160h" -}}
+{{ .Data.Cert }}
+{{ .Data.CA }}
+{{ .Data.Key }}
+{{- end -}}

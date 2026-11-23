@@ -57,9 +57,11 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
         created_tenant_id,
         registered_user_id,
         legal_identification_number: &legal_identification_number,
+        captured_events: &captured_events,
     })
     .await;
     let jetstream = event_fixture.jetstream;
+    let e2e_jetstream = event_fixture.e2e_jetstream;
     let event_topology = event_fixture.event_topology;
     let stream = event_fixture.stream;
     let event_payload = event_fixture.event_payload;
@@ -71,6 +73,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
     api_key_acceptance_flow::verify(
         api_key_acceptance_flow::ApiKeyAcceptanceContext {
             client: &client,
+            captured_events: &captured_events,
             migration_pool: &migration_pool,
             authorization_client: &mut authorization_client,
             http_addr,
@@ -91,7 +94,7 @@ async fn identity_http_grpc_postgres_redis_cookie_csrf_rate_limit_and_cleanup() 
             client: &client,
             migration_pool: &migration_pool,
             runtime_pool: &runtime_pool,
-            jetstream: &jetstream,
+            publisher_jetstream: &e2e_jetstream,
             event_topology: &event_topology,
             stream: &stream,
             registration_subject: &registration_subject,

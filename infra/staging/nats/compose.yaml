@@ -4,39 +4,44 @@ services:
   nats:
     image: nats:2.15.1-alpine
     restart: unless-stopped
-    network_mode: host
-    mem_limit: 1536m
-    cpus: 1.5
-    command: ["--config=/etc/nats/nats-server.conf"]
+    command: ["--config=/etc/nats/staging/nats-server.conf"]
     environment:
-      NATS_MAX_MEM_STORE: ${NATS_MAX_MEM_STORE:-256MB}
-      NATS_MAX_FILE_STORE: ${NATS_MAX_FILE_STORE:-4GB}
+      NATS_MAX_MEM_STORE: ${NATS_MAX_MEM_STORE:?set NATS_MAX_MEM_STORE after sizing}
+      NATS_MAX_FILE_STORE: ${NATS_MAX_FILE_STORE:?set NATS_MAX_FILE_STORE after sizing}
+    ports:
+      - "10.0.2.97:4222:4222"
+      - "100.121.121.12:4222:4222"
     volumes:
       - nats_data:/data
-      - ./nats-server.conf:/etc/nats/nats-server.conf:ro
-    secrets:
-      - source: nats_authorization
-        target: /etc/nats/authorization.conf
+      - ./nats-server.conf:/etc/nats/staging/nats-server.conf:ro
+      - ${NATS_TLS_DIR:?set NATS_TLS_DIR}:/run/tls:ro
+      - ${NATS_AUTHORIZATION_DIR:?set NATS_AUTHORIZATION_DIR}:/etc/nats/staging/auth:ro
     ulimits:
       nofile:
         soft: 65536
         hard: 65536
+    sysctls:
+      net.core.somaxconn: "4096"
     stop_grace_period: 30s
+    mem_limit: 1536m
+    cpus: 1.8
+    pids_limit: 256
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8222/healthz | grep -q 'ok'"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
-      start_period: 5s
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   nats-exporter:
     image: natsio/prometheus-nats-exporter:0.17.3
     restart: unless-stopped
-    mem_limit: 128m
-    cpus: 0.2
     command:
-      - -a
-      - 192.0.2.97
       - -varz
       - -connz
       - -subz
@@ -44,15 +49,20 @@ services:
       - -gatewayz
       - -leafz
       - -jsz=all
-      - http://127.0.0.1:8222
-    network_mode: host
+      - http://nats:8222
+    ports:
+      - "10.0.2.97:7777:7777"
     depends_on:
       nats:
         condition: service_healthy
+    mem_limit: 128m
+    cpus: 0.2
+    pids_limit: 64
+    logging:
+      driver: local
+      options:
+        max-size: "5m"
+        max-file: "3"
 
 volumes:
   nats_data:
-
-secrets:
-  nats_authorization:
-    file: ${NATS_AUTHORIZATION_FILE:?set NATS_AUTHORIZATION_FILE}

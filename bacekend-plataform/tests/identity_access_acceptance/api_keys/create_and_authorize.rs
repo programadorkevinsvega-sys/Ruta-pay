@@ -74,14 +74,16 @@ assert_eq!(
     scoped_api_key_authorization.tenant_id,
     ctx.state.created_tenant_id.to_string()
 );
-phase3_catalog::configure(
-    &ctx.client,
-    ctx.http_addr,
-    &ctx.origin,
-    &ctx.state.operator_session_cookie,
-    &ctx.state.operator_csrf_cookie,
-    ctx.state.created_tenant_id,
-)
+phase3_catalog::configure(phase3_catalog::Phase3CatalogContext {
+    client: &ctx.client,
+    migration_pool: &ctx.migration_pool,
+    http_addr: ctx.http_addr,
+    origin: &ctx.origin,
+    operator_session_cookie: &ctx.state.operator_session_cookie,
+    operator_csrf_cookie: &ctx.state.operator_csrf_cookie,
+    tenant_id: ctx.state.created_tenant_id,
+    captured_events: &ctx.captured_events,
+})
 .await;
 phase3_entitlements::verify(
     &ctx.client,

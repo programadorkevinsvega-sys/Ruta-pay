@@ -62,7 +62,7 @@ pub async fn handle(mut request: Request<Body>, next: Next) -> Response {
         let span_id = current_span_id();
         metrics::counter!("payvia_http_requests_total", "method" => method.as_str().to_owned(), "status" => status.as_u16().to_string()).increment(1);
         metrics::histogram!("payvia_http_request_duration_seconds", "method" => method.as_str().to_owned()).record(duration.as_secs_f64());
-        tracing::info!(event.name = "http.request.completed", component = "platform_bff", operation = "http", http.status_code = status.as_u16(), duration_total_ms = duration.as_millis() as u64, error_code = code.as_deref().unwrap_or("none"), error_category = category.as_deref().unwrap_or("none"), correlation_id = %correlation, trace_id = %trace_id, span_id = %span_id);
+        tracing::info!(event.name = "http.request.completed", component = "platform_bff", operation = route.as_str(), http.status_code = status.as_u16(), duration_total_ms = duration.as_millis() as u64, error_code = code.as_deref().unwrap_or("none"), error_category = category.as_deref().unwrap_or("none"), correlation_id = %correlation, trace_id = %trace_id, span_id = %span_id);
         response.headers_mut().insert("x-correlation-id", HeaderValue::from_str(&correlation).unwrap_or_else(|_| HeaderValue::from_static("invalid")));
         drop(in_flight_request);
         drop(sentry_transaction);

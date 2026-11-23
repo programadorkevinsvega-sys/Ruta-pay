@@ -24,20 +24,19 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
         database.runtime_pool.clone(),
         database.additional_runtime_pool().await,
     ];
-    let namespace = format!("e2e_usage_load_{}", Uuid::new_v4().simple());
-    let topology = EventTopology::from_namespace(Some(&namespace)).expect("isolated topology");
+    let namespace = "e2e_usage_load";
+    let topology = EventTopology::from_namespace(Some(namespace)).expect("isolated topology");
     let nats_url = std::env::var("PLATFORM_NATS_URL").expect("CI provides NATS URL");
-    let nats_user = std::env::var("NATS_USER").expect("CI provides NATS user");
-    let nats_password = std::env::var("NATS_PASSWORD").expect("CI provides NATS password");
-    let redis_url = std::env::var("PLATFORM_REDIS_URL").expect("CI provides Redis URL");
+    let nats_authentication = crate::dependencies::nats_authentication(&nats_url)
+        .expect("NATS acceptance authentication is valid");
     let redis_client =
-        redis::Client::open(redis_url.as_str()).expect("CI provides a valid Redis URL");
-    let client = async_nats::ConnectOptions::new()
-        .user_and_password(nats_user.clone(), nats_password.clone())
-        .connect(&nats_url)
+        crate::dependencies::redis_client().expect("Redis test client configuration is valid");
+    let jetstream = crate::dependencies::connect_jetstream()
         .await
         .expect("authenticated JetStream connection");
-    let jetstream = jetstream::new(client);
+    delete_e2e_stream(&jetstream, namespace)
+        .await
+        .expect("stale isolated load stream is removed");
     let stream = topology
         .ensure_stream(&jetstream)
         .await
@@ -67,8 +66,7 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
             pool,
             redis_client.clone(),
             nats_url.clone(),
-            nats_user.clone(),
-            nats_password.clone(),
+            nats_authentication.clone(),
             shutdown_rx.clone(),
             topology.clone(),
         )));
@@ -212,7 +210,7 @@ async fn billing_usage_consumer_survives_multiple_replicas_load_duplicates_and_d
         pool.close().await;
     }
     drop(consumer);
-    delete_e2e_stream(&jetstream, &namespace)
+    delete_e2e_stream(&jetstream, namespace)
         .await
         .expect("isolated usage stream is deleted");
     database.finish().await;

@@ -1,4 +1,3 @@
-use async_nats::jetstream::{self, Context};
 use platform_payments::infrastructure::{
     outbox_relay::{self, GatewayRequestSigningConfig},
     persistence::{claim_outbox_events, extend_outbox_lease, mark_outbox_published},
@@ -26,20 +25,8 @@ async fn insert_event(pool: &PgPool, event_type: &str) -> Uuid {
     event_id
 }
 
-async fn connect_jetstream() -> Context {
-    let nats_url = std::env::var("PLATFORM_NATS_URL").expect("CI provides JetStream URL");
-    let nats_user = std::env::var("NATS_USER").expect("CI provides JetStream user");
-    let nats_password = std::env::var("NATS_PASSWORD").expect("CI provides JetStream password");
-    let client = async_nats::ConnectOptions::new()
-        .user_and_password(nats_user, nats_password)
-        .connect(nats_url)
-        .await
-        .expect("authenticated JetStream connection succeeds");
-    jetstream::new(client)
-}
-
-fn topology() -> (String, EventTopology) {
-    let namespace = format!("e2e_outbox_{}", Uuid::new_v4().simple());
+fn topology(namespace: &'static str) -> (String, EventTopology) {
+    let namespace = namespace.to_owned();
     let topology = EventTopology::from_namespace(Some(&namespace))
         .expect("isolated outbox namespace is valid");
     (namespace, topology)
@@ -102,8 +89,13 @@ async fn outbox_lease_expiry_is_reclaimed_and_stale_owner_is_rejected() {
 async fn outbox_retries_after_stream_becomes_available_with_jittered_backoff() {
     let database = TestDatabase::new().await;
     let event_id = insert_event(&database.runtime_pool, "payment_intent.created").await;
-    let jetstream = connect_jetstream().await;
-    let (namespace, topology) = topology();
+    let jetstream = crate::dependencies::connect_jetstream()
+        .await
+        .expect("authenticated JetStream connection succeeds");
+    let (namespace, topology) = topology("e2e_outbox_retry");
+    delete_e2e_stream(&jetstream, &namespace)
+        .await
+        .expect("stale isolated retry stream is removed");
 
     let first =
         outbox_relay::relay_batch(&database.runtime_pool, &jetstream, &topology.subject_prefix)
@@ -160,8 +152,13 @@ async fn concurrent_relays_publish_all_claimed_events_without_losing_rows() {
     for _ in 0..40 {
         insert_event(&database.runtime_pool, "payment_intent.created").await;
     }
-    let jetstream = connect_jetstream().await;
-    let (namespace, topology) = topology();
+    let jetstream = crate::dependencies::connect_jetstream()
+        .await
+        .expect("authenticated JetStream connection succeeds");
+    let (namespace, topology) = topology("e2e_outbox_concurrent");
+    delete_e2e_stream(&jetstream, &namespace)
+        .await
+        .expect("stale isolated concurrent stream is removed");
     let mut stream = topology
         .ensure_stream(&jetstream)
         .await
@@ -203,8 +200,10 @@ async fn concurrent_relays_publish_all_claimed_events_without_losing_rows() {
 async fn permanent_outbox_errors_are_quarantined_without_retrying_forever() {
     let database = TestDatabase::new().await;
     let event_id = insert_event(&database.runtime_pool, "Invalid Type").await;
-    let jetstream = connect_jetstream().await;
-    let (_, topology) = topology();
+    let jetstream = crate::dependencies::connect_jetstream()
+        .await
+        .expect("authenticated JetStream connection succeeds");
+    let (_, topology) = topology("e2e_outbox_invalid");
 
     let delivered =
         outbox_relay::relay_batch(&database.runtime_pool, &jetstream, &topology.subject_prefix)
@@ -261,8 +260,13 @@ async fn lifecycle_outbox_event_types_are_acknowledged_by_real_jetstream() {
     for event_type in event_types {
         insert_event(&database.runtime_pool, event_type).await;
     }
-    let jetstream = connect_jetstream().await;
-    let (namespace, topology) = topology();
+    let jetstream = crate::dependencies::connect_jetstream()
+        .await
+        .expect("authenticated JetStream connection succeeds");
+    let (namespace, topology) = topology("e2e_outbox_lifecycle");
+    delete_e2e_stream(&jetstream, &namespace)
+        .await
+        .expect("stale isolated lifecycle stream is removed");
     let mut stream = topology
         .ensure_stream(&jetstream)
         .await

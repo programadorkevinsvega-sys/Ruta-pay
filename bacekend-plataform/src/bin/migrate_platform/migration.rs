@@ -1,6 +1,6 @@
 use super::{
     privileges::grant_runtime_privileges,
-    validation::{validate_database_targets, validate_production_database_tls},
+    validation::{configure_database_tls_mode, validate_database_targets},
 };
 use sqlx::postgres::PgPoolOptions;
 use std::{env, time::Duration};
@@ -18,13 +18,24 @@ pub(super) async fn migrate() -> Result<(), &'static str> {
         .ok()
         .filter(|value| !value.trim().is_empty())
         .ok_or("platform_runtime_db_role_missing")?;
-    validate_database_targets(&database_url, &runtime_database_url, &runtime_role)?;
-    if env::var("APP_ENV").is_ok_and(|environment| environment == "production")
-        && (!validate_production_database_tls(&database_url)
-            || !validate_production_database_tls(&runtime_database_url))
-    {
-        return Err("platform_migration_tls_configuration_invalid");
+    let environment = env::var("APP_ENV")
+        .unwrap_or_else(|_| "development".to_owned())
+        .to_ascii_lowercase();
+    if !["development", "test", "staging", "production"].contains(&environment.as_str()) {
+        return Err("platform_migration_app_environment_invalid");
     }
+    let require_mtls = match env::var("PAYVIA_REQUIRE_MTLS") {
+        Ok(value) if value.eq_ignore_ascii_case("true") => true,
+        Ok(value) if value.eq_ignore_ascii_case("false") => false,
+        Ok(_) => return Err("platform_migration_mtls_flag_invalid"),
+        Err(_) => false,
+    };
+    if matches!(environment.as_str(), "staging" | "production") && !require_mtls {
+        return Err("platform_migration_mtls_required_for_environment");
+    }
+    let database_url = configure_database_tls_mode(&database_url, require_mtls)?;
+    let runtime_database_url = configure_database_tls_mode(&runtime_database_url, require_mtls)?;
+    validate_database_targets(&database_url, &runtime_database_url, &runtime_role)?;
     let pool = PgPoolOptions::new()
         .max_connections(2)
         .acquire_timeout(Duration::from_secs(5))

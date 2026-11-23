@@ -51,21 +51,47 @@ impl ConfigError {
 impl AppConfig {
     pub fn from_env() -> Result<Self, ConfigError> {
         let environment = value("APP_ENV", "development");
-        let require_mtls =
-            env::var("PAYVIA_REQUIRE_MTLS").is_ok_and(|value| value.eq_ignore_ascii_case("true"));
+        let require_mtls = boolean("PAYVIA_REQUIRE_MTLS", false)?;
+        let database_url = database_url()?;
+        let redis_url = redis_url()?;
+        let nats_url = nats_url()?;
         let config = Self {
-            database_url: database_url()?,
-            redis_url: redis_url()?,
-            redis_tls_root_ca: optional_path("PLATFORM_REDIS_TLS_ROOT_CA"),
-            redis_tls_client_cert: optional_path("PLATFORM_REDIS_TLS_CLIENT_CERT"),
-            redis_tls_client_key: optional_path("PLATFORM_REDIS_TLS_CLIENT_KEY"),
-            nats_tls_root_ca: optional_path("NATS_TLS_ROOT_CA"),
-            nats_tls_client_cert: optional_path("NATS_TLS_CLIENT_CERT"),
-            nats_tls_client_key: optional_path("NATS_TLS_CLIENT_KEY"),
+            database_url: if require_mtls {
+                database_url
+            } else {
+                plaintext_database_url(&database_url)?
+            },
+            redis_url: if require_mtls {
+                redis_url
+            } else {
+                plaintext_service_url(&redis_url, "rediss", "redis", "PLATFORM_REDIS_URL")?
+            },
+            redis_tls_root_ca: require_mtls
+                .then(|| optional_path("PLATFORM_REDIS_TLS_ROOT_CA"))
+                .flatten(),
+            redis_tls_client_cert: require_mtls
+                .then(|| optional_path("PLATFORM_REDIS_TLS_CLIENT_CERT"))
+                .flatten(),
+            redis_tls_client_key: require_mtls
+                .then(|| optional_path("PLATFORM_REDIS_TLS_CLIENT_KEY"))
+                .flatten(),
+            nats_tls_root_ca: require_mtls
+                .then(|| optional_path("NATS_TLS_ROOT_CA"))
+                .flatten(),
+            nats_tls_client_cert: require_mtls
+                .then(|| optional_path("NATS_TLS_CLIENT_CERT"))
+                .flatten(),
+            nats_tls_client_key: require_mtls
+                .then(|| optional_path("NATS_TLS_CLIENT_KEY"))
+                .flatten(),
             require_mtls,
-            nats_url: nats_url()?,
-            nats_username: nats_credential("NATS_USER", environment == "production")?,
-            nats_password: nats_credential("NATS_PASSWORD", environment == "production")?,
+            nats_url: if require_mtls {
+                nats_url
+            } else {
+                plaintext_service_url(&nats_url, "tls", "nats", "PLATFORM_NATS_URL")?
+            },
+            nats_username: nats_credential("NATS_USER", require_mtls)?,
+            nats_password: nats_credential("NATS_PASSWORD", require_mtls)?,
             http_addr: address("APP_HTTP_ADDR", "0.0.0.0:8080")?,
             grpc_addr: address("APP_MODULE_GRPC_ADDR", "127.0.0.1:50051")?,
             metrics_addr: address("APP_METRICS_ADDR", "127.0.0.1:9090")?,
@@ -100,8 +126,13 @@ fn validate_config(config: &AppConfig) -> Result<(), ConfigError> {
             variable: "PLATFORM_REDIS_URL",
         });
     }
+    let has_username = !config.nats_username.trim().is_empty();
+    let has_password = !config.nats_password.is_empty();
     if !validate_nats_url(&config.nats_url)
-        || (config.environment != "production"
+        || (has_username != has_password)
+        || (!config.require_mtls && (!has_username || config.nats_password.len() < 32))
+        || (config.require_mtls
+            && has_username
             && (config.nats_username.trim().is_empty() || config.nats_password.len() < 32))
     {
         return Err(ConfigError::InvalidValue {
@@ -130,24 +161,47 @@ fn validate_config(config: &AppConfig) -> Result<(), ConfigError> {
             variable: "PLATFORM_REDIS_TLS_CLIENT_CERT",
         });
     }
-    if config.environment == "production" && !validate_production_database_url(&config.database_url)
-    {
+    if matches!(config.environment.as_str(), "production" | "staging") && !config.require_mtls {
+        return Err(ConfigError::InvalidValue {
+            variable: "PAYVIA_REQUIRE_MTLS",
+        });
+    }
+    if config.require_mtls && !validate_production_database_url(&config.database_url) {
         return Err(ConfigError::InvalidValue {
             variable: "PLATFORM_DATABASE_URL",
         });
     }
-    if (config.environment == "production" || config.require_mtls)
-        && (url::Url::parse(&config.redis_url).is_ok_and(|url| url.scheme() != "rediss")
-            || !redis_tls_paths.iter().all(|configured| *configured))
+    if config.require_mtls
+        && url::Url::parse(&config.redis_url).is_ok_and(|url| url.scheme() != "rediss")
     {
+        return Err(ConfigError::InvalidValue {
+            variable: "PLATFORM_REDIS_URL",
+        });
+    }
+    if config.require_mtls && !redis_tls_paths.iter().all(|configured| *configured) {
         return Err(ConfigError::InvalidValue {
             variable: "PLATFORM_REDIS_TLS_CLIENT_CERT",
         });
     }
-    if (config.environment == "production" || config.require_mtls)
-        && (!config.nats_url.starts_with("tls://")
-            || !nats_tls_paths.iter().all(|configured| *configured)
-            || !config.require_mtls)
+    if config.require_mtls && !nats_tls_paths.iter().all(|configured| *configured) {
+        return Err(ConfigError::InvalidValue {
+            variable: "NATS_TLS_CLIENT_CERT",
+        });
+    }
+    if config.require_mtls && !config.nats_url.starts_with("tls://") {
+        return Err(ConfigError::InvalidValue {
+            variable: "PAYVIA_REQUIRE_MTLS",
+        });
+    }
+    if !config.require_mtls
+        && (url::Url::parse(&config.database_url).is_ok_and(|url| {
+            url.query_pairs()
+                .find(|(key, _)| key == "sslmode")
+                .is_none_or(|(_, value)| value != "disable")
+        }) || url::Url::parse(&config.redis_url).is_ok_and(|url| url.scheme() != "redis")
+            || !config.nats_url.starts_with("nats://")
+            || redis_tls_paths.iter().any(|configured| *configured)
+            || nats_tls_paths.iter().any(|configured| *configured))
     {
         return Err(ConfigError::InvalidValue {
             variable: "PAYVIA_REQUIRE_MTLS",
@@ -190,7 +244,12 @@ fn validate_database_url(value: &str) -> bool {
             && !url.username().is_empty()
             && url.password().is_some()
             && url.query_pairs().all(|(key, value)| {
-                !matches!(key.as_ref(), "password" | "sslpassword") && value.len() <= 32
+                !matches!(key.as_ref(), "password" | "sslpassword")
+                    && if matches!(key.as_ref(), "sslrootcert" | "sslcert" | "sslkey") {
+                        value.len() <= 512
+                    } else {
+                        value.len() <= 32
+                    }
             })
     })
 }
@@ -209,6 +268,45 @@ fn validate_production_database_url(value: &str) -> bool {
                 .iter()
                 .any(|(key, value)| key == "sslmode" && value == "verify-full")
     })
+}
+
+pub fn plaintext_database_url(value: &str) -> Result<String, ConfigError> {
+    let mut url = url::Url::parse(value).map_err(|_| ConfigError::InvalidValue {
+        variable: "PLATFORM_DATABASE_URL",
+    })?;
+    let parameters = url
+        .query_pairs()
+        .filter(|(key, _)| {
+            !matches!(
+                key.as_ref(),
+                "sslmode" | "sslrootcert" | "sslcert" | "sslkey"
+            )
+        })
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect::<Vec<_>>();
+    url.set_query(None);
+    {
+        let mut query = url.query_pairs_mut();
+        for (key, value) in parameters {
+            query.append_pair(&key, &value);
+        }
+        query.append_pair("sslmode", "disable");
+    }
+    Ok(url.into())
+}
+
+fn plaintext_service_url(
+    value: &str,
+    secure_scheme: &str,
+    plaintext_scheme: &str,
+    variable: &'static str,
+) -> Result<String, ConfigError> {
+    let mut url = url::Url::parse(value).map_err(|_| ConfigError::InvalidValue { variable })?;
+    if url.scheme() == secure_scheme {
+        url.set_scheme(plaintext_scheme)
+            .map_err(|_| ConfigError::InvalidValue { variable })?;
+    }
+    Ok(url.into())
 }
 
 fn redis_url() -> Result<String, ConfigError> {
@@ -274,6 +372,15 @@ fn optional_path(variable: &'static str) -> Option<PathBuf> {
     env::var_os(variable)
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
+}
+
+fn boolean(variable: &'static str, default: bool) -> Result<bool, ConfigError> {
+    match env::var(variable) {
+        Ok(value) if value.eq_ignore_ascii_case("true") => Ok(true),
+        Ok(value) if value.eq_ignore_ascii_case("false") => Ok(false),
+        Ok(_) => Err(ConfigError::InvalidValue { variable }),
+        Err(_) => Ok(default),
+    }
 }
 
 fn address(variable: &'static str, default: &str) -> Result<SocketAddr, ConfigError> {

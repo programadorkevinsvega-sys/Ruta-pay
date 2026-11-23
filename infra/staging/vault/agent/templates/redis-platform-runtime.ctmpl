@@ -1,0 +1,3 @@
+{{- with secret "apps/platform/data/redis" -}}
+{{- .Data.data.password -}}
+{{- end -}}

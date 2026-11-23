@@ -1,0 +1,5 @@
+{{- with pkiCert "pki_int/issue/redis-healthcheck-client" "common_name=payvia_healthcheck" "ttl=2160h" -}}
+{{ .Data.Cert }}
+{{ .Data.CA }}
+{{ .Data.Key }}
+{{- end -}}

@@ -1,0 +1,3 @@
+{{- with secret "apps/platform/data/redis-tls-rotator" -}}
+{{- .Data.data.password -}}
+{{- end -}}

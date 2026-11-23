@@ -17,13 +17,14 @@ impl EntitlementsQuotasApi {
     ) -> Result<Response<TenantEntitlementResponse>, Status> {
         let body = request.into_inner();
         let tenant = parse_uuid(&body.tenant_id)?;
+        let correlation_id = body.correlation_id.clone();
         let actor = self
             .authorize_tenant(
                 body.session_token,
                 body.csrf_token,
                 tenant,
                 "usage.read",
-                body.correlation_id,
+                correlation_id.clone(),
             )
             .await?;
         let at = if body.effective_at.is_empty() {
@@ -31,11 +32,19 @@ impl EntitlementsQuotasApi {
         } else {
             parse_time(&body.effective_at)?
         };
+        let started = std::time::Instant::now();
         let result = self
             .service
             .evaluate(actor, tenant, &body.capability_key, &body.environment, at)
             .await
-            .map_err(map_error)?;
+            .map_err(|error| {
+                map_error(
+                    error,
+                    "get_tenant_entitlement",
+                    &correlation_id,
+                    started.elapsed().as_millis() as u64,
+                )
+            })?;
         Ok(Response::new(entitlement_response(result)))
     }
     pub(super) async fn list_tenant_entitlements_handler(
@@ -44,13 +53,14 @@ impl EntitlementsQuotasApi {
     ) -> Result<Response<ListTenantEntitlementsResponse>, Status> {
         let body = request.into_inner();
         let tenant = parse_uuid(&body.tenant_id)?;
+        let correlation_id = body.correlation_id.clone();
         let actor = self
             .authorize_tenant(
                 body.session_token,
                 body.csrf_token,
                 tenant,
                 "usage.read",
-                body.correlation_id,
+                correlation_id.clone(),
             )
             .await?;
         let at = if body.effective_at.is_empty() {
@@ -58,11 +68,19 @@ impl EntitlementsQuotasApi {
         } else {
             parse_time(&body.effective_at)?
         };
+        let started = std::time::Instant::now();
         let entitlements = self
             .service
             .list(actor, tenant, &body.environment, at)
             .await
-            .map_err(map_error)?;
+            .map_err(|error| {
+                map_error(
+                    error,
+                    "list_tenant_entitlements",
+                    &correlation_id,
+                    started.elapsed().as_millis() as u64,
+                )
+            })?;
         Ok(Response::new(ListTenantEntitlementsResponse {
             entitlements: entitlements.into_iter().map(entitlement_response).collect(),
         }))

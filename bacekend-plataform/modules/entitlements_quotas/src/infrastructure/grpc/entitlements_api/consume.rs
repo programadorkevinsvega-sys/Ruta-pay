@@ -39,6 +39,7 @@ impl EntitlementsQuotasApi {
             ));
         }
         let actor = parse_uuid(&authorization.key_id)?;
+        let started = std::time::Instant::now();
         let (entitlement, replayed) = self
             .service
             .consume(ConsumeQuotaCommand {
@@ -52,7 +53,14 @@ impl EntitlementsQuotasApi {
                 correlation_id: &correlation_id,
             })
             .await
-            .map_err(map_error)?;
+            .map_err(|error| {
+                map_error(
+                    error,
+                    "consume_quota",
+                    &correlation_id,
+                    started.elapsed().as_millis() as u64,
+                )
+            })?;
         Ok(Response::new(ConsumeQuotaResponse {
             entitlement: Some(entitlement_response(entitlement)),
             replayed,

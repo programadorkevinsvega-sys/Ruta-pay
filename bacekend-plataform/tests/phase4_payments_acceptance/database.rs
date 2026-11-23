@@ -6,14 +6,20 @@ struct AcceptanceDatabaseCleanup {
     admin_pool: sqlx::PgPool,
     database_name: String,
     runtime_role: String,
+    drop_runtime_role: bool,
     armed: bool,
 }
 
 impl AcceptanceDatabaseCleanup {
     async fn cleanup(&mut self) {
-        Self::drop_resources(&self.admin_pool, &self.database_name, &self.runtime_role)
-            .await
-            .expect("phase four isolated database and role are removed");
+        Self::drop_resources(
+            &self.admin_pool,
+            &self.database_name,
+            &self.runtime_role,
+            self.drop_runtime_role,
+        )
+        .await
+        .expect("phase four isolated database and temporary role are removed");
         self.armed = false;
     }
 
@@ -21,6 +27,7 @@ impl AcceptanceDatabaseCleanup {
         admin_pool: &sqlx::PgPool,
         database_name: &str,
         runtime_role: &str,
+        drop_runtime_role: bool,
     ) -> Result<(), sqlx::Error> {
         sqlx::query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1 AND pid<>pg_backend_pid()")
             .bind(database_name).execute(admin_pool).await?;
@@ -29,11 +36,13 @@ impl AcceptanceDatabaseCleanup {
         )))
         .execute(admin_pool)
         .await?;
-        sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
-            "DROP ROLE IF EXISTS \"{runtime_role}\""
-        )))
-        .execute(admin_pool)
-        .await?;
+        if drop_runtime_role {
+            sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+                "DROP ROLE IF EXISTS \"{runtime_role}\""
+            )))
+            .execute(admin_pool)
+            .await?;
+        }
         Ok(())
     }
 }
@@ -44,12 +53,15 @@ impl Drop for AcceptanceDatabaseCleanup {
             let pool = self.admin_pool.clone();
             let database = self.database_name.clone();
             let role = self.runtime_role.clone();
+            let drop_runtime_role = self.drop_runtime_role;
             let runtime = tokio::runtime::Handle::current();
             tokio::task::block_in_place(|| {
                 runtime.block_on(async move {
-                    Self::drop_resources(&pool, &database, &role).await.expect(
-                        "panic cleanup removes only this isolated phase four database and role",
-                    );
+                    Self::drop_resources(&pool, &database, &role, drop_runtime_role)
+                        .await
+                        .expect(
+                            "panic cleanup removes only this isolated phase four database and temporary role",
+                        );
                 })
             });
         }
@@ -65,8 +77,19 @@ pub struct TestDatabase {
 
 impl TestDatabase {
     pub async fn new() -> Self {
-        let admin_url = std::env::var("PLATFORM_TEST_DATABASE_ADMIN_URL")
+        let configured_admin_url = std::env::var("PLATFORM_TEST_DATABASE_ADMIN_URL")
             .expect("CI provides an administrator PostgreSQL URL");
+        let configured_runtime_url = std::env::var("PLATFORM_TEST_DATABASE_RUNTIME_URL").ok();
+        let admin_url =
+            crate::postgres_dependencies::postgres_url_for_current_mode(&configured_admin_url)
+                .unwrap_or_else(|error| {
+                    panic!("test administrator URL is not safe for this target: {error}")
+                });
+        let runtime_base_url = crate::postgres_dependencies::validate_postgres_test_urls(
+            &admin_url,
+            configured_runtime_url.as_deref(),
+        )
+        .unwrap_or_else(|error| panic!("test database URLs are not safe for this target: {error}"));
         let admin_pool = PgPoolOptions::new()
             .max_connections(4)
             .connect(&admin_url)
@@ -74,8 +97,18 @@ impl TestDatabase {
             .expect("administrator PostgreSQL connection succeeds");
         let suffix = Uuid::new_v4().simple().to_string();
         let database_name = format!("phase4_{suffix}");
-        let runtime_role = format!("phase4_{suffix}");
-        let runtime_password = Uuid::new_v4().simple().to_string();
+        let drop_runtime_role = runtime_base_url.is_none();
+        let mut runtime_url = runtime_base_url
+            .as_deref()
+            .map(url::Url::from_str)
+            .unwrap_or_else(|| url::Url::from_str(&admin_url))
+            .expect("runtime PostgreSQL URL parses");
+        let runtime_role = if drop_runtime_role {
+            format!("phase4_{suffix}")
+        } else {
+            runtime_url.username().to_owned()
+        };
+        let runtime_password = drop_runtime_role.then(|| Uuid::new_v4().simple().to_string());
 
         sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
             "CREATE DATABASE \"{database_name}\""
@@ -87,6 +120,7 @@ impl TestDatabase {
             admin_pool: admin_pool.clone(),
             database_name: database_name.clone(),
             runtime_role: runtime_role.clone(),
+            drop_runtime_role,
             armed: true,
         };
 
@@ -127,12 +161,20 @@ impl TestDatabase {
             .await
             .expect("platform billing migrations apply");
 
+        if let Some(runtime_password) = runtime_password.as_deref() {
+            sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+                "CREATE ROLE \"{runtime_role}\" LOGIN PASSWORD '{runtime_password}'"
+            )))
+            .execute(&admin_pool)
+            .await
+            .expect("restricted application role is created");
+        }
         sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
-            "CREATE ROLE \"{runtime_role}\" LOGIN PASSWORD '{runtime_password}'"
+            "REVOKE CONNECT ON DATABASE \"{database_name}\" FROM PUBLIC"
         )))
         .execute(&admin_pool)
         .await
-        .expect("restricted application role is created");
+        .expect("temporary database is not connectable by unrelated roles");
         sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
             "GRANT CONNECT ON DATABASE \"{database_name}\" TO \"{runtime_role}\""
         )))
@@ -158,25 +200,37 @@ impl TestDatabase {
         .await
         .expect("runtime role receives sequence privileges");
 
-        database_url
-            .set_username(&runtime_role)
-            .expect("runtime role username is valid");
-        database_url
-            .set_password(Some(&runtime_password))
-            .expect("runtime role password is valid");
-        let runtime_url = database_url.to_string();
+        runtime_url.set_path(&format!("/{database_name}"));
+        if drop_runtime_role {
+            runtime_url
+                .set_username(&runtime_role)
+                .expect("runtime role username is valid");
+            runtime_url
+                .set_password(runtime_password.as_deref())
+                .expect("runtime role password is valid");
+        }
+        let runtime_url = runtime_url.to_string();
         let runtime_pool = PgPoolOptions::new()
             .max_connections(12)
             .acquire_timeout(StdDuration::from_secs(5))
             .connect(&runtime_url)
             .await
             .expect("restricted runtime role connects");
-        let bypass_rls: bool =
-            sqlx::query_scalar("SELECT rolbypassrls FROM pg_roles WHERE rolname=current_user")
-                .fetch_one(&runtime_pool)
-                .await
-                .expect("runtime role RLS attribute is readable");
-        assert!(!bypass_rls, "application role must not bypass RLS");
+        let (is_superuser, can_create_database, can_create_role, bypass_rls): (
+            bool,
+            bool,
+            bool,
+            bool,
+        ) = sqlx::query_as(
+            "SELECT rolsuper, rolcreatedb, rolcreaterole, rolbypassrls FROM pg_roles WHERE rolname=current_user",
+        )
+        .fetch_one(&runtime_pool)
+        .await
+        .expect("runtime role privileges are readable");
+        assert!(
+            !is_superuser && !can_create_database && !can_create_role && !bypass_rls,
+            "application role must not have administrative or RLS-bypass privileges"
+        );
 
         Self {
             migration_pool,
@@ -193,6 +247,18 @@ impl TestDatabase {
             .connect(&self.runtime_url)
             .await
             .expect("additional replica pool connects with the restricted runtime role")
+    }
+
+    pub async fn tenant_scoped_migration_transaction(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<sqlx::Transaction<'_, sqlx::Postgres>, sqlx::Error> {
+        let mut transaction = self.migration_pool.begin().await?;
+        sqlx::query("SELECT set_config('app.tenant_id',$1,true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *transaction)
+            .await?;
+        Ok(transaction)
     }
 
     pub async fn set_runtime_database_available(&self, available: bool) {

@@ -98,7 +98,6 @@ pub async fn verify(context: SessionSecurityFlowContext<'_>) -> MatrixOperatorCo
     )
     .await;
     super::login_rate_limits::verify(
-        client,
         redis_manager,
         http_addr,
         origin,

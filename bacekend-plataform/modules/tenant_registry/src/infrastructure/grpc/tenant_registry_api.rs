@@ -94,20 +94,89 @@ impl TenantRegistry for TenantRegistryApi {
     ) -> Result<Response<TenantResponse>, Status> {
         let body = request.into_inner();
         let correlation_id = body.correlation_id.clone();
-        let tenant_id = parse_uuid(&body.tenant_id)?;
-        match self
-            .service
-            .get(
-                &body.session_token,
-                &body.csrf_token,
-                tenant_id,
-                &correlation_id,
-            )
-            .await
-        {
-            Ok(tenant) => Ok(Response::new(tenant_response(tenant))),
-            Err(error) => Err(map_error(error, "get_tenant", &correlation_id, 0)),
+        let span = tracing::info_span!(
+            "grpc.module.tenant_registry",
+            operation = "get_tenant",
+            correlation_id
+        );
+        async move {
+            let started = std::time::Instant::now();
+            tracing::info!(
+                event.name = "grpc.module.request.started",
+                component = "tenant_registry",
+                operation = "get_tenant",
+                correlation_id,
+                trace_id = %current_trace_id(),
+                span_id = %current_span_id()
+            );
+            let result = async {
+                let tenant_id = parse_uuid(&body.tenant_id)?;
+                self.service
+                    .get(
+                        &body.session_token,
+                        &body.csrf_token,
+                        tenant_id,
+                        &correlation_id,
+                    )
+                    .await
+                    .map(tenant_response)
+                    .map(Response::new)
+                    .map_err(|error| {
+                        map_error(
+                            error,
+                            "get_tenant",
+                            &correlation_id,
+                            started.elapsed().as_millis() as u64,
+                        )
+                    })
+            }
+            .await;
+            match result {
+                Ok(response) => {
+                    tracing::info!(
+                        event.name = "grpc.module.response",
+                        component = "tenant_registry",
+                        operation = "get_tenant",
+                        result = "success",
+                        duration_total_ms = started.elapsed().as_millis() as u64,
+                        correlation_id,
+                        trace_id = %current_trace_id(),
+                        span_id = %current_span_id()
+                    );
+                    Ok(response)
+                }
+                Err(status) => {
+                    if status.code() == tonic::Code::Cancelled
+                        || status.code() == tonic::Code::DeadlineExceeded
+                    {
+                        tracing::warn!(
+                            event.name = "grpc.module.request.failed",
+                            component = "tenant_registry",
+                            operation = "get_tenant",
+                            dependency = "tenant_registry",
+                            error_code = if status.code() == tonic::Code::DeadlineExceeded {
+                                "tenant_dependency_timeout"
+                            } else {
+                                "tenant_request_cancelled"
+                            },
+                            error_category = if status.code() == tonic::Code::DeadlineExceeded {
+                                "timeout"
+                            } else {
+                                "dependency"
+                            },
+                            retryable = false,
+                            duration_total_ms = started.elapsed().as_millis() as u64,
+                            correlation_id,
+                            trace_id = %current_trace_id(),
+                            span_id = %current_span_id()
+                        );
+                    }
+                    Err(status)
+                }
+            }
         }
+        .instrument(span)
+        .await
     }
 
     async fn list_tenants(
