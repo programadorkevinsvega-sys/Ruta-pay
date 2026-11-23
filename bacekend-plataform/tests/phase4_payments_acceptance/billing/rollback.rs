@@ -24,8 +24,7 @@ async fn unbalanced_financial_journal_rolls_back_as_one_transaction() {
         .expect("draft invoice is persisted");
     let journal = Uuid::new_v4();
     let mut tx = db
-        .migration_pool
-        .begin()
+        .tenant_scoped_migration_transaction(tenant)
         .await
         .expect("ledger transaction begins");
     sqlx::query("INSERT INTO platform_billing.ledger_journals (id,tenant_id,invoice_id,journal_key,currency) VALUES ($1,$2,$3,$4,'COP')")
@@ -38,17 +37,21 @@ async fn unbalanced_financial_journal_rolls_back_as_one_transaction() {
         tx.commit().await.is_err(),
         "deferred balance constraint rejects incomplete journal"
     );
+    let mut inspection = db
+        .tenant_scoped_migration_transaction(tenant)
+        .await
+        .expect("tenant-scoped rollback inspection begins");
     let journals: i64 =
         sqlx::query_scalar("SELECT count(*) FROM platform_billing.ledger_journals WHERE id=$1")
             .bind(journal)
-            .fetch_one(&db.migration_pool)
+            .fetch_one(&mut *inspection)
             .await
             .expect("rollback state is readable");
     let entries: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM platform_billing.ledger_entries WHERE journal_id=$1",
     )
     .bind(journal)
-    .fetch_one(&db.migration_pool)
+    .fetch_one(&mut *inspection)
     .await
     .expect("rollback entries are readable");
     assert_eq!(
@@ -56,5 +59,9 @@ async fn unbalanced_financial_journal_rolls_back_as_one_transaction() {
         "journal header rolls back with its invalid entry"
     );
     assert_eq!(entries, 0, "unbalanced ledger entry rolls back");
+    inspection
+        .commit()
+        .await
+        .expect("tenant-scoped rollback inspection completes");
     db.finish().await;
 }

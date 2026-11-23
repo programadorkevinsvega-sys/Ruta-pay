@@ -12,7 +12,17 @@ use bacekend_pasarela::{
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let environment = env::var("GATEWAY_ENV").unwrap_or_else(|_| "development".to_owned());
+    let environment = env::var("GATEWAY_ENV")
+        .or_else(|_| env::var("APP_ENV"))
+        .unwrap_or_else(|_| "development".to_owned())
+        .to_ascii_lowercase();
+    if !["development", "test", "staging", "production"].contains(&environment.as_str()) {
+        return Err("gateway_environment_invalid".into());
+    }
+    let require_mtls = mtls_enabled()?;
+    if matches!(environment.as_str(), "staging" | "production") && !require_mtls {
+        return Err("PAYVIA_REQUIRE_MTLS must be true in staging and production".into());
+    }
     let release =
         env::var("GATEWAY_VERSION").unwrap_or_else(|_| env!("CARGO_PKG_VERSION").to_owned());
     let otlp_endpoint = env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok();
@@ -64,29 +74,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let platform_request_key = load_event_signing_key(&platform_request_key)?;
     let platform_request_key_id = env::var("GATEWAY_PLATFORM_REQUEST_VERIFY_KEY_ID")
         .map_err(|_| "GATEWAY_PLATFORM_REQUEST_VERIFY_KEY_ID is required")?;
-    let nats_url =
+    let configured_nats_url =
         env::var("GATEWAY_NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".to_owned());
-    if environment == "production" && !nats_url.starts_with("tls://") {
-        return Err("gateway_nats_tls_required".into());
-    }
-    let mapped_identity = environment == "production";
+    let tls_enabled = require_mtls || environment == "production";
+    let nats_url = normalize_nats_url(&configured_nats_url, tls_enabled)?;
     let nats_user = env::var("GATEWAY_NATS_USER").unwrap_or_default();
     let nats_password = env::var("GATEWAY_NATS_PASSWORD").unwrap_or_default();
+    let mapped_identity = environment == "production"
+        || (tls_enabled && nats_user.trim().is_empty() && nats_password.is_empty());
+    if nats_user.trim().is_empty() != nats_password.is_empty() {
+        return Err("gateway NATS credentials must be configured together".into());
+    }
     if !mapped_identity && (nats_user.trim().is_empty() || nats_password.len() < 32) {
         return Err("gateway NATS credentials are invalid".into());
     }
 
-    let options = build_nats_options(nats_user, nats_password).map_err(|error_code| {
-        tracing::error!(
-            event.name = "service.configuration.invalid",
-            component = "gateway_runtime",
-            operation = "configure_nats_mtls",
-            error_code,
-            error_category = "configuration",
-            retryable = false
-        );
-        std::io::Error::other(error_code)
-    })?;
+    let options = build_nats_options(nats_user, nats_password, tls_enabled, mapped_identity)
+        .map_err(|error_code| {
+            tracing::error!(
+                event.name = "service.configuration.invalid",
+                component = "gateway_runtime",
+                operation = "configure_nats_mtls",
+                error_code,
+                error_category = "configuration",
+                retryable = false
+            );
+            std::io::Error::other(error_code)
+        })?;
     let nats = options.connect(&nats_url).await.inspect_err(|error| {
         tracing::error!(
             event.name = "service.startup.dependency.failed",
@@ -147,14 +161,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn build_nats_options(username: String, password: String) -> Result<ConnectOptions, &'static str> {
-    let root = env::var_os("NATS_TLS_ROOT_CA").filter(|value| !value.is_empty());
-    let certificate = env::var_os("NATS_TLS_CLIENT_CERT").filter(|value| !value.is_empty());
-    let private_key = env::var_os("NATS_TLS_CLIENT_KEY").filter(|value| !value.is_empty());
-    let mapped_identity =
-        env::var("GATEWAY_ENV").is_ok_and(|value| value.eq_ignore_ascii_case("production"));
-    let required = mapped_identity
-        || env::var("PAYVIA_REQUIRE_MTLS").is_ok_and(|value| value.eq_ignore_ascii_case("true"));
+fn build_nats_options(
+    username: String,
+    password: String,
+    tls_enabled: bool,
+    mapped_identity: bool,
+) -> Result<ConnectOptions, &'static str> {
+    let root = tls_enabled
+        .then(|| env::var_os("NATS_TLS_ROOT_CA").filter(|value| !value.is_empty()))
+        .flatten();
+    let certificate = tls_enabled
+        .then(|| env::var_os("NATS_TLS_CLIENT_CERT").filter(|value| !value.is_empty()))
+        .flatten();
+    let private_key = tls_enabled
+        .then(|| env::var_os("NATS_TLS_CLIENT_KEY").filter(|value| !value.is_empty()))
+        .flatten();
     match (root, certificate, private_key) {
         (Some(root), Some(certificate), Some(private_key)) if mapped_identity => {
             Ok(ConnectOptions::new()
@@ -168,10 +189,59 @@ fn build_nats_options(username: String, password: String) -> Result<ConnectOptio
                 .add_client_certificate(PathBuf::from(certificate), PathBuf::from(private_key))
                 .require_tls(true))
         }
-        (None, None, None) if !required => {
+        (None, None, None) if !tls_enabled => {
             Ok(ConnectOptions::with_user_and_password(username, password))
         }
         (None, None, None) => Err("gateway_nats_mtls_required"),
         _ => Err("gateway_nats_mtls_configuration_incomplete"),
+    }
+}
+
+fn mtls_enabled() -> Result<bool, std::io::Error> {
+    match env::var("PAYVIA_REQUIRE_MTLS") {
+        Ok(value) if value.eq_ignore_ascii_case("true") => Ok(true),
+        Ok(value) if value.eq_ignore_ascii_case("false") => Ok(false),
+        Ok(_) => Err(std::io::Error::other(
+            "PAYVIA_REQUIRE_MTLS must be true or false",
+        )),
+        Err(_) => Ok(false),
+    }
+}
+
+fn normalize_nats_url(
+    value: &str,
+    tls_enabled: bool,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let (source, target, expected) = if tls_enabled {
+        ("nats://", "tls://", "tls://")
+    } else {
+        ("tls://", "nats://", "nats://")
+    };
+    let normalized = value
+        .strip_prefix(source)
+        .map(|authority| format!("{target}{authority}"))
+        .unwrap_or_else(|| value.to_owned());
+    if !normalized.starts_with(expected) || normalized[expected.len()..].is_empty() {
+        return Err("gateway NATS URL scheme does not match PAYVIA_REQUIRE_MTLS".into());
+    }
+    Ok(normalized)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_nats_url;
+
+    #[test]
+    fn nats_url_scheme_follows_the_mtls_toggle() {
+        assert_eq!(
+            normalize_nats_url("tls://nats.internal:4222", false)
+                .expect("plaintext mode downgrades NATS"),
+            "nats://nats.internal:4222"
+        );
+        assert_eq!(
+            normalize_nats_url("nats://nats.internal:4222", true).expect("TLS mode upgrades NATS"),
+            "tls://nats.internal:4222"
+        );
+        assert!(normalize_nats_url("http://nats.internal:4222", false).is_err());
     }
 }

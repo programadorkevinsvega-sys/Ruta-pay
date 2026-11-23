@@ -16,6 +16,103 @@ use tracing_subscriber::{
 #[derive(Clone, Default)]
 pub(super) struct EventCapture(pub(super) Arc<Mutex<Vec<HashMap<String, String>>>>);
 
+pub(super) fn assert_http_failure_diagnostics(
+    captured_events: &Arc<Mutex<Vec<HashMap<String, String>>>>,
+    correlation_id: &str,
+    error_code: &str,
+    error_category: &str,
+) {
+    let events = captured_events.lock().expect("event capture lock").clone();
+    let http_event = events
+        .iter()
+        .rev()
+        .find(|event| {
+            event.get("event.name").map(String::as_str) == Some("http.request.completed")
+                && event.get("correlation_id").map(String::as_str) == Some(correlation_id)
+        })
+        .expect("HTTP completion diagnostic is emitted");
+    let trace_id = http_event
+        .get("trace_id")
+        .expect("HTTP completion contains trace id");
+    assert!(!trace_id.is_empty());
+    assert_eq!(
+        http_event.get("error_code").map(String::as_str),
+        Some(error_code)
+    );
+    assert_eq!(
+        http_event.get("error_category").map(String::as_str),
+        Some(error_category)
+    );
+
+    for event_name in [
+        "grpc.dependency.call.failed",
+        "grpc.module.request.failed",
+        "bff.dependency.call.failed",
+        "bff.request.failed",
+    ] {
+        let event = events
+            .iter()
+            .rev()
+            .find(|event| {
+                event.get("event.name").map(String::as_str) == Some(event_name)
+                    && event.get("correlation_id").map(String::as_str) == Some(correlation_id)
+                    && event.get("trace_id") == Some(trace_id)
+            })
+            .unwrap_or_else(|| panic!("{event_name} diagnostic matches the HTTP request context"));
+        assert_eq!(
+            event.get("error_code").map(String::as_str),
+            Some(error_code),
+            "{event_name} preserves the stable error code"
+        );
+        assert_eq!(
+            event.get("error_category").map(String::as_str),
+            Some(error_category),
+            "{event_name} preserves the stable error category"
+        );
+    }
+}
+
+pub(super) fn safe_diagnostics_for_correlation(
+    captured_events: &Arc<Mutex<Vec<HashMap<String, String>>>>,
+    correlation_id: &str,
+) -> Vec<HashMap<String, String>> {
+    let fields = [
+        "event.name",
+        "component",
+        "operation",
+        "dependency",
+        "grpc_code",
+        "error_code",
+        "error_category",
+        "error_class",
+        "sqlstate",
+        "constraint",
+        "table",
+        "column",
+        "dependency_duration_ms",
+        "duration_total_ms",
+        "correlation_id",
+        "trace_id",
+        "span_id",
+    ];
+    captured_events
+        .lock()
+        .expect("event capture lock")
+        .iter()
+        .filter(|event| event.get("correlation_id").map(String::as_str) == Some(correlation_id))
+        .map(|event| {
+            fields
+                .iter()
+                .filter_map(|field| {
+                    event
+                        .get(*field)
+                        .map(|value| ((*field).to_owned(), value.clone()))
+                })
+                .collect()
+        })
+        .collect()
+}
+
 impl<S> Layer<S> for EventCapture
 where
     S: tracing::Subscriber + for<'lookup> LookupSpan<'lookup>,

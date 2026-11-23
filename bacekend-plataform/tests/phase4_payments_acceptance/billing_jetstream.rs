@@ -64,17 +64,14 @@ async fn billing_outbox_publishes_versioned_fiscal_event_and_recovers_ack_window
     let occurred_at: chrono::DateTime<Utc> =
         stored.try_get("occurred_at").expect("event timestamp");
 
-    let url = std::env::var("PLATFORM_NATS_URL").expect("CI provides NATS");
-    let username = std::env::var("NATS_USER").expect("CI provides NATS user");
-    let password = std::env::var("NATS_PASSWORD").expect("CI provides NATS password");
-    let client = async_nats::ConnectOptions::new()
-        .user_and_password(username, password)
-        .connect(url)
+    let jetstream = crate::dependencies::connect_jetstream()
         .await
         .expect("authenticated NATS connection");
-    let jetstream = jetstream::new(client);
-    let namespace = format!("e2e_billing_{}", Uuid::new_v4().simple());
-    let topology = EventTopology::from_namespace(Some(&namespace)).expect("isolated namespace");
+    let namespace = "e2e_billing_acceptance";
+    let topology = EventTopology::from_namespace(Some(namespace)).expect("isolated namespace");
+    delete_e2e_stream(&jetstream, namespace)
+        .await
+        .expect("stale isolated billing stream is removed");
     let mut stream = topology
         .ensure_stream(&jetstream)
         .await
@@ -166,7 +163,7 @@ async fn billing_outbox_publishes_versioned_fiscal_event_and_recovers_ack_window
     drop(message);
     drop(messages);
     drop(consumer);
-    delete_e2e_stream(&jetstream, &namespace)
+    delete_e2e_stream(&jetstream, namespace)
         .await
         .expect("isolated billing stream removed");
     database.finish().await;

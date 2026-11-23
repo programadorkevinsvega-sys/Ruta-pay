@@ -105,7 +105,7 @@ mod security;
 pub(super) mod sessions;
 
 pub use api_keys::{create_api_key, list_api_keys, revoke_api_key};
-pub(crate) use errors::{error, grpc_error};
+pub(crate) use errors::{error, grpc_error, grpc_error_for};
 pub use memberships::tenant_memberships;
 pub use operator::{logout, operator_login, operator_logout, operator_session};
 pub use registration::register;

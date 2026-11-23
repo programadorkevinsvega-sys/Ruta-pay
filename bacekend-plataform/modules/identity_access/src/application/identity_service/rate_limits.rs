@@ -1,5 +1,4 @@
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use redis::AsyncCommands;
 use sha2::{Digest, Sha256};
 
 use super::{IdentityError, IdentityService};
@@ -26,33 +25,28 @@ impl IdentityService {
             "platform:identity:login:ip:{}",
             URL_SAFE_NO_PAD.encode(ip_digest)
         );
+        const RATE_LIMIT_SCRIPT: &str = r#"
+            local account_count = redis.call('INCR', KEYS[1])
+            if account_count == 1 then
+                redis.call('EXPIRE', KEYS[1], ARGV[1])
+            end
+            local ip_count = redis.call('INCR', KEYS[2])
+            if ip_count == 1 then
+                redis.call('EXPIRE', KEYS[2], ARGV[1])
+            end
+            return {account_count, ip_count}
+        "#;
         let mut connection = self.redis.clone();
-        let account_count: u64 = redis::cmd("INCR")
+        let (account_count, ip_count): (i64, i64) = redis::cmd("EVAL")
+            .arg(RATE_LIMIT_SCRIPT)
+            .arg(2)
             .arg(&account_key)
-            .query_async(&mut connection)
-            .await
-            .map_err(IdentityError::Redis)?;
-        let mut connection = self.redis.clone();
-        let ip_count: u64 = redis::cmd("INCR")
             .arg(&ip_key)
+            .arg(LOGIN_WINDOW_SECONDS)
             .query_async(&mut connection)
             .await
             .map_err(IdentityError::Redis)?;
-        if account_count == 1 {
-            let mut connection = self.redis.clone();
-            let _: bool = connection
-                .expire(&account_key, LOGIN_WINDOW_SECONDS as i64)
-                .await
-                .map_err(IdentityError::Redis)?;
-        }
-        if ip_count == 1 {
-            let mut connection = self.redis.clone();
-            let _: bool = connection
-                .expire(&ip_key, LOGIN_WINDOW_SECONDS as i64)
-                .await
-                .map_err(IdentityError::Redis)?;
-        }
-        if account_count > LOGIN_WINDOW_LIMIT || ip_count > LOGIN_WINDOW_LIMIT * 5 {
+        if account_count > LOGIN_WINDOW_LIMIT as i64 || ip_count > (LOGIN_WINDOW_LIMIT * 5) as i64 {
             return Err(IdentityError::RateLimited);
         }
         Ok(())

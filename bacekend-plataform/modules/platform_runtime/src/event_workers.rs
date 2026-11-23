@@ -20,6 +20,12 @@ use self::{
 };
 use crate::event_topology::EventTopology;
 
+#[derive(Clone, Debug)]
+pub enum NatsAuthentication {
+    UserPassword { username: String, password: String },
+    CertificateMapped,
+}
+
 pub async fn run(
     pool: PgPool,
     redis_client: redis::Client,
@@ -28,6 +34,16 @@ pub async fn run(
     password: String,
     shutdown: watch::Receiver<bool>,
 ) {
+    let certificate_mapped = env::var("APP_ENV")
+        .is_ok_and(|value| value.eq_ignore_ascii_case("production"))
+        || (env::var("PAYVIA_REQUIRE_MTLS").is_ok_and(|value| value.eq_ignore_ascii_case("true"))
+            && username.trim().is_empty()
+            && password.is_empty());
+    let authentication = if certificate_mapped {
+        NatsAuthentication::CertificateMapped
+    } else {
+        NatsAuthentication::UserPassword { username, password }
+    };
     let namespace = env::var("PLATFORM_EVENT_NAMESPACE").ok();
     let topology = match EventTopology::from_namespace(namespace.as_deref()) {
         Ok(topology) => topology,
@@ -43,16 +59,7 @@ pub async fn run(
             return;
         }
     };
-    run_with_topology(
-        pool,
-        redis_client,
-        url,
-        username,
-        password,
-        shutdown,
-        topology,
-    )
-    .await;
+    run_with_topology(pool, redis_client, url, authentication, shutdown, topology).await;
 }
 
 /// Runs a complete event runtime against an explicit, isolated topology.
@@ -62,14 +69,13 @@ pub async fn run_with_topology(
     pool: PgPool,
     redis_client: redis::Client,
     url: String,
-    username: String,
-    password: String,
+    authentication: NatsAuthentication,
     mut shutdown: watch::Receiver<bool>,
     topology: EventTopology,
 ) {
     let mut backoff = Duration::from_secs(1);
     loop {
-        let options = match build_nats_options(username.clone(), password.clone()) {
+        let options = match build_nats_options(authentication.clone()) {
             Ok(options) => options,
             Err(error_code) => {
                 tracing::error!(
@@ -236,31 +242,56 @@ pub async fn run_with_topology(
     }
 }
 
-fn build_nats_options(username: String, password: String) -> Result<ConnectOptions, &'static str> {
-    let root = env::var_os("NATS_TLS_ROOT_CA").filter(|value| !value.is_empty());
-    let certificate = env::var_os("NATS_TLS_CLIENT_CERT").filter(|value| !value.is_empty());
-    let private_key = env::var_os("NATS_TLS_CLIENT_KEY").filter(|value| !value.is_empty());
-    let mapped_identity =
-        env::var("APP_ENV").is_ok_and(|value| value.eq_ignore_ascii_case("production"));
-    let required = mapped_identity
-        || env::var("PAYVIA_REQUIRE_MTLS").is_ok_and(|value| value.eq_ignore_ascii_case("true"));
-    match (root, certificate, private_key) {
-        (Some(root), Some(certificate), Some(private_key)) if mapped_identity => {
-            Ok(ConnectOptions::new()
-                .add_root_certificates(PathBuf::from(root))
-                .add_client_certificate(PathBuf::from(certificate), PathBuf::from(private_key))
-                .require_tls(true))
-        }
-        (Some(root), Some(certificate), Some(private_key)) => {
-            Ok(ConnectOptions::with_user_and_password(username, password)
-                .add_root_certificates(PathBuf::from(root))
-                .add_client_certificate(PathBuf::from(certificate), PathBuf::from(private_key))
-                .require_tls(true))
-        }
-        (None, None, None) if !required => {
+fn build_nats_options(authentication: NatsAuthentication) -> Result<ConnectOptions, &'static str> {
+    let certificate_mapped = matches!(&authentication, NatsAuthentication::CertificateMapped);
+    let environment = env::var("APP_ENV").unwrap_or_else(|_| "development".to_owned());
+    let secure_environment = matches!(
+        environment.to_ascii_lowercase().as_str(),
+        "staging" | "production"
+    );
+    let mtls_required =
+        env::var("PAYVIA_REQUIRE_MTLS").is_ok_and(|value| value.eq_ignore_ascii_case("true"));
+    if secure_environment && !mtls_required {
+        return Err("platform_nats_mtls_required_for_environment");
+    }
+    if environment.eq_ignore_ascii_case("production") && !certificate_mapped {
+        return Err("platform_nats_certificate_identity_required");
+    }
+    let tls_enabled = mtls_required || certificate_mapped;
+    let root = tls_enabled
+        .then(|| env::var_os("NATS_TLS_ROOT_CA").filter(|value| !value.is_empty()))
+        .flatten();
+    let certificate = tls_enabled
+        .then(|| env::var_os("NATS_TLS_CLIENT_CERT").filter(|value| !value.is_empty()))
+        .flatten();
+    let private_key = tls_enabled
+        .then(|| env::var_os("NATS_TLS_CLIENT_KEY").filter(|value| !value.is_empty()))
+        .flatten();
+    match (root, certificate, private_key, authentication) {
+        (
+            Some(root),
+            Some(certificate),
+            Some(private_key),
+            NatsAuthentication::CertificateMapped,
+        ) => Ok(ConnectOptions::new()
+            .add_root_certificates(PathBuf::from(root))
+            .add_client_certificate(PathBuf::from(certificate), PathBuf::from(private_key))
+            .require_tls(true)),
+        (
+            Some(root),
+            Some(certificate),
+            Some(private_key),
+            NatsAuthentication::UserPassword { username, password },
+        ) => Ok(ConnectOptions::with_user_and_password(username, password)
+            .add_root_certificates(PathBuf::from(root))
+            .add_client_certificate(PathBuf::from(certificate), PathBuf::from(private_key))
+            .require_tls(true)),
+        (None, None, None, NatsAuthentication::UserPassword { username, password })
+            if !tls_enabled =>
+        {
             Ok(ConnectOptions::with_user_and_password(username, password))
         }
-        (None, None, None) => Err("platform_nats_mtls_required"),
+        (None, None, None, _) => Err("platform_nats_mtls_required"),
         _ => Err("platform_nats_mtls_configuration_incomplete"),
     }
 }

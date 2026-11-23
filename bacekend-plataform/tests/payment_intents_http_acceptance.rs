@@ -1,7 +1,11 @@
+#[path = "phase4_payments_acceptance/common.rs"]
+mod common;
 #[path = "phase4_payments_acceptance/database.rs"]
 pub mod database;
 #[path = "support/http_grpc_runtime.rs"]
 mod http_grpc_runtime;
+#[path = "phase4_payments_acceptance/postgres_dependencies.rs"]
+mod postgres_dependencies;
 
 use axum::serve;
 use reqwest::{Client, StatusCode};

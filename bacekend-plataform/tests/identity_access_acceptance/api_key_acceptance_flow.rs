@@ -2,12 +2,13 @@ use super::{api_key_authorization, api_key_creation, api_key_dto_validation, api
 use platform_contracts::identity_access::identity_access_client::IdentityAccessClient;
 use reqwest::Client;
 use sqlx::PgPool;
-use std::net::SocketAddr;
+use std::{collections::HashMap, net::SocketAddr, sync::{Arc, Mutex}};
 use tonic::transport::Channel;
 use uuid::Uuid;
 
 pub struct ApiKeyAcceptanceContext<'a> {
     pub client: &'a Client,
+    pub captured_events: &'a Arc<Mutex<Vec<HashMap<String, String>>>>,
     pub migration_pool: &'a PgPool,
     pub authorization_client: &'a mut IdentityAccessClient<Channel>,
     pub http_addr: SocketAddr,
@@ -23,7 +24,7 @@ pub struct ApiKeyAcceptanceContext<'a> {
 
 pub async fn verify(context: ApiKeyAcceptanceContext<'_>) {
     let ApiKeyAcceptanceContext {
-        client, migration_pool, authorization_client, http_addr, grpc_addr,
+        client, captured_events, migration_pool, authorization_client, http_addr, grpc_addr,
         origin, session_cookie, csrf_cookie, operator_session_cookie,
         operator_csrf_cookie, created_tenant_id, registered_user_id,
     } = context;
@@ -51,14 +52,16 @@ pub async fn verify(context: ApiKeyAcceptanceContext<'_>) {
         &api_key_secret,
     )
     .await;
-    phase3_catalog::configure(
+    phase3_catalog::configure(phase3_catalog::Phase3CatalogContext {
         client,
+        migration_pool,
         http_addr,
         origin,
         operator_session_cookie,
         operator_csrf_cookie,
-        created_tenant_id,
-    )
+        tenant_id: created_tenant_id,
+        captured_events,
+    })
     .await;
     phase3_entitlements::verify(phase3_entitlements::EntitlementAcceptanceContext {
         client,

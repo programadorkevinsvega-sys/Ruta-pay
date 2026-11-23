@@ -4,43 +4,55 @@ services:
   postgres:
     image: postgres:18.6-alpine
     restart: unless-stopped
-    mem_limit: 2g
-    cpus: 1.5
     networks:
-      - postgres_services
+      - postgres_metrics
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
-      POSTGRES_EXPORTER_PASSWORD: ${POSTGRES_EXPORTER_PASSWORD:?set POSTGRES_EXPORTER_PASSWORD}
-      PLATFORM_MIGRATOR_PASSWORD: ${PLATFORM_MIGRATOR_PASSWORD:?set PLATFORM_MIGRATOR_PASSWORD}
-      PLATFORM_RUNTIME_PASSWORD: ${PLATFORM_RUNTIME_PASSWORD:?set PLATFORM_RUNTIME_PASSWORD}
     command:
       - postgres
       - -c
       - listen_addresses=*
       - -c
-      - ssl=off
+      - ssl=on
       - -c
-      - hba_file=/etc/postgresql/pg_hba.conf
+      - ssl_max_protocol_version=TLSv1.3
       - -c
-      - max_connections=${POSTGRES_MAX_CONNECTIONS:-50}
+      - ssl_min_protocol_version=TLSv1.2
       - -c
-      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-512MB}
+      - ssl_cert_file=/run/tls/payvia/staging/server.crt
       - -c
-      - effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-1536MB}
+      - ssl_key_file=/run/tls/payvia/staging/server.key
       - -c
-      - work_mem=${POSTGRES_WORK_MEM:-8MB}
+      - ssl_ca_file=/run/client-ca/ca.pem
       - -c
-      - maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-256MB}
+      - hba_file=/etc/payvia/staging/postgresql/pg_hba.conf
+      - -c
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:?set POSTGRES_MAX_CONNECTIONS after sizing}
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:?set POSTGRES_SHARED_BUFFERS after sizing}
+      - -c
+      - effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:?set POSTGRES_EFFECTIVE_CACHE_SIZE after sizing}
+      - -c
+      - work_mem=${POSTGRES_WORK_MEM:?set POSTGRES_WORK_MEM after sizing}
+      - -c
+      - maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:?set POSTGRES_MAINTENANCE_WORK_MEM after sizing}
     ports:
-      - "192.0.2.142:5432:5432"
+      - "10.0.2.142:5432:5432"
+      - "100.86.36.108:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
       - ./init:/docker-entrypoint-initdb.d:ro
-      - ./pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ${POSTGRES_PG_HBA_FILE:?set POSTGRES_PG_HBA_FILE}:/etc/payvia/staging/postgresql/pg_hba.conf:ro
+      - ${POSTGRES_TLS_DIR:?set POSTGRES_TLS_DIR}:/run/tls:ro
+      - ${POSTGRES_CLIENT_CA_DIR:?set POSTGRES_CLIENT_CA_DIR}:/run/client-ca:ro
     secrets:
       - postgres_password
+    shm_size: 256mb
+    mem_limit: 3g
+    cpus: 1.8
+    pids_limit: 256
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 10s
@@ -48,26 +60,42 @@ services:
       retries: 5
       start_period: 20s
     stop_grace_period: 1m
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.20.1
     restart: unless-stopped
-    network_mode: host
+    networks:
+      - postgres_metrics
     environment:
-      DATA_SOURCE_URI: "192.0.2.142:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable"
+      DATA_SOURCE_URI: "postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=verify-full&sslrootcert=/run/ca/ca.pem&sslcert=/run/client/postgres-exporter.crt&sslkey=/run/client/postgres-exporter.key"
       DATA_SOURCE_USER: postgres_exporter
-      DATA_SOURCE_PASS: ${POSTGRES_EXPORTER_PASSWORD:?set POSTGRES_EXPORTER_PASSWORD}
-    command:
-      - --web.listen-address=192.0.2.142:9187
+    ports:
+      - "10.0.2.142:9187:9187"
+    volumes:
+      - ${POSTGRES_SERVER_CA_DIR:?set POSTGRES_SERVER_CA_DIR}:/run/ca:ro
+      - ${POSTGRES_EXPORTER_TLS_DIR:?set POSTGRES_EXPORTER_TLS_DIR}:/run/client:ro
     depends_on:
       postgres:
         condition: service_healthy
+    mem_limit: 128m
+    cpus: 0.2
+    pids_limit: 64
+    logging:
+      driver: local
+      options:
+        max-size: "5m"
+        max-file: "3"
 
 volumes:
   postgres_data:
 
 networks:
-  postgres_services:
+  postgres_metrics:
     ipam:
       config:
         - subnet: 172.30.142.0/24

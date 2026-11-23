@@ -57,28 +57,40 @@ async fn failed_inbox_completion_rolls_back_usage_and_allows_safe_recovery() {
             .is_err(),
         "a missing inbox row must abort the whole transaction"
     );
+    let mut before_inspection = database
+        .tenant_scoped_migration_transaction(tenant_id)
+        .await
+        .expect("tenant-scoped rollback inspection begins");
     let before_retry: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM platform_billing.usage_events WHERE tenant_id=$1 AND source_system=$2 AND source_event_id=$3",
     )
     .bind(tenant_id)
     .bind("entitlements_quotas")
     .bind(&source_event_id)
-    .fetch_one(&database.migration_pool)
+    .fetch_one(&mut *before_inspection)
     .await
     .expect("rolled back usage is inspectable");
     assert_eq!(before_retry, 0, "usage insert was rolled back");
+    before_inspection
+        .commit()
+        .await
+        .expect("tenant-scoped rollback inspection completes");
 
     service
         .record_usage_with_inbox(command(), inbox_id)
         .await
         .expect("retry persists usage and marks the original inbox receipt");
+    let mut recovery_inspection = database
+        .tenant_scoped_migration_transaction(tenant_id)
+        .await
+        .expect("tenant-scoped recovery inspection begins");
     let after_retry: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM platform_billing.usage_events WHERE tenant_id=$1 AND source_system=$2 AND source_event_id=$3",
     )
     .bind(tenant_id)
     .bind("entitlements_quotas")
     .bind(&source_event_id)
-    .fetch_one(&database.migration_pool)
+    .fetch_one(&mut *recovery_inspection)
     .await
     .expect("recovered usage is inspectable");
     assert_eq!(after_retry, 1);
@@ -87,9 +99,13 @@ async fn failed_inbox_completion_rolls_back_usage_and_allows_safe_recovery() {
     )
     .bind(tenant_id)
     .bind(inbox_id)
-    .fetch_one(&database.migration_pool)
+    .fetch_one(&mut *recovery_inspection)
     .await
     .expect("recovered inbox state is inspectable");
     assert_eq!(disposition, "processed");
+    recovery_inspection
+        .commit()
+        .await
+        .expect("tenant-scoped recovery inspection completes");
     database.finish().await;
 }

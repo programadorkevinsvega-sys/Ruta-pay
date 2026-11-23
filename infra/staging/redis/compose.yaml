@@ -4,54 +4,78 @@ services:
   redis:
     image: redis:8.10.2-alpine
     restart: unless-stopped
-    user: "999:1000"
-    network_mode: host
-    mem_limit: 768m
-    cpus: 0.8
     command:
       - redis-server
-      - /usr/local/etc/redis/redis.conf
+      - /usr/local/etc/payvia/staging/redis/redis.conf
       - --maxmemory
-      - ${REDIS_MAXMEMORY:-512mb}
+      - ${REDIS_MAXMEMORY:?set REDIS_MAXMEMORY after sizing}
+    ports:
+      - "10.0.2.65:6379:6379"
+      - "100.88.251.53:6379:6379"
     volumes:
       - redis_data:/data
-      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
-      - ${REDIS_ACL_FILE:?set REDIS_ACL_FILE}:/run/acl/users.acl:ro
-    secrets:
-      - redis_healthcheck_password
+      - ./redis.conf:/usr/local/etc/payvia/staging/redis/redis.conf:ro
+      - ${REDIS_TLS_DIR:?set REDIS_TLS_DIR}:/run/payvia/staging/redis/tls:ro
+      - ${REDIS_CLIENT_CA_DIR:?set REDIS_CLIENT_CA_DIR}:/run/payvia/staging/redis/client-ca:ro
+      - ${REDIS_SERVER_CA_DIR:?set REDIS_SERVER_CA_DIR}:/run/payvia/staging/redis/server-ca:ro
+      - ${REDIS_HEALTHCHECK_TLS_DIR:?set REDIS_HEALTHCHECK_TLS_DIR}:/run/payvia/staging/redis/healthcheck:ro
+      - ${REDIS_HEALTHCHECK_CREDENTIAL_DIR:?set REDIS_HEALTHCHECK_CREDENTIAL_DIR}:/run/payvia/staging/redis/healthcheck-credentials:ro
+      - ${REDIS_ACL_DIR:?set REDIS_ACL_DIR}:/run/payvia/staging/redis/acl:ro
+      - ${REDIS_ROTATION_CREDENTIAL_DIR:?set REDIS_ROTATION_CREDENTIAL_DIR}:/run/payvia/staging/redis/rotation:ro
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    sysctls:
+      net.core.somaxconn: "4096"
+    stop_grace_period: 30s
+    mem_limit: 768m
+    cpus: 0.8
+    pids_limit: 256
     healthcheck:
       test:
         - CMD-SHELL
-        - REDISCLI_AUTH="$$(cat /run/secrets/redis_healthcheck_password)" redis-cli -h 192.0.2.65 --user payvia_healthcheck ping | grep -q PONG
+        - REDISCLI_AUTH="$$(cat /run/payvia/staging/redis/healthcheck-credentials/healthcheck-password)" redis-cli -h redis --tls --cacert /run/payvia/staging/redis/server-ca/ca.pem --cert /run/payvia/staging/redis/healthcheck/redis-healthcheck.crt --key /run/payvia/staging/redis/healthcheck/redis-healthcheck.key --user "$${REDIS_HEALTHCHECK_USER}" ping | grep -q '^PONG$'
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
-    stop_grace_period: 30s
+      start_period: 30s
+    environment:
+      REDIS_HEALTHCHECK_USER: ${REDIS_HEALTHCHECK_USER:?set REDIS_HEALTHCHECK_USER}
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   redis-exporter:
     image: oliver006/redis_exporter:v1.91.1
     restart: unless-stopped
-    network_mode: host
-    mem_limit: 128m
-    cpus: 0.2
     environment:
-      REDIS_ADDR: redis://192.0.2.65:6379
-      REDIS_USER: payvia_exporter
-      REDIS_PASSWORD_FILE: /run/secrets/redis_exporter_password
-    command:
-      - --web.listen-address=192.0.2.65:9121
-    secrets:
-      - redis_exporter_password
+      REDIS_ADDR: rediss://redis:6379
+      REDIS_USER: ${REDIS_EXPORTER_USER:?set REDIS_EXPORTER_USER}
+      REDIS_PASSWORD_FILE: /run/payvia/staging/redis/credentials/exporter-passwords.json
+      REDIS_EXPORTER_TLS_CLIENT_KEY_FILE: /run/payvia/staging/redis/client/payvia_staging_exporter.key
+      REDIS_EXPORTER_TLS_CLIENT_CERT_FILE: /run/payvia/staging/redis/client/payvia_staging_exporter.crt
+      REDIS_EXPORTER_TLS_CA_CERT_FILE: /run/payvia/staging/redis/server-ca/ca.pem
+      REDIS_EXPORTER_TLS_SERVER_NAME: redis
+    ports:
+      - "10.0.2.65:9121:9121"
+    volumes:
+      - ${REDIS_SERVER_CA_DIR:?set REDIS_SERVER_CA_DIR}:/run/payvia/staging/redis/server-ca:ro
+      - ${REDIS_EXPORTER_TLS_DIR:?set REDIS_EXPORTER_TLS_DIR}:/run/payvia/staging/redis/client:ro
+      - ${REDIS_EXPORTER_CREDENTIAL_DIR:?set REDIS_EXPORTER_CREDENTIAL_DIR}:/run/payvia/staging/redis/credentials:ro
     depends_on:
       redis:
         condition: service_healthy
+    mem_limit: 128m
+    cpus: 0.2
+    pids_limit: 64
+    logging:
+      driver: local
+      options:
+        max-size: "5m"
+        max-file: "3"
 
 volumes:
   redis_data:
-
-secrets:
-  redis_healthcheck_password:
-    file: ${REDIS_HEALTHCHECK_PASSWORD_FILE:?set REDIS_HEALTHCHECK_PASSWORD_FILE}
-  redis_exporter_password:
-    file: ${REDIS_EXPORTER_PASSWORD_FILE:?set REDIS_EXPORTER_PASSWORD_FILE}

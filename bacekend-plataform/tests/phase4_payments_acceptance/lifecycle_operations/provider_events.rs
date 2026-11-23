@@ -68,12 +68,16 @@ async fn signed_provider_events_apply_once_and_terminal_conflicts_require_reconc
         .expect("same provider event is idempotent");
     assert_eq!(replay, GatewayEventDisposition::Duplicate);
 
+    let mut inspection = database
+        .tenant_scoped_migration_transaction(tenant_id)
+        .await
+        .expect("tenant-scoped inspection transaction begins");
     let statuses = sqlx::query(
         "SELECT i.status AS intent_status,a.status AS attempt_status FROM payments.payment_intents i JOIN payments.payment_attempts a ON a.payment_intent_id=i.id WHERE i.id=$1 AND a.id=$2",
     )
     .bind(intent.id)
     .bind(attempt.id)
-    .fetch_one(&database.migration_pool)
+    .fetch_one(&mut *inspection)
     .await
     .expect("payment states are queryable");
     assert_eq!(
@@ -94,7 +98,7 @@ async fn signed_provider_events_apply_once_and_terminal_conflicts_require_reconc
     )
     .bind(tenant_id)
     .bind(attempt.id)
-    .fetch_one(&database.migration_pool)
+    .fetch_one(&mut *inspection)
     .await
     .expect("provider transaction is persisted");
     assert_eq!(transaction_status, "succeeded");
@@ -104,7 +108,7 @@ async fn signed_provider_events_apply_once_and_terminal_conflicts_require_reconc
     )
     .bind(tenant_id)
     .bind(attempt.id)
-    .fetch_one(&database.migration_pool)
+    .fetch_one(&mut *inspection)
     .await
     .expect("inbox count is queryable");
     assert_eq!(inbox_count, 1);
@@ -114,7 +118,7 @@ async fn signed_provider_events_apply_once_and_terminal_conflicts_require_reconc
     )
     .bind(tenant_id)
     .bind(Uuid::parse_str(succeeded["event_id"].as_str().expect("event id")).expect("event UUID"))
-    .fetch_one(&database.migration_pool)
+    .fetch_one(&mut *inspection)
     .await
     .expect("delivery ledger count is queryable");
     assert_eq!(
@@ -145,7 +149,7 @@ async fn signed_provider_events_apply_once_and_terminal_conflicts_require_reconc
     )
     .bind(tenant_id)
     .bind(attempt.id)
-    .fetch_one(&database.migration_pool)
+    .fetch_one(&mut *inspection)
     .await
     .expect("terminal conflict creates a durable reconciliation case");
     assert_eq!(
@@ -161,7 +165,7 @@ async fn signed_provider_events_apply_once_and_terminal_conflicts_require_reconc
         "SELECT audience FROM payments.outbox_events WHERE aggregate_id=$1 AND event_type='payment.reconciliation.requested'",
     )
     .bind(case_id)
-    .fetch_one(&database.migration_pool)
+    .fetch_one(&mut *inspection)
     .await
     .expect("gateway reconciliation request is durable");
     assert_eq!(
@@ -174,13 +178,17 @@ async fn signed_provider_events_apply_once_and_terminal_conflicts_require_reconc
     )
     .bind(tenant_id)
     .bind(attempt.id)
-    .fetch_one(&database.migration_pool)
+    .fetch_one(&mut *inspection)
     .await
     .expect("final attempt status is queryable");
     assert_eq!(
         final_status, "succeeded",
         "terminal state is never overwritten"
     );
+    inspection
+        .commit()
+        .await
+        .expect("tenant-scoped inspection completes");
 
     let invalid = provider_event(
         tenant_id,

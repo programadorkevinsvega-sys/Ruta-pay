@@ -10,10 +10,53 @@ pub struct OperatorRedisFixture {
     pub redis_manager: redis::aio::ConnectionManager,
 }
 
+struct RedisAclUserCleanup {
+    redis_manager: redis::aio::ConnectionManager,
+    username: String,
+    armed: bool,
+}
+
+impl RedisAclUserCleanup {
+    async fn remove(&mut self) {
+        Self::delete_user(&self.redis_manager, &self.username).await;
+        self.armed = false;
+    }
+
+    async fn delete_user(
+        redis_manager: &redis::aio::ConnectionManager,
+        username: &str,
+    ) {
+        let mut connection = redis_manager.clone();
+        let removed: i64 = redis::cmd("ACL")
+            .arg("DELUSER")
+            .arg(username)
+            .query_async(&mut connection)
+            .await
+            .expect("temporary restricted Redis user is removed");
+        assert_eq!(removed, 1, "temporary restricted Redis user existed");
+    }
+}
+
+impl Drop for RedisAclUserCleanup {
+    fn drop(&mut self) {
+        if self.armed {
+            let redis_manager = self.redis_manager.clone();
+            let username = self.username.clone();
+            let runtime = tokio::runtime::Handle::current();
+            tokio::task::block_in_place(|| {
+                runtime.block_on(async move {
+                    Self::delete_user(&redis_manager, &username).await;
+                })
+            });
+        }
+    }
+}
+
 pub async fn bootstrap_and_verify_redis_failure(
     runtime_pool: &PgPool,
     migration_pool: &PgPool,
     redis_url: &str,
+    redis_acl_admin_url: &str,
 ) -> OperatorRedisFixture {
     let operator_email = format!("operator_{}@example.test", Uuid::new_v4().simple());
     let operator_password = format!("Operator-password-{}!", Uuid::new_v4().simple());
@@ -56,11 +99,15 @@ pub async fn bootstrap_and_verify_redis_failure(
         .await
         .expect("real development Redis accepts a connection");
 
-    // A dedicated ACL user can connect but cannot execute the Lua rate-limit
-    // script. Registration and login must fail closed before touching PostgreSQL.
+    let redis_acl_admin_client =
+        redis::Client::open(redis_acl_admin_url).expect("Redis ACL administrator URL parses");
+    let redis_acl_admin_manager =
+        redis::aio::ConnectionManager::new(redis_acl_admin_client)
+            .await
+            .expect("dedicated Redis ACL administrator connects");
     let restricted_redis_user = format!("phase2_limited_{}", Uuid::new_v4().simple());
     let restricted_redis_password = Uuid::new_v4().simple().to_string();
-    let mut redis_acl_admin = redis_manager.clone();
+    let mut redis_acl_admin = redis_acl_admin_manager.clone();
     let _: String = redis::cmd("ACL")
         .arg("SETUSER")
         .arg(&restricted_redis_user)
@@ -73,6 +120,11 @@ pub async fn bootstrap_and_verify_redis_failure(
         .query_async(&mut redis_acl_admin)
         .await
         .expect("isolated Redis user is created with connection-only permissions");
+    let mut cleanup = RedisAclUserCleanup {
+        redis_manager: redis_acl_admin_manager,
+        username: restricted_redis_user.clone(),
+        armed: true,
+    };
     let mut restricted_redis_url =
         url::Url::parse(redis_url).expect("Redis URL parses for isolated ACL user");
     restricted_redis_url
@@ -81,8 +133,8 @@ pub async fn bootstrap_and_verify_redis_failure(
     restricted_redis_url
         .set_password(Some(&restricted_redis_password))
         .expect("restricted Redis password is valid");
-    let restricted_redis_client =
-        redis::Client::open(restricted_redis_url.as_str()).expect("restricted Redis URL parses");
+    let restricted_redis_client = redis::Client::open(restricted_redis_url.as_str())
+        .expect("restricted Redis URL parses");
     let restricted_redis_manager = redis::aio::ConnectionManager::new(restricted_redis_client)
         .await
         .expect("restricted Redis user can establish a connection");
@@ -130,12 +182,7 @@ pub async fn bootstrap_and_verify_redis_failure(
         users_after_redis_failure, users_before_redis_failure,
         "Redis rate-limit dependency failure must not create identities"
     );
-    let _: i64 = redis::cmd("ACL")
-        .arg("DELUSER")
-        .arg(&restricted_redis_user)
-        .query_async(&mut redis_acl_admin)
-        .await
-        .expect("isolated restricted Redis user is removed");
+    cleanup.remove().await;
     OperatorRedisFixture {
         operator_email,
         operator_password,

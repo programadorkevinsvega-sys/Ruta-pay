@@ -16,7 +16,7 @@ pub fn verify(captured_events: &Arc<Mutex<Vec<HashMap<String, String>>>>) {
                     .is_some_and(|code| code.contains("identity_rate_limited"))
                 && event
                     .get("correlation_id")
-                    .is_some_and(|value| value.contains("corr_identity_rate_limit_8"))
+                    .is_some_and(|value| value.contains("corr_identity_rate_limit_10"))
         })
         .expect("causal rate limit event is recorded");
     let rate_limit_http_closure = rate_limit_events
@@ -27,7 +27,7 @@ pub fn verify(captured_events: &Arc<Mutex<Vec<HashMap<String, String>>>>) {
                 .is_some_and(|name| name.contains("http.request.completed"))
                 && event
                     .get("correlation_id")
-                    .is_some_and(|value| value.contains("corr_identity_rate_limit_8"))
+                    .is_some_and(|value| value.contains("corr_identity_rate_limit_10"))
         })
         .expect("rate limit HTTP closure event is recorded");
     for field in ["correlation_id", "trace_id"] {

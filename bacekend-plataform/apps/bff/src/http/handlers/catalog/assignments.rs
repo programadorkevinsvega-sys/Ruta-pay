@@ -7,7 +7,7 @@ use axum::{
 use std::sync::Arc;
 
 use super::{
-    shared::{operator_credentials, tonic_request},
+    shared::{operator_credentials, tonic_request_with_timeout},
     types::AssignPlan,
 };
 use crate::http::{
@@ -44,7 +44,11 @@ pub async fn assign_plan(
     match state
         .entitlements_client
         .clone()
-        .assign_tenant_plan(tonic_request(request, &correlation))
+        .assign_tenant_plan(tonic_request_with_timeout(
+            request,
+            &correlation,
+            std::time::Duration::from_secs(10),
+        ))
         .await
     {
         Ok(response) => (
@@ -52,9 +56,10 @@ pub async fn assign_plan(
             Json(serde_json::json!({"assignment_id":response.into_inner().assignment_id})),
         )
             .into_response(),
-        Err(status) => identity::grpc_error(
+        Err(status) => identity::grpc_error_for(
             status,
             "assign_tenant_plan",
+            "entitlements_quotas",
             &correlation,
             started.elapsed().as_millis() as u64,
         ),

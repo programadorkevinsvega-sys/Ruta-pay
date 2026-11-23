@@ -67,11 +67,40 @@ pub async fn publish_event(
     headers.append("Nats-Msg-Id", event.event_id.to_string());
     headers.append("Payvia-Event-Type", event.event_type.clone());
     let acknowledgement = jetstream
-        .publish_with_headers(subject, headers, payload.into())
+        .publish_with_headers(subject.clone(), headers, payload.into())
         .await
-        .map_err(|_| "jetstream_publish_unavailable")?;
-    acknowledgement
-        .await
-        .map(|_| ())
-        .map_err(|_| "jetstream_ack_unavailable")
+        .map_err(|error| {
+            tracing::error!(
+                event.name = "outbox.jetstream.publish.failed",
+                component = "tenant_registry",
+                operation = "publish_outbox_event",
+                dependency = "nats_jetstream",
+                error_code = "jetstream_publish_unavailable",
+                error_category = "dependency",
+                error_kind = ?error.kind(),
+                subject = %subject,
+                event_id = %event.event_id,
+                event_type = %event.event_type,
+                correlation_id = %event.correlation_id,
+                traceparent = event.traceparent.as_deref().unwrap_or("unavailable"),
+            );
+            "jetstream_publish_unavailable"
+        })?;
+    acknowledgement.await.map(|_| ()).map_err(|error| {
+        tracing::error!(
+            event.name = "outbox.jetstream.publish.failed",
+            component = "tenant_registry",
+            operation = "await_publish_ack",
+            dependency = "nats_jetstream",
+            error_code = "jetstream_ack_unavailable",
+            error_category = "dependency",
+            error_kind = ?error.kind(),
+            subject = %subject,
+            event_id = %event.event_id,
+            event_type = %event.event_type,
+            correlation_id = %event.correlation_id,
+            traceparent = event.traceparent.as_deref().unwrap_or("unavailable"),
+        );
+        "jetstream_ack_unavailable"
+    })
 }

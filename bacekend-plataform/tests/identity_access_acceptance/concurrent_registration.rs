@@ -34,18 +34,36 @@ pub async fn verify(
         }))
         .send();
     let (first_result, second_result) = tokio::join!(first_request, second_request);
-    let first_status = first_result
+    let first_response = first_result
         .expect("first concurrent registration response arrives")
-        .status();
-    let second_status = second_result
+        ;
+    let second_response = second_result
         .expect("second concurrent registration response arrives")
-        .status();
+        ;
+    let first_status = first_response.status();
+    let second_status = second_response.status();
+    let first_error = if first_status.is_client_error() || first_status.is_server_error() {
+        first_response
+            .text()
+            .await
+            .expect("first error response body is readable")
+    } else {
+        String::new()
+    };
+    let second_error = if second_status.is_client_error() || second_status.is_server_error() {
+        second_response
+            .text()
+            .await
+            .expect("second error response body is readable")
+    } else {
+        String::new()
+    };
     let mut concurrent_statuses = vec![first_status, second_status];
     concurrent_statuses.sort();
     assert_eq!(
         concurrent_statuses,
         vec![StatusCode::CREATED, StatusCode::CONFLICT],
-        "one concurrent registration succeeds and the other conflicts"
+        "one concurrent registration succeeds and the other conflicts; safe envelopes: {first_error}; {second_error}"
     );
     let concurrent_identity_count: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM identity_access.tenant_users WHERE email_normalized=$1",

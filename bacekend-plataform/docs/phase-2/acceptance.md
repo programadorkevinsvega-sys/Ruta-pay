@@ -19,6 +19,9 @@ La fase entrega registro/autenticación diferenciados para usuarios de tenant y 
 - Todas las consultas tenant se filtran por contexto autorizado, usan claves/constraints compuestas y políticas RLS como defensa en profundidad. El rol runtime no será superusuario ni propietario bypass de las tablas sujetas a RLS.
 - Los errores de autenticación evitan enumerar cuentas. Los errores internos preservan diagnóstico seguro; jamás incluyen passwords, cookies, sesiones, API Keys completas, CSRF tokens ni datos personales innecesarios.
 - El registro público limita por correo normalizado a 5 intentos y por dirección IP de conexión a 20 intentos por ventana fija de 5 minutos. Redis incrementa ambos contadores y asigna TTL en una única operación Lua atómica; el límite se aplica antes de validar/hash de contraseña, falla cerrado si Redis no está disponible y el BFF responde `429` sin revelar si la cuenta existe. El IP es el peer TCP observado por Axum (`ConnectInfo`), no un `X-Forwarded-For` no confiable.
+- El login limita por cuenta normalizada a 10 intentos y por dirección IP de conexión a 50 intentos por ventana fija de 60 segundos. El undécimo intento por cuenta y el quincuagésimo primero por IP reciben `429`; Redis actualiza ambos contadores y sus TTL atómicamente en una operación Lua. Los escenarios de aceptación usan una cuenta inexistente única y un peer IP loopback exclusivo para que las solicitudes de otros flujos no consuman esos límites; verifican los diez intentos permitidos, el primer intento bloqueado, el envelope y su correlación. Fallos de Redis se distinguen de rate limit y producen error de dependencia (`503`), no se cuentan como aceptación del límite.
+- La aceptación negativa de Redis usa `PLATFORM_TEST_REDIS_ACL_ADMIN_URL` únicamente para crear y eliminar un usuario ACL transitorio de permisos restringidos; el flujo bajo prueba se conecta con ese usuario y debe fallar al ejecutar los comandos Lua del rate limit. La identidad administrativa de prueba es independiente de `payvia_app`, no se configura en producción y se restringe a `PING`, `ACL SETUSER` y `ACL DELUSER`.
+- La recuperación de Outbox en staging usa la identidad independiente `PLATFORM_TEST_NATS_RECOVERY_USER` / `PLATFORM_TEST_NATS_RECOVERY_PASSWORD` y el stream JetStream preaprovisionado `PAYVIA_PLATFORM_EVENTS_ACCEPTANCE`, con subjects `payvia.platform.events.acceptance.v1.>`. Solo puede publicar en ese prefijo y suscribirse a `_INBOX.>` para recibir ACK; no administra streams, consumers ni `$JS.API.>`. El primer publish de la prueba usa intencionalmente un subject fuera de permiso para validar diagnóstico, reschedule y retry; el segundo publica en el subject permitido. La prueba nunca crea ni elimina el stream compartido de aceptación.
 
 ## Matriz de integración obligatoria
 
@@ -56,7 +59,32 @@ El comando `cd frontends/frontend-plataform && npm run test:e2e:recovery` valida
 
 Durante la prueba se ejecuta `docker restart payvia-shared-infra-redis-1` y `docker restart payvia-shared-infra-nats-1`. Esto interrumpe Redis/NATS y afecta temporalmente a cualquier otro proceso local conectado a esos servicios; Redis pierde solo sus conexiones/suscripciones efímeras, JetStream conserva el stream y los mensajes durables en su volumen. Se levantan dos instancias del backend y dos servidores Vite locales sobre puertos loopback libres elegidos para la ejecución; el wrapper apaga solo sus procesos y elimina la base, el rol y las credenciales efímeras al finalizar. No ejecutarlo contra infraestructura de producción.
 
+### Carga de ACL administrativa exclusiva para aceptación en staging
+
+La cuenta `payvia_app` conserva `-@admin -@dangerous`; no se le otorgan permisos `ACL`. La prueba que necesita crear/eliminar un ACL restringido usa una cuenta separada, `payvia_test_acl_admin`, con contraseña aleatoria almacenada en Vault bajo `apps/platform-staging/integration` y en `bacekend-plataform/.env` local con modo `0600`. La ACL del host se mantiene legible solo por el UID 999/GID 1000 del contenedor Redis (`0400`, propietario `999:1000`) y nunca por usuarios locales no privilegiados. La cuenta permite únicamente `PING`, `ACL SETUSER` y `ACL DELUSER`; `ACL SETUSER` puede modificar permisos de cualquier usuario, por lo que la credencial se trata como administrativa y se limita a estas pruebas de staging. No se permite `ACL SAVE`; los usuarios transitorios desaparecen al reiniciar.
+
+Antes de cargar por primera vez la identidad en Redis, reiniciar únicamente el servicio Redis de staging con:
+
+```bash
+sudo docker compose \
+  --env-file /home/ubuntu/payvia-staging-redis/.env \
+  -f /home/ubuntu/payvia-staging-redis/compose.yaml \
+  restart redis
+```
+
+El reinicio interrumpe conexiones Redis activas y obliga a clientes de staging a reconectar; carga el ACL montado desde `/etc/payvia/staging/redis/users.acl`. El volumen AOF y sus datos persistidos no se eliminan. No reiniciar PostgreSQL ni NATS para este cambio.
+
 `identity_access.AuthorizeOperatorOperation` valida token y CSRF, autoriza según permisos persistidos y audita el resultado con correlación. El contrato no devuelve roles al cliente; `tenant_registry` lo consulta antes de ejecutar operaciones administrativas.
+
+### Identidad y stream NATS para recuperación de Outbox en staging
+
+La identidad de recuperación NATS es distinta de `platform` y `gateway`. Se configura en la autorización externa `/etc/payvia/staging/nats/authorization.conf`, con un secreto aleatorio fuera del repositorio. Sus únicos permisos son publicar en `payvia.platform.events.acceptance.v1.>` y suscribirse a `_INBOX.>` para el ACK de publicación; no recibe permisos `$JS.API.>`, administración de streams/consumers, subjects de aplicación ni acceso al usuario `platform`. La contraseña se entrega al equipo de pruebas por el canal de secretos aprobado y se carga en el `.env` local ignorado con modo `0600`.
+
+El operador aprovisiona una sola vez `PAYVIA_PLATFORM_EVENTS_ACCEPTANCE` en la VM NATS de staging, con subjects `payvia.platform.events.acceptance.v1.>`, retención `Limits`, almacenamiento `File`, una réplica, `max_age=24h`, `max_msgs=10000`, `max_bytes=64 MiB` y `max_msg_size=1 MiB`. El stream es persistente y no se purga ni elimina al correr la aceptación. Al cambiar la autorización externa hay que recargar o reiniciar únicamente NATS para que lea el secreto actualizado; eso desconecta clientes por el tiempo de la operación, pero conserva el volumen JetStream. Antes de hacerlo se verifica que el objetivo sea el contenedor `payvia-staging-nats` y se avisa a los clientes conectados. No se toca la plantilla ni los servicios de producción.
+
+Los escenarios de recuperación de Outbox de `tenant_registry` e `identity_access` conectan con esa identidad limitada. Cada uno intenta publicar con un subject namespaced `e2e_failure_<id>` o `e2e_identity_<id>` —fuera del permiso y sin stream— y comprueba el error seguro, la liberación del lease y el estado pendiente del Outbox; luego publica el mismo evento en el subject permitido del stream fijo, verifica el ACK y comprueba el estado persistido como publicado. No cambian ACL durante la prueba, no crean recursos JetStream para recuperación y no eliminan/purgan mensajes de otras corridas. La identidad administrativa de aceptación se usa solo para los escenarios independientes que necesitan provisionar/eliminar streams E2E aislados.
+
+La entrega de eventos y el aislamiento entre tenants usan una identidad E2E independiente (`PLATFORM_TEST_NATS_E2E_USER` / `PLATFORM_TEST_NATS_E2E_PASSWORD`) limitada a publicar en `payvia.platform.events.e2e.>` y suscribirse a `_INBOX.>` para recibir ACK. No puede administrar ni leer streams. La conexión `platform` de aceptación conserva esas operaciones administrativas; solo el relay publica mediante el usuario E2E. Los namespaces `e2e_*` mantienen sus nombres de stream/consumer y usan subjects `payvia.platform.events.e2e.<sufijo>.v1.>` para que el permiso NATS se limite a un token dedicado. El namespace productivo sin sufijo conserva `payvia.platform.events.v1.>`.
 
 | Frontera | Diseño e implementación verificados | Evidencia |
 |---|---|---|
@@ -64,8 +92,8 @@ Durante la prueba se ejecuta `docker restart payvia-shared-infra-redis-1` y `doc
 | Frontend tenant → REST/OpenAPI → BFF | Onboarding, membership, contexto tenant y realtime en `frontends/frontend-pasarela`. Configuración Vite reside en `frontends/frontend-pasarela/.env`; no se introduce `VITE_*` al `.env` de los backends. | `npm test`, build y Playwright reales aprobados; onboarding termina con membership propietaria y evento realtime. |
 | Frontend administración → REST/OpenAPI → BFF | Sesión independiente, revisión y ciclo de vida de tenants en `frontends/frontend-plataform`; no accede directamente a almacenes ni gRPC. Su `.env` es propiedad de esa app. | `npm test`, build y Playwright reales aprobados; operaciones administrativas y eventos visibles en UI. |
 | BFF → módulos gRPC | BFF enruta identidad y tenant registry por contratos Protobuf; los módulos dueños validan autorización, persistencia y reglas. | Aceptación HTTP→BFF→gRPC→módulo cubre éxito, errores, traza/correlación y redacción. |
-| Redis | Rate limit temporal con TTL y fan-out Pub/Sub efímero; nunca autoridad de negocio. | Umbrales/TTL y restart/reconnect/resuscripción verificados contra Redis real de desarrollo. |
-| NATS/Outbox | Relay por módulo, ACK durable, consumidores idempotentes para membership y journal realtime. | JetStream real verificado con evento, redelivery/restart y recuperación. |
+| Redis | Rate limit temporal con TTL y fan-out Pub/Sub efímero; nunca autoridad de negocio. | Umbrales exactos de registro y login, TTL y restart/reconnect/resuscripción verificados contra Redis real; un fallo Redis se comprueba por separado del `429`. La prueba negativa usa `PLATFORM_TEST_REDIS_ACL_ADMIN_URL` para crear y eliminar un usuario ACL restringido transitorio; no altera ACL ni permisos del usuario de aplicación. |
+| NATS/Outbox | Relay por módulo, ACK durable, consumidores idempotentes para membership y journal realtime. La recuperación de staging usa una identidad NATS y stream de aceptación preaprovisionado; entrega/islamiento E2E usa una identidad publicadora separada sin permisos administrativos. | JetStream real verificado con evento, redelivery/restart y recuperación. La prueba de recuperación no administra ni elimina streams; gestión/lectura y publicación E2E usan identidades separadas. |
 | Realtime y errores | WebSocket autenticado por BFF, cursores y recuperación REST; errores tipados/correlacionados en fronteras. | Browser E2E, replay por cursor, aislamiento tenant, recuperación cross-replica y errores HTTP probados. |
 
 ## Flujos de aceptación

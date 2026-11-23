@@ -1,0 +1,5 @@
+{{- with pkiCert "pki_int/issue/nats-server" "common_name=nats-stream.tail4eafc5.ts.net" "ttl=2160h" -}}
+{{ .Data.Cert }}
+{{ .Data.CA }}
+{{ .Data.Key }}
+{{- end -}}

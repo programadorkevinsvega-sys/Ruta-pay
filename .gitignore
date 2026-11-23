@@ -8,3 +8,5 @@ dist/
 servidor-07.pem
 .pem*
 interserver_vault.pem
+payvia-staging-ca
+payvia-staging-vault-delivery

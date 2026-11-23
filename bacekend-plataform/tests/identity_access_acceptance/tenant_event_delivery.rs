@@ -12,6 +12,7 @@ pub(super) struct TenantEventDeliveryContext<'a> {
     pub migration_pool: &'a PgPool,
     pub runtime_pool: &'a PgPool,
     pub jetstream: &'a jetstream::Context,
+    pub publisher_jetstream: &'a jetstream::Context,
     pub event_topology: &'a EventTopology,
     pub event_namespace: String,
     pub http_addr: SocketAddr,
@@ -37,6 +38,7 @@ pub(super) async fn verify(context: TenantEventDeliveryContext<'_>) -> TenantEve
         migration_pool,
         runtime_pool,
         jetstream,
+        publisher_jetstream,
         event_topology,
         event_namespace,
         http_addr,
@@ -77,7 +79,7 @@ pub(super) async fn verify(context: TenantEventDeliveryContext<'_>) -> TenantEve
     .expect("onboarding event identifier is durable");
     let published_count = platform_tenant_registry::infrastructure::outbox_relay::relay_batch(
         runtime_pool,
-        jetstream,
+        publisher_jetstream,
         &event_topology.subject_prefix,
     )
     .await

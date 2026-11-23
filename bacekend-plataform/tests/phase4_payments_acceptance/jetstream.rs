@@ -48,25 +48,22 @@ pub async fn verify() {
         .try_get("occurred_at")
         .expect("original event timestamp is persisted");
 
-    let nats_url = std::env::var("PLATFORM_NATS_URL").expect("CI provides JetStream URL");
-    let nats_user = std::env::var("NATS_USER").expect("CI provides JetStream user");
-    let nats_password = std::env::var("NATS_PASSWORD").expect("CI provides JetStream password");
-    let client = async_nats::ConnectOptions::new()
-        .user_and_password(nats_user, nats_password)
-        .connect(nats_url)
+    let jetstream = crate::dependencies::connect_jetstream()
         .await
         .expect("authenticated JetStream connection succeeds");
-    let jetstream = jetstream::new(client);
-    let namespace = format!("e2e_phase4_{}", Uuid::new_v4().simple());
+    let namespace = "e2e_phase4_acceptance";
     let topology =
-        EventTopology::from_namespace(Some(&namespace)).expect("isolated event namespace is valid");
+        EventTopology::from_namespace(Some(namespace)).expect("isolated event namespace is valid");
+    delete_e2e_stream(&jetstream, namespace)
+        .await
+        .expect("stale isolated payment stream is removed");
     let mut stream = topology
         .ensure_stream(&jetstream)
         .await
         .expect("isolated payment event stream is created");
 
-    let redis_url = std::env::var("PLATFORM_REDIS_URL").expect("CI provides Redis URL");
-    let redis_client = redis::Client::open(redis_url).expect("Redis URL parses");
+    let redis_client =
+        crate::dependencies::redis_client().expect("Redis test client configuration is valid");
     let mut redis = ConnectionManager::new(redis_client)
         .await
         .expect("authenticated Redis connection succeeds");
@@ -243,7 +240,7 @@ pub async fn verify() {
     drop(message);
     drop(messages);
     drop(consumer);
-    delete_e2e_stream(&jetstream, &namespace)
+    delete_e2e_stream(&jetstream, namespace)
         .await
         .expect("only the isolated phase four JetStream stream is deleted");
     database.finish().await;

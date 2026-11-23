@@ -74,8 +74,8 @@ fn failure(
     tracing::error!(event.name = "bff.request.failed", component = "platform_bff", operation = "health_ready", error_code = code, error_category = category, retryable, dependency_duration_ms, correlation_id = %correlation_id, trace_id = %trace_id, span_id = %current_span_id());
     let body = ErrorEnvelope {
         error: ErrorBody {
-            code,
-            category,
+            code: code.to_owned(),
+            category: category.to_owned(),
             message: "The readiness check could not be completed.",
             correlation_id,
             trace_id,

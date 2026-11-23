@@ -2,20 +2,17 @@ use super::*;
 
 fn test_config(grpc_addr: &str, metrics_addr: &str, metrics_token: Option<String>) -> AppConfig {
     AppConfig {
-        database_url: env::var("PLATFORM_TEST_DATABASE_ADMIN_URL")
-            .expect("isolated PostgreSQL test administrator URL is configured"),
-        redis_url: env::var("PLATFORM_REDIS_URL")
-            .expect("real development Redis URL is configured"),
+        database_url: "postgres://tester:secret@127.0.0.1/payvia?sslmode=disable".to_owned(),
+        redis_url: "redis://:secret@127.0.0.1/0".to_owned(),
         redis_tls_root_ca: None,
         redis_tls_client_cert: None,
         redis_tls_client_key: None,
         nats_tls_root_ca: None,
         nats_tls_client_cert: None,
         nats_tls_client_key: None,
-        nats_url: env::var("PLATFORM_NATS_URL")
-            .expect("real development JetStream URL is configured"),
-        nats_username: env::var("NATS_USER").expect("development NATS user is configured"),
-        nats_password: env::var("NATS_PASSWORD").expect("development NATS password is configured"),
+        nats_url: "nats://127.0.0.1:4222".to_owned(),
+        nats_username: "development-user".to_owned(),
+        nats_password: "0123456789abcdef0123456789abcdef".to_owned(),
         http_addr: "0.0.0.0:8080".parse().expect("address"),
         grpc_addr: grpc_addr.parse().expect("address"),
         metrics_addr: metrics_addr.parse().expect("address"),
@@ -112,15 +109,15 @@ fn invalid_bind_address_has_stable_error_code() {
 
 fn isolated_valid_config() -> AppConfig {
     AppConfig {
-        database_url: "postgres://tester:secret@127.0.0.1/payvia".to_owned(),
-        redis_url: "rediss://:secret@127.0.0.1/0".to_owned(),
+        database_url: "postgres://tester:secret@127.0.0.1/payvia?sslmode=disable".to_owned(),
+        redis_url: "redis://:secret@127.0.0.1/0".to_owned(),
         redis_tls_root_ca: None,
         redis_tls_client_cert: None,
         redis_tls_client_key: None,
         nats_tls_root_ca: None,
         nats_tls_client_cert: None,
         nats_tls_client_key: None,
-        nats_url: "tls://127.0.0.1:4222".to_owned(),
+        nats_url: "nats://127.0.0.1:4222".to_owned(),
         nats_username: "ci-user".to_owned(),
         nats_password: "0123456789abcdef0123456789abcdef".to_owned(),
         http_addr: "0.0.0.0:8080".parse().expect("HTTP address"),
@@ -139,15 +136,22 @@ fn isolated_valid_config() -> AppConfig {
 #[test]
 fn config_accepts_nonproduction_environments_and_rejects_unknown_values() {
     let mut config = isolated_valid_config();
-    for environment in ["development", "test", "staging"] {
+    for environment in ["development", "test"] {
         config.environment = environment.to_owned();
         assert_eq!(validate_config(&config), Ok(()), "{environment}");
     }
+    config.environment = "staging".to_owned();
+    assert_eq!(
+        validate_config(&config),
+        Err(ConfigError::InvalidValue {
+            variable: "PAYVIA_REQUIRE_MTLS"
+        })
+    );
     config.environment = "production".to_owned();
     assert_eq!(
         validate_config(&config),
         Err(ConfigError::InvalidValue {
-            variable: "PLATFORM_DATABASE_URL"
+            variable: "PAYVIA_REQUIRE_MTLS"
         })
     );
     for environment in ["", "prod", "local", "Production", "unknown"] {
@@ -166,10 +170,12 @@ fn config_accepts_nonproduction_environments_and_rejects_unknown_values() {
 fn production_requires_verified_database_tls_and_complete_redis_client_identity() {
     let mut config = isolated_valid_config();
     config.environment = "production".to_owned();
+    config.require_mtls = true;
     config.database_url =
         "postgres://user:password@db.internal/payvia?sslmode=verify-full&sslrootcert=/etc/ca.pem&sslcert=/etc/client.crt&sslkey=/etc/client.key"
             .to_owned();
     config.redis_url = "rediss://:password@redis.internal/0".to_owned();
+    config.nats_url = "tls://nats.internal:4222".to_owned();
     assert_eq!(
         validate_config(&config),
         Err(ConfigError::InvalidValue {
@@ -190,27 +196,36 @@ fn production_requires_verified_database_tls_and_complete_redis_client_identity(
     assert_eq!(
         validate_config(&config),
         Err(ConfigError::InvalidValue {
-            variable: "PLATFORM_REDIS_TLS_CLIENT_CERT"
+            variable: "PLATFORM_REDIS_URL"
         })
     );
     config.redis_url = "rediss://:password@redis.internal/0".to_owned();
     assert_eq!(
         validate_config(&config),
         Err(ConfigError::InvalidValue {
-            variable: "PAYVIA_REQUIRE_MTLS"
+            variable: "NATS_TLS_CLIENT_CERT"
         })
     );
-    config.require_mtls = true;
     config.nats_tls_root_ca = Some("/etc/nats/ca.pem".into());
     assert_eq!(
         validate_config(&config),
         Err(ConfigError::InvalidValue {
-            variable: "PAYVIA_REQUIRE_MTLS"
+            variable: "NATS_TLS_CLIENT_CERT"
         })
     );
     config.nats_tls_client_cert = Some("/etc/nats/platform.crt".into());
     config.nats_tls_client_key = Some("/etc/nats/platform.key".into());
     assert_eq!(validate_config(&config), Ok(()));
+    config.nats_username.clear();
+    config.nats_password.clear();
+    assert_eq!(validate_config(&config), Ok(()));
+    config.nats_username = "partial-user".to_owned();
+    assert_eq!(
+        validate_config(&config),
+        Err(ConfigError::InvalidValue {
+            variable: "PLATFORM_NATS_URL"
+        })
+    );
 }
 
 #[test]
@@ -227,10 +242,15 @@ fn production_database_url_requires_verify_full_and_client_credentials() {
 }
 
 #[test]
-fn explicit_mtls_requirement_fails_closed_outside_production() {
+fn mtls_can_be_enabled_for_staging_when_all_tls_material_is_configured() {
     let mut config = isolated_valid_config();
     config.environment = "staging".to_owned();
     config.require_mtls = true;
+    config.database_url =
+        "postgres://user:password@db.internal/payvia?sslmode=verify-full&sslrootcert=/etc/ca.pem&sslcert=/etc/client.crt&sslkey=/etc/client.key"
+            .to_owned();
+    config.redis_url = "rediss://:password@redis.internal/0".to_owned();
+    config.nats_url = "tls://nats.internal:4222".to_owned();
     assert_eq!(
         validate_config(&config),
         Err(ConfigError::InvalidValue {
@@ -241,11 +261,53 @@ fn explicit_mtls_requirement_fails_closed_outside_production() {
     config.redis_tls_root_ca = Some("/etc/redis/ca.pem".into());
     config.redis_tls_client_cert = Some("/etc/redis/client.crt".into());
     config.redis_tls_client_key = Some("/etc/redis/client.key".into());
+    config.nats_tls_root_ca = Some("/etc/nats/ca.pem".into());
+    config.nats_tls_client_cert = Some("/etc/nats/client.crt".into());
+    config.nats_tls_client_key = Some("/etc/nats/client.key".into());
+    assert_eq!(validate_config(&config), Ok(()));
+}
+
+#[test]
+fn plaintext_mode_strips_certificate_parameters_and_secure_url_schemes() {
+    let database = plaintext_database_url(
+        "postgres://tester:secret@db.internal/payvia?sslmode=verify-full&sslrootcert=/run/vault/ca.pem&sslcert=/run/vault/client.crt&sslkey=/run/vault/client.key&application_name=platform",
+    )
+    .expect("valid database URL normalizes");
+    let database = url::Url::parse(&database).expect("normalized URL parses");
     assert_eq!(
-        validate_config(&config),
-        Err(ConfigError::InvalidValue {
-            variable: "PAYVIA_REQUIRE_MTLS"
-        })
+        database.query_pairs().find(|(key, _)| key == "sslmode"),
+        Some(("sslmode".into(), "disable".into()))
+    );
+    assert!(
+        database
+            .query_pairs()
+            .any(|(key, value)| key == "application_name" && value == "platform")
+    );
+    assert!(!database.query().unwrap_or_default().contains("sslcert"));
+
+    assert_eq!(
+        plaintext_service_url(
+            "rediss://:secret@redis.internal/0",
+            "rediss",
+            "redis",
+            "PLATFORM_REDIS_URL",
+        )
+        .expect("Redis URL normalizes")
+        .split(':')
+        .next(),
+        Some("redis")
+    );
+    assert_eq!(
+        plaintext_service_url(
+            "tls://nats.internal:4222",
+            "tls",
+            "nats",
+            "PLATFORM_NATS_URL",
+        )
+        .expect("NATS URL normalizes")
+        .split(':')
+        .next(),
+        Some("nats")
     );
 }
 

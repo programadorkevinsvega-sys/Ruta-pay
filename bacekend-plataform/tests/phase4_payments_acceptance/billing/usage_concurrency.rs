@@ -99,13 +99,17 @@ async fn usage_inbox_is_atomic_and_concurrent_redelivery_is_idempotent() {
     assert!(!usage_ids.is_empty());
     assert!(usage_ids.iter().all(|id| *id == usage_ids[0]));
 
+    let mut inspection = database
+        .tenant_scoped_migration_transaction(tenant_id)
+        .await
+        .expect("tenant-scoped usage inspection begins");
     let usage_count: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM platform_billing.usage_events WHERE tenant_id=$1 AND source_system=$2 AND source_event_id=$3",
     )
     .bind(tenant_id)
     .bind("entitlements_quotas")
     .bind(usage_id.to_string())
-    .fetch_one(&database.migration_pool)
+    .fetch_one(&mut *inspection)
     .await
     .expect("usage count is inspectable");
     assert_eq!(usage_count, 1);
@@ -116,10 +120,14 @@ async fn usage_inbox_is_atomic_and_concurrent_redelivery_is_idempotent() {
     .bind(tenant_id)
     .bind("entitlements_quotas")
     .bind(event_id)
-    .fetch_one(&database.migration_pool)
+    .fetch_one(&mut *inspection)
     .await
     .expect("inbox disposition is inspectable");
     assert_eq!(disposition, "processed");
 
+    inspection
+        .commit()
+        .await
+        .expect("tenant-scoped usage inspection completes");
     database.finish().await;
 }

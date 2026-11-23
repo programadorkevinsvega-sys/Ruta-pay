@@ -2,14 +2,20 @@
 mod billing_acceptance;
 #[path = "phase4_payments_acceptance/billing_jetstream.rs"]
 mod billing_jetstream_acceptance;
+#[path = "phase4_payments_acceptance/common.rs"]
+mod common;
 #[path = "phase4_payments_acceptance/database.rs"]
 mod database;
+#[path = "phase4_payments_acceptance/dependencies.rs"]
+mod dependencies;
 #[path = "phase4_payments_acceptance/jetstream.rs"]
 mod jetstream_acceptance;
 #[path = "phase4_payments_acceptance/lifecycle_persistence.rs"]
 mod lifecycle_persistence;
 #[path = "phase4_payments_acceptance/outbox_resilience.rs"]
 mod outbox_resilience_acceptance;
+#[path = "phase4_payments_acceptance/postgres_dependencies.rs"]
+mod postgres_dependencies;
 
 use platform_payments::{
     application::payment_service::{CreatePaymentIntentCommand, PaymentService},
@@ -140,12 +146,26 @@ async fn payment_intent_creation_replay_conflict_concurrency_and_tenant_isolatio
         "each intent emits exactly one durable event"
     );
 
+    let mut audit_transaction = database
+        .migration_pool
+        .begin()
+        .await
+        .expect("audit inspection transaction starts");
+    sqlx::query("SELECT set_config('app.tenant_id',$1,true)")
+        .bind(tenant_id.to_string())
+        .execute(&mut *audit_transaction)
+        .await
+        .expect("audit inspection is scoped to the test tenant");
     let audit_count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM payments.audit_events WHERE resource_id=$1")
             .bind(created.id)
-            .fetch_one(&database.migration_pool)
+            .fetch_one(&mut *audit_transaction)
             .await
-            .expect("audit rows can be inspected by the migration role");
+            .expect("tenant audit rows are visible under forced RLS");
+    audit_transaction
+        .commit()
+        .await
+        .expect("audit inspection transaction commits");
     assert_eq!(audit_count, 3, "creation, replay and read are audited");
 
     database.finish().await;

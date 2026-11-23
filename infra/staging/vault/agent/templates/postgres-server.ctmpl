@@ -1,0 +1,5 @@
+{{- with pkiCert "pki_int/issue/postgres-server" "common_name=postgres.tail4eafc5.ts.net" "alt_names=postgres" "ttl=2160h" -}}
+{{ .Data.Cert }}
+{{ .Data.CA }}
+{{ .Data.Key }}
+{{- end -}}

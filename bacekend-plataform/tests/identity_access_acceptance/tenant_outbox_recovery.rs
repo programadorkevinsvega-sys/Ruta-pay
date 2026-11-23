@@ -1,31 +1,32 @@
 use async_nats::jetstream;
 use platform_runtime::event_topology::EventTopology;
 use sqlx::PgPool;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 use uuid::Uuid;
-use super::identity_access_acceptance_support::EventStreamCleanup;
-
 
 pub struct TenantOutboxRecoveryContext<'a> {
     pub migration_pool: &'a PgPool,
     pub runtime_pool: &'a PgPool,
-    pub jetstream: &'a jetstream::Context,
+    pub recovery_jetstream: &'a jetstream::Context,
     pub failed_topology: &'a EventTopology,
-    pub failed_namespace: &'a str,
+    pub recovery_topology: &'a EventTopology,
     pub created_tenant_id: Uuid,
+    pub captured_events: &'a Arc<Mutex<Vec<HashMap<String, String>>>>,
 }
 
 pub async fn verify(context: TenantOutboxRecoveryContext<'_>) {
     let TenantOutboxRecoveryContext {
         migration_pool,
         runtime_pool,
-        jetstream,
+        recovery_jetstream,
         failed_topology,
-        failed_namespace,
+        recovery_topology,
         created_tenant_id,
+        captured_events,
     } = context;
-    // Exercise a deterministic JetStream failure without racing the
-    // application's background relay: the synthetic Outbox row is leased
-    // while the missing-stream publish is attempted.
     let failed_event_id = Uuid::new_v4();
     let failed_aggregate_id = Uuid::new_v4();
     let failed_lease_token = Uuid::new_v4();
@@ -56,16 +57,50 @@ pub async fn verify(context: TenantOutboxRecoveryContext<'_>) {
     };
     let jetstream_error_code =
         platform_tenant_registry::infrastructure::outbox_relay::publish_event(
-            jetstream,
+            recovery_jetstream,
             &failed_event,
             &failed_topology.subject_prefix,
         )
         .await
-        .expect_err("publishing without a matching stream fails retryably");
+        .expect_err("restricted identity rejects an unapproved event subject");
     assert!(matches!(
         jetstream_error_code,
         "jetstream_publish_unavailable" | "jetstream_ack_unavailable"
     ));
+    let failure_diagnostics = captured_events
+        .lock()
+        .expect("event capture lock")
+        .iter()
+        .find(|event| {
+            event
+                .get("event.name")
+                .is_some_and(|name| name.contains("outbox.jetstream.publish.failed"))
+                && event
+                    .get("event_id")
+                    .is_some_and(|event_id| event_id.contains(&failed_event_id.to_string()))
+        })
+        .cloned()
+        .expect("JetStream failure diagnostic includes the failed event");
+    assert_eq!(
+            failure_diagnostics.get("error_code").map(String::as_str),
+            Some(jetstream_error_code)
+    );
+    assert_eq!(
+            failure_diagnostics
+                .get("correlation_id")
+                .map(String::as_str),
+            Some(failed_correlation_id)
+        );
+    assert!(
+        failure_diagnostics
+            .get("error_kind")
+            .is_some_and(|kind| !kind.is_empty())
+    );
+    assert!(
+        failure_diagnostics
+            .get("subject")
+            .is_some_and(|subject| subject.contains(&failed_topology.subject_prefix))
+    );
     assert!(
         platform_tenant_registry::infrastructure::persistence::reschedule_outbox_event(
             runtime_pool,
@@ -90,15 +125,6 @@ pub async fn verify(context: TenantOutboxRecoveryContext<'_>) {
     );
     assert!(deferred_event_state.1);
 
-    let failed_stream = failed_topology
-        .ensure_stream(jetstream)
-        .await
-        .expect("JetStream stream is restored for retry");
-    let mut failed_stream_cleanup = EventStreamCleanup {
-        jetstream: jetstream.clone(),
-        namespace: failed_namespace.to_owned(),
-        armed: true,
-    };
     let retry_lease_token = Uuid::new_v4();
     sqlx::query(
         "UPDATE tenant_registry.outbox_events SET available_at=now(),lease_token=$2,lease_until=now()+interval '30 seconds' WHERE event_id=$1 AND published_at IS NULL",
@@ -113,12 +139,12 @@ pub async fn verify(context: TenantOutboxRecoveryContext<'_>) {
         ..failed_event
     };
     platform_tenant_registry::infrastructure::outbox_relay::publish_event(
-        jetstream,
+        recovery_jetstream,
         &retry_event,
-        &failed_topology.subject_prefix,
+        &recovery_topology.subject_prefix,
     )
     .await
-    .expect("JetStream retry succeeds after stream recovery");
+    .expect("authorized JetStream retry succeeds on the pre-provisioned stream");
     assert!(
         platform_tenant_registry::infrastructure::persistence::mark_outbox_published(
             runtime_pool,
@@ -138,6 +164,4 @@ pub async fn verify(context: TenantOutboxRecoveryContext<'_>) {
     .expect("successful JetStream retry state is queryable");
     assert!(retried_jetstream_state.0);
     assert!(retried_jetstream_state.1.is_none());
-    drop(failed_stream);
-    failed_stream_cleanup.cleanup().await;
 }

@@ -11,7 +11,7 @@ pub struct SecondTenantIsolationContext<'a> {
     pub client: &'a Client,
     pub migration_pool: &'a PgPool,
     pub runtime_pool: &'a PgPool,
-    pub jetstream: &'a jetstream::Context,
+    pub publisher_jetstream: &'a jetstream::Context,
     pub event_topology: &'a EventTopology,
     pub stream: &'a jetstream::stream::Stream,
     pub registration_subject: &'a str,
@@ -23,7 +23,7 @@ pub struct SecondTenantIsolationContext<'a> {
 
 pub async fn create_and_verify(context: SecondTenantIsolationContext<'_>) -> Uuid {
     let SecondTenantIsolationContext {
-        client, migration_pool, runtime_pool, jetstream, event_topology, stream,
+        client, migration_pool, runtime_pool, publisher_jetstream, event_topology, stream,
         registration_subject, http_addr, origin, created_tenant_id, credentials,
     } = context;
     let second_session_cookie = &credentials.session_cookie;
@@ -69,7 +69,7 @@ pub async fn create_and_verify(context: SecondTenantIsolationContext<'_>) -> Uui
     assert_eq!(second_document.1, second_legal_identification_number.as_str());
     platform_tenant_registry::infrastructure::outbox_relay::relay_batch(
         runtime_pool,
-        jetstream,
+        publisher_jetstream,
         &event_topology.subject_prefix,
     )
     .await

@@ -48,11 +48,14 @@ pub async fn setup() -> IdentityEnvironment {
     let runtime_role = database.runtime_role;
     let redis_url = database.redis_url;
     let database_cleanup = database.cleanup;
+    let redis_acl_admin_url = std::env::var("PLATFORM_TEST_REDIS_ACL_ADMIN_URL")
+        .expect("dedicated Redis ACL test administrator URL is configured");
 
     let operator_fixture = operator_redis_fixture::bootstrap_and_verify_redis_failure(
         &runtime_pool,
         &migration_pool,
         &redis_url,
+        &redis_acl_admin_url,
     )
     .await;
     let operator_email = operator_fixture.operator_email;

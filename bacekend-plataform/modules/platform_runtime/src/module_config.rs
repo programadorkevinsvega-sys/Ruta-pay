@@ -1,4 +1,8 @@
 use crate::module_public_api::RuntimeProbeApi;
+use opentelemetry::{global, propagation::Extractor, trace::TraceContextExt};
+use payvia_observability::{
+    current_span_id, current_trace_id, new_correlation_id, valid_correlation_id,
+};
 use platform_catalog_pricing::{
     application::catalog_service::CatalogService,
     infrastructure::grpc::catalog_api::CatalogPricingApi,
@@ -40,6 +44,7 @@ use std::{future::Future, sync::Arc};
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 pub struct RuntimeModuleDependencies {
     pub pool: sqlx::PgPool,
@@ -78,6 +83,7 @@ where
     );
     let payments_api = PaymentsApi::new(PaymentService::new(pool.clone()), identity_client.clone());
     Server::builder()
+        .trace_fn(grpc_server_span)
         .add_service(RuntimeProbeServer::new(RuntimeProbeApi))
         .add_service(IdentityAccessServer::new(IdentityAccessApi::new(
             IdentityService::new(pool.clone(), redis),
@@ -95,4 +101,71 @@ where
         )))
         .serve_with_incoming_shutdown(TcpListenerStream::new(listener), shutdown)
         .await
+}
+
+fn grpc_server_span(request: &tonic::codegen::http::Request<()>) -> tracing::Span {
+    let correlation_id = request
+        .headers()
+        .get("x-correlation-id")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| valid_correlation_id(value))
+        .map(str::to_owned)
+        .unwrap_or_else(new_correlation_id);
+    let parent = global::get_text_map_propagator(|propagator| {
+        propagator.extract(&GrpcHeaderExtractor(request.headers()))
+    });
+    let trace_context_valid = parent.span().span_context().is_valid();
+    let span = tracing::info_span!(
+        "grpc.server.request",
+        rpc.method = %request.uri().path(),
+        correlation_id = %correlation_id,
+        trace_id = tracing::field::Empty,
+        span_id = tracing::field::Empty
+    );
+    if let Err(error) = span.set_parent(parent) {
+        tracing::warn!(
+            event.name = "grpc.trace_context.rejected",
+            component = "platform_runtime",
+            operation = "server_request",
+            error_code = %error,
+            correlation_id = %correlation_id
+        );
+    }
+    let (trace_id, span_id) = span.in_scope(|| (current_trace_id(), current_span_id()));
+    span.record("trace_id", tracing::field::display(&trace_id));
+    span.record("span_id", tracing::field::display(&span_id));
+    span.in_scope(|| {
+        if request.headers().contains_key("traceparent") && !trace_context_valid {
+            tracing::warn!(
+                event.name = "grpc.trace_context.rejected",
+                component = "platform_runtime",
+                operation = "server_request",
+                error_code = "traceparent_invalid",
+                correlation_id = %correlation_id,
+                trace_id = %trace_id,
+                span_id = %span_id
+            );
+        }
+        tracing::info!(
+            event.name = "grpc.request.started",
+            component = "platform_runtime",
+            operation = %request.uri().path(),
+            correlation_id = %correlation_id,
+            trace_id = %trace_id,
+            span_id = %span_id
+        );
+    });
+    span
+}
+
+struct GrpcHeaderExtractor<'a>(&'a tonic::codegen::http::HeaderMap);
+
+impl Extractor for GrpcHeaderExtractor<'_> {
+    fn get(&self, key: &str) -> Option<&str> {
+        self.0.get(key).and_then(|value| value.to_str().ok())
+    }
+
+    fn keys(&self) -> Vec<&str> {
+        self.0.keys().map(|key| key.as_str()).collect()
+    }
 }
